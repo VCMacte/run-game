@@ -1,12 +1,12 @@
-// Пересобирает список офлайн-кэша в sw.js по тому, что реально лежит на диске.
+// Пересобирает список офлайн-кэша в sw.js по тому, что реально лежит на диске,
+// и поднимает номер версии.
 //
 // Вести список руками бессмысленно: забытый файл не ломает разработку — там
 // всё берётся из сети, — он ломает установленное приложение, ровно у ребёнка и
-// ровно тогда, когда сети нет. А с MediaPipe цена ошибки ещё выше: наполовину
-// закэшированная модель даёт молчаливый отказ при старте с невнятной ошибкой.
+// ровно тогда, когда сети нет.
 //
-// Номер кэша поднимается тем же запуском: без нового номера установленное
-// приложение продолжит отдавать прошлую версию, и правок никто не увидит.
+// Номер версии поднимается тем же запуском: без нового номера установленное
+// приложение продолжит отдавать прошлую сборку, и правок никто не увидит.
 //
 // Запуск: node tools/make-sw.mjs [--keep-version]
 
@@ -46,19 +46,36 @@ function walk(rel, exts, out = []) {
   return out;
 }
 
+const src = readFileSync(SW, 'utf8');
+const current = src.match(/const CACHE = 'run-v(\d+)';/);
+if (!current) throw new Error('в sw.js не нашёлся номер версии вида run-vN');
+
+const version = process.argv.includes('--keep-version')
+  ? `run-v${current[1]}`
+  : `run-v${Number(current[1]) + 1}`;
+
+/* Модуль с версией пишется ДО обхода каталогов, и порядок здесь существенный:
+   иначе js/version.js попадёт в список кэша только со следующего запуска — то
+   есть ровно тот файл, который сообщает версию, будет в офлайне отставать на
+   версию.
+
+   Номер один на двоих — на кэш и на экран. Два источника разошлись бы, и
+   строка на экране начала бы врать именно тогда, когда по ней пытаешься
+   понять, доехала ли сборка до телефона. */
+writeFileSync(join(ROOT, 'js/version.js'), [
+  '// Генерируется tools/make-sw.mjs вместе с номером кэша. Руками не править.',
+  `export const VERSION = '${version}';`,
+  `export const BUILT_AT = '${new Date().toISOString().slice(0, 16).replace('T', ' ')}';`,
+  '',
+].join('\n'), 'utf8');
+
 const assets = [...ROOT_FILES];
 for (const [dir, exts] of DIRS) walk(dir, exts, assets);
 
-let src = readFileSync(SW, 'utf8');
+const out = src
+  .replace(/const CACHE = '[^']+';/, `const CACHE = '${version}';`)
+  .replace(/const ASSETS = \[[\s\S]*?\n\];/,
+    'const ASSETS = [\n' + assets.map((a) => `  '${a}',`).join('\n') + '\n];');
 
-if (!process.argv.includes('--keep-version')) {
-  src = src.replace(/const CACHE = 'run-v(\d+)';/, (_, v) => `const CACHE = 'run-v${Number(v) + 1}';`);
-}
-
-src = src.replace(/const ASSETS = \[[\s\S]*?\n\];/,
-  'const ASSETS = [\n' + assets.map((a) => `  '${a}',`).join('\n') + '\n];');
-
-writeFileSync(SW, src, 'utf8');
-
-const version = src.match(/const CACHE = '([^']+)'/)[1];
+writeFileSync(SW, out, 'utf8');
 console.log(`${version}: ${assets.length} файлов в офлайн-кэше`);

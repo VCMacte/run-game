@@ -183,6 +183,7 @@ button.big small {
 }
 #status b { font-weight: 700; }
 #status .no { color: var(--warn); }
+#status .ver { opacity: 0.65; }
 #status .yes { color: var(--ok); }
 
 /* Невидимая зона в углу: долгое удержание открывает родительское меню.

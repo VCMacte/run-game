@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v47';
+const CACHE = 'run-v50';
 const ASSETS = [
   './',
   './index.html',
@@ -32,6 +32,7 @@ const ASSETS = [
   './js/train.js',
   './js/util.js',
   './js/vendor.js',
+  './js/version.js',
   './js/view.js',
   './vendor/mediapipe/vision_bundle.js',
   './vendor/mediapipe/vision_bundle.mjs',

@@ -8,6 +8,7 @@ import * as log from './log.js';
 import { count, plural, SESSIONS, EVENTS, STARS, TIMES } from './text.js';
 import { withTimeout, isDev } from './util.js';
 import { FINISH } from './config.js';
+import { VERSION, BUILT_AT } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -117,6 +118,10 @@ function updateStatus() {
     // дадут поиграть с синтетическим источником и будут гадать, почему он не
     // влияет на игру.
     ...(debug === 'off' ? [] : [mark(false, '', `отладка: ${settings.label('debug')}`)]),
+    // Версия: по ней видно, доехала ли сборка до телефона. Номер тот же, что
+    // у офлайн-кэша, — значит он же отвечает на вопрос «какая версия сейчас
+    // лежит в кэше», а не только «какая страница открыта».
+    `<span class="ver">${VERSION} · ${BUILT_AT}</span>`,
   ].join(' · ');
 }
 addEventListener('fullscreenchange', updateStatus);
