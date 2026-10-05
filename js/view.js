@@ -228,8 +228,16 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
   for (const ob of obstacles) {
     if (ob.passed) continue;
     const dt = ob.at - elapsed;          // секунд до прихода
-    if (dt > O.signalS || dt < -0.6) continue;
-    const z = dt * VIEW.speed;
+    if (dt > O.signalS) continue;
+    const zRaw = dt * VIEW.speed;
+
+    /* Отсечение по ближней плоскости. Без него препятствие, уехавшее за
+       спину, проецируется с зажатой отрицательной глубиной и растягивается
+       на весь экран — проверено, экран заливает целиком. Логика
+       столкновения при этом продолжает работать: она живёт отдельно и
+       смотрит на время, а не на пиксели. */
+    if (zRaw + O.thickness < NEAR) continue;
+    const z = Math.max(zRaw, NEAR);
 
     // Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
     // дальнем плане сжатие уничтожает первым.
@@ -254,7 +262,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
     }
 
     if (dt > O.visibleS) continue;
-    const zBack = z + O.thickness;
+    const zBack = Math.max(zRaw + O.thickness, NEAR + 0.02);
 
     // Проём заливается ярким: ребёнку надо показать, куда идти, а не только
     // куда нельзя.
@@ -298,9 +306,9 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
     }
 
     // Линия по полу, которая дойдёт вместе с препятствием.
-    if (dt <= O.railS && dt > 0) {
+    if (dt <= O.railS && dt > 0 && zRaw > NEAR) {
       quad(
-        project(-HALF, 0.03, z - 0.12, cam), project(HALF, 0.03, z - 0.12, cam),
+        project(-HALF, 0.03, Math.max(z - 0.12, NEAR), cam), project(HALF, 0.03, Math.max(z - 0.12, NEAR), cam),
         project(HALF, 0.03, z, cam), project(-HALF, 0.03, z, cam),
         COLORS.rail,
       );
