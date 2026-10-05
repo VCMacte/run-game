@@ -142,6 +142,15 @@ button.secondary {
   color: var(--fg);
   box-shadow: 0 calc(var(--u) * 0.8) 0 rgba(0, 0, 0, 0.45);
 }
+/* Мелкая кнопка: для того, что нужно взрослому и не должно спорить за
+   внимание с «Тренировкой» и «Игрой». */
+button.small {
+  font-size: calc(var(--u) * 3);
+  padding: calc(var(--u) * 1.8) calc(var(--u) * 3);
+  min-width: calc(var(--u) * 24);
+  opacity: 0.75;
+}
+
 button.big {
   font-size: calc(var(--u) * 5.4);
   padding: calc(var(--u) * 4) calc(var(--u) * 5);
