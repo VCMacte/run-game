@@ -9,6 +9,7 @@
 import { makeTracker, makeOneEuro, geometry, predict } from './js/signals.js';
 import { makeCalibration, STAGES, CLAMP, isStale } from './js/calibrate.js';
 import { SIGNALS as S, VIEW } from './js/config.js';
+import { camera, project, vanishX, horizonY, cameraX } from './js/view.js';
 
 let failed = 0;
 let passed = 0;
@@ -281,6 +282,45 @@ group('панорама', () => {
   check('дальше периода предсказание зажато', b.value <= VIEW.predictClampMs / 1000 + 1e-9);
   check('зажим отмечается', b.clamped === true,
     'срабатывания зажима должны попадать в журнал — по ним решается вопрос о предсказании');
+});
+
+// ───────────────────────── геометрия вида ─────────────────────────
+
+group('вид', () => {
+  // Эти проверки появились после измерения: сначала панорама двигала картинку
+  // на 14 пикселей из 1280 при полном смещении тела — на телевизоре это
+  // незаметно, то есть единственной обратной связи в игре не было вовсе.
+  const centre = camera(0, 0);
+  const left = camera(-1, 0);
+  const right = camera(1, 0);
+
+  check('смещение влево уводит взгляд влево', vanishX(left) > vanishX(centre));
+  check('смещение вправо уводит взгляд вправо', vanishX(right) < vanishX(centre));
+
+  const swing = vanishX(left) - vanishX(right);
+  check('размах панорамы заметен на телевизоре', swing > VIEW.width * 0.15,
+    `${Math.round(swing)} пикселей из ${VIEW.width} — меньше 15% не читается после сжатия`);
+
+  // Крена нет по построению: две точки на одной высоте и одной глубине дают
+  // одинаковый y при любом состоянии тела. Наклон горизонта — главный
+  // источник укачивания, и проверяется он тут, а не на ребёнке.
+  for (const cam of [centre, left, right, camera(1, 0.6), camera(-1, 0.3)]) {
+    const a = project(-1, 0, 5, cam);
+    const b = project(1, 0, 5, cam);
+    check('горизонт не наклоняется', Math.abs(a.sy - b.sy) < 1e-9);
+  }
+
+  const crouched = camera(0, 0.6);
+  check('присед опускает глаза', crouched.y < centre.y);
+  check('присед поднимает горизонт в кадре', horizonY(crouched) > horizonY(centre),
+    `стоя ${horizonY(centre).toFixed(0)}, присед ${horizonY(crouched).toFixed(0)}`);
+
+  // Сбор звёзд обязан считаться по тому же числу, по которому рисуется кадр.
+  check('положение глаз одно на отрисовку и на сбор', cameraX(0.7) === camera(0.7, 0).x);
+
+  // Дальше крайних значений вид не уезжает: иначе на дрожании распознавания
+  // картинку швыряло бы за пределы коридора.
+  check('панорама зажата по величине', camera(5, 0).yaw === camera(1.5, 0).yaw);
 });
 
 // ───────────────────────── калибровка ─────────────────────────

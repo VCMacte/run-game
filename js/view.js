@@ -35,28 +35,48 @@ const COLORS = {
   starDim: '#8a7430',
 };
 
+const W = VIEW.width;
+const H = VIEW.height;
+const F = (W / 2) / Math.tan(FOV / 2);
+const HORIZON = H * 0.46;
+
+/**
+ * Положение взгляда при таком состоянии тела.
+ *
+ * `x`, `y` — где находятся глаза; `yaw`, `pitch` — куда они смотрят. Поворот
+ * сделан сдвигом центра проекции, а не вращением сцены: так горизонт остаётся
+ * строго горизонтальным по построению, а не по аккуратности. Крен — главный
+ * источник укачивания, а непрерывная панорама на 55 дюймах и так риск.
+ */
+export function camera(u = 0, v = 0) {
+  const un = clamp(u, -1.5, 1.5);
+  const vn = clamp(v, 0, 0.6);
+  return {
+    x: un * VIEW.panGain * HALF,
+    y: EYE * (1 - vn * VIEW.pitchGain),
+    yaw: -un * VIEW.yawPx,
+    pitch: (vn / 0.6) * VIEW.pitchPx,
+  };
+}
+
+/** Проекция точки мира на экран. Чистая арифметика — проверяется в node. */
+export function project(x, y, z, cam) {
+  const d = Math.max(z, 0.05);
+  return {
+    sx: W / 2 + cam.yaw + (x - cam.x) * F / d,
+    sy: HORIZON + cam.pitch + (cam.y - y) * F / d,
+    scale: F / d,
+  };
+}
+
+/** Куда уехала точка схода и где оказался горизонт. Для проверок и диагностики. */
+export const vanishX = (cam) => W / 2 + cam.yaw;
+export const horizonY = (cam) => HORIZON + cam.pitch;
+
 export function createView(canvas) {
   const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   canvas.width = VIEW.width;
   canvas.height = VIEW.height;
-
-  const W = VIEW.width;
-  const H = VIEW.height;
-  const f = (W / 2) / Math.tan(FOV / 2);
-
-  /* Проекция точки мира на экран.
-     cam.x и cam.y — положение глаз; cam.yaw и cam.pitch сдвигают центр
-     проекции, то есть поворачивают взгляд. Именно сдвигом центра, а не
-     вращением сцены: так горизонт остаётся строго горизонтальным по
-     построению, а не по аккуратности — крен это главный источник укачивания. */
-  function project(x, y, z, cam) {
-    const d = Math.max(z, 0.05);
-    return {
-      sx: W / 2 + cam.yaw + (x - cam.x) * f / d,
-      sy: H * 0.46 + cam.pitch + (cam.y - y) * f / d,
-      scale: f / d,
-    };
-  }
 
   function quad(p1, p2, p3, p4, fill) {
     ctx.fillStyle = fill;
@@ -78,14 +98,7 @@ export function createView(canvas) {
      * сглажены и предсказаны: сюда приходит то, что надо показать сейчас.
      */
     render({ u = 0, v = 0, travel = 0, stars = [], dim = 0 }) {
-      const un = clamp(u, -1.5, 1.5);
-      const vn = clamp(v, 0, 0.6);
-      const cam = {
-        x: un * VIEW.panGain * HALF,
-        y: EYE * (1 - vn * VIEW.pitchGain),
-        yaw: -un * VIEW.yawPx,
-        pitch: (vn / 0.6) * VIEW.pitchPx,
-      };
+      const cam = camera(u, v);
 
       ctx.fillStyle = COLORS.sky;
       ctx.fillRect(0, 0, W, H);
@@ -175,7 +188,7 @@ export function createView(canvas) {
  * рисуется картинка: две копии этой формулы разошлись бы, и звёзды начали бы
  * собираться не там, где их видно.
  */
-export const cameraX = (u) => clamp(u, -1.5, 1.5) * VIEW.panGain * HALF;
+export const cameraX = (u) => camera(u, 0).x;
 
 /**
  * Раскладка звёзд.
