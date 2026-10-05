@@ -13,7 +13,7 @@ import { makeTracker, predict, geometry } from './signals.js';
 import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
-import { round } from './util.js';
+import { round, flag } from './util.js';
 import * as pose from './pose.js';
 import * as log from './log.js';
 
@@ -265,9 +265,14 @@ export function createTraining({ canvas, video, onHud }) {
       });
 
       // У синтетики штатив наводить не на что, а калибровку синтетический
-      // ребёнок не пройдёт — он не слушается. Поэтому сразу в движение;
-      // калибровка при этом остаётся доступной через ?stage=calibrate.
-      goStage(src === 'fake' || skipSetup ? 'free' : 'setup');
+      // ребёнок не пройдёт — он не слушается. Поэтому сразу в движение.
+      // Но экран калибровки надо чем-то проверять, и камеры для этого может
+      // не быть вовсе: ?stage=calibrate открывает его на синтетике.
+      const forced = flag('stage');
+      const first = forced && ['setup', 'calibrate', 'free'].includes(forced)
+        ? forced
+        : (src === 'fake' || skipSetup ? 'free' : 'setup');
+      goStage(first);
       raf = requestAnimationFrame(frame);
       return source;
     },
