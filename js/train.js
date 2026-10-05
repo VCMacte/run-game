@@ -14,7 +14,7 @@ import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
-import { makeLevel, isSafe } from './level.js';
+import { makeLevel, isSafe, telegraph } from './level.js';
 import * as audio from './audio.js';
 import { settings } from './settings.js';
 import { cameraX } from './view.js';
@@ -268,7 +268,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     const moving = stage === 'free' && run === RUN.running;
     dim += ((moving ? 0 : 0.55) - dim) * Math.min(1, dt * 6);
 
-    if (stage === 'free') stepObstacles(now, u, v);
+    if (stage === 'free') stepObstacles(now, u);
 
     if (stage === 'free') {
       for (const s of stars) {
@@ -311,7 +311,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
      нет. Первое лицо здесь работает на нас. */
   let lastSafe = true;
 
-  function stepObstacles(now, u, v) {
+  function stepObstacles(now, u) {
     const camX = cameraX(u);
     const crouching = tracker?.crouch ?? false;
     lastSafe = true;
@@ -322,10 +322,14 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       if (dt > O.signalS) break; // список по времени — дальше смотреть незачем
 
       const safe = isSafe(ob, { camX, crouching });
+      // Стадии телеграфа считает level.js — та же функция, что проверяется
+      // тестами. Повторять её условия здесь значило бы завести вторую копию
+      // расписания, которая однажды разойдётся с проверенной.
+      const phase = telegraph(dt);
 
       // Звук за четыре секунды: он говорит, что именно делать, и приходит
       // раньше картинки — у динамика телефона задержки нет.
-      if (!ob.announced && dt <= O.signalS) {
+      if (!ob.announced && phase.signal) {
         ob.announced = true;
         audio.play(audio.motifFor(ob));
         log.event('telegraph', { kind: ob.kind, side: ob.side, at: round(ob.at, 1) });
@@ -335,7 +339,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // И звучит один раз: подтверждение, если стоишь правильно, или
       // предупреждение, если нет. Подтверждение не менее важно — в первом
       // лице нет персонажа, по которому видно, достаточно ли ты ушёл.
-      if (dt <= O.lastCallS && dt > 0) {
+      if (phase.lastCall) {
         lastSafe = safe;
         if (!ob.calledAt) {
           ob.calledAt = now;
@@ -343,7 +347,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         }
       }
 
-      if (dt > 0) continue;
+      if (!phase.arrived) continue;
 
       // Пришло. Либо сразу засчитываем проход, либо открываем окно прощения.
       if (safe) {
