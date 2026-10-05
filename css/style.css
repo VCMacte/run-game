@@ -212,6 +212,25 @@ button.big small {
   text-shadow: 0 calc(var(--u) * 0.5) 0 rgba(0, 0, 0, 0.6);
 }
 #runScore::before { content: '★ '; color: #ffd34d; }
+
+/* Полоса до финиша. Ребёнку обещан конец забега, и он должен быть виден:
+   «сколько ещё» — первый вопрос, который задают на третьей минуте. */
+#runProgress {
+  flex: 1;
+  align-self: center;
+  margin: 0 calc(var(--u) * 4);
+  height: calc(var(--u) * 1.6);
+  border-radius: calc(var(--u) * 0.8);
+  background: #1b2237;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.25) rgba(255, 255, 255, 0.18);
+}
+#runProgressFill {
+  height: 100%;
+  width: 0%;
+  background: #ffd34d;
+  border-radius: inherit;
+}
 #runSeen { font-size: calc(var(--u) * 2.6); font-weight: 400; color: var(--dim); }
 #runSeen.lost { color: var(--warn); }
 
@@ -343,6 +362,18 @@ button.big small {
 
 #runOverlayTitle { font-size: calc(var(--u) * 11); line-height: 1; }
 #runOverlayText { font-size: calc(var(--u) * 4); font-weight: 400; color: var(--dim); }
+
+/* Результат забега. Крупно: его читают с дивана, и читает его ребёнок. */
+#runResult {
+  display: flex;
+  gap: calc(var(--u) * 6);
+  justify-content: center;
+  font-size: calc(var(--u) * 3);
+  font-weight: 400;
+  color: var(--dim);
+}
+#runResult b { display: block; font-size: calc(var(--u) * 9); color: var(--fg); font-weight: 700; }
+#runResult .stars b { color: #ffd34d; }
 
 /* Полоса состояния адресована взрослому при настройке. Во время забега она на
    телевизоре — мусор поверх игры, да ещё и в том углу, где и так есть HUD. */

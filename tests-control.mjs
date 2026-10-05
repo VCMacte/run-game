@@ -14,7 +14,10 @@ import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition } from './js/preview.js';
 import { makeLevel, telegraph, isSafe } from './js/level.js';
 import { obstacleEdge } from './js/view.js';
-import { OBSTACLES as O } from './js/config.js';
+import { OBSTACLES as O, FINISH } from './js/config.js';
+import { describe, motifFor } from './js/audio.js';
+import { OPTIONS } from './js/settings.js';
+
 
 let failed = 0;
 let passed = 0;
@@ -579,6 +582,61 @@ group('уклонение', () => {
   check('верхнее проходится приседом', isSafe(duck, { camX: 0, crouching: true }));
   check('а смещением вбок — нет', !isSafe(duck, { camX: full, crouching: false }),
     'иначе присед можно было бы не делать вовсе');
+});
+
+group('звук', () => {
+  // Мотивы различаются числом нот, а не только высотой: высоту съедает
+  // телефонный динамик и комнатное эхо, а «два» и «три» слышно всегда.
+  const m = describe();
+  const need = ['left', 'right', 'duck', 'ready', 'warn', 'clear', 'star', 'hit', 'finish'];
+  for (const name of need) check(`мотив «${name}» есть`, m[name]?.length > 0);
+
+  check('присед отличается от боковых числом нот',
+    m.duck.length !== m.left.length && m.duck.length !== m.right.length,
+    `присед ${m.duck.length}, влево ${m.left.length}, вправо ${m.right.length}`);
+  check('подтверждение короче предупреждения', m.ready.length < m.warn.length,
+    'подтверждение звучит чаще и не должно надоедать');
+  check('финиш — самый длинный',
+    m.finish.length >= Math.max(...need.map((n) => m[n].length)));
+
+  // Одинаковое число нот у «влево» и «вправо» — так и задумано, их различает
+  // направление хода высоты. Но сами мотивы обязаны отличаться.
+  check('влево и вправо — разные мотивы',
+    JSON.stringify(m.left) !== JSON.stringify(m.right));
+  check('влево идёт вниз', m.left[0][0] > m.left[1][0],
+    `${m.left[0][0]} → ${m.left[1][0]}`);
+  check('вправо идёт вверх', m.right[0][0] < m.right[1][0]);
+
+  // Ноты не должны накладываться сами на себя: следующая начинается не
+  // раньше, чем кончилась предыдущая, иначе мотив превращается в аккорд и
+  // ритм, которым они и различаются, пропадает.
+  for (const [name, notes] of Object.entries(m)) {
+    for (let i = 1; i < notes.length; i++) {
+      check(`«${name}»: ноты не наезжают`, notes[i][1] >= notes[i - 1][1],
+        `нота ${i} начинается в ${notes[i][1]}, предыдущая в ${notes[i - 1][1]}`);
+    }
+  }
+
+  check('для бокового справа звучит «влево»', motifFor({ kind: 'side', side: 1 }) === 'left',
+    'закрыта правая сторона — уходить надо влево, и звук говорит именно это');
+  check('для бокового слева звучит «вправо»', motifFor({ kind: 'side', side: -1 }) === 'right');
+  check('для верхнего звучит присед', motifFor({ kind: 'duck', side: 0 }) === 'duck');
+});
+
+group('финиш', () => {
+  // Ворота должны появиться раньше, чем до них можно добежать: иначе они
+  // возникают из ниоткуда прямо перед носом.
+  check('ворота видно заранее', FINISH.visibleS * VIEW.speed <= VIEW.fogDistance,
+    `${(FINISH.visibleS * VIEW.speed).toFixed(0)} м при видимости ${VIEW.fogDistance} м`);
+  check('ворота не выше стен', FINISH.gateHeight <= 2.6);
+  check('перерыв предлагается не слишком поздно', FINISH.restAfterRuns <= 4,
+    'ребёнок сам не остановится, и напоминание нужно взрослому');
+
+  // Длина забега берётся из родительского меню и должна быть в разумных
+  // пределах: больше пяти минут для семи лет — уже нагрузка, а не игра.
+  for (const o of OPTIONS.runLength) {
+    check(`длина ${o.label} разумна`, o.value >= 120 && o.value <= 300);
+  }
 });
 
 // ───────────────────────── калибровка ─────────────────────────

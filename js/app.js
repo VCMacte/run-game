@@ -7,6 +7,7 @@ import { settings } from './settings.js';
 import * as log from './log.js';
 import { count, SESSIONS, EVENTS } from './text.js';
 import { withTimeout, isDev } from './util.js';
+import { FINISH } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -172,6 +173,11 @@ $('start').onclick = () => {
 
 let training = null;
 
+/* Забегов подряд за эту сессию. После третьего игра предлагает передохнуть —
+   это не ограничение, а напоминание взрослому: ребёнок сам не остановится. */
+let runsInRow = 0;
+let restSuggested = false;
+
 const PAUSE_TEXT = {
   none: ['Вернись в рамку', 'Встань так, чтобы тебя было видно целиком'],
   lowvis: ['Тебя плохо видно', 'Нужно больше света'],
@@ -194,7 +200,8 @@ function refreshHud() {
 function renderRunHud(h = {}) {
   lastHud = h;
   // cam, а не settings: иначе имя затенило бы импортированные настройки.
-  const { stage = 'free', run = 'running', why, score = 0, setupOk, framing, settings: cam, pipeline, calib } = h;
+  const { stage = 'free', run = 'running', why, score = 0, setupOk, framing,
+    settings: cam, pipeline, calib, result, progress = 0 } = h;
   const overlay = $('runOverlay');
   const title = $('runOverlayTitle');
   const text = $('runOverlayText');
@@ -202,6 +209,7 @@ function renderRunHud(h = {}) {
 
   $('runScore').textContent = score;
   $('runHud').hidden = stage !== 'free';
+  $('runProgressFill').style.width = `${Math.min(100, progress * 100).toFixed(1)}%`;
   overlay.classList.toggle('setup', stage === 'setup');
 
   /* Окошко камеры. На установке и калибровке оно нужно всегда — там без него
@@ -257,6 +265,26 @@ function renderRunHud(h = {}) {
     return;
   }
 
+  if (stage === 'result') {
+    restSuggested = runsInRow >= FINISH.restAfterRuns;
+    overlay.hidden = false;
+    numbers.hidden = true;
+    $('runNext').hidden = true;
+    $('runResult').hidden = false;
+    $('runResultRow').hidden = false;
+    title.textContent = result?.praise || 'Добежал!';
+    text.textContent = restSuggested
+      ? 'Три забега подряд — самое время передохнуть'
+      : 'Финиш!';
+    $('runResult').innerHTML = [
+      `<div class="stars"><b>${result?.stars ?? 0}</b>звёзд собрано</div>`,
+      `<div><b>${result?.hits ?? 0}</b>раз задел</div>`,
+    ].join('');
+    return;
+  }
+  $('runResult').hidden = true;
+  $('runResultRow').hidden = true;
+
   const stopped = run === 'paused' || run === 'countdown';
   overlay.hidden = !stopped;
   numbers.hidden = true;
@@ -275,43 +303,54 @@ function renderRunHud(h = {}) {
 
 $('runNext').onclick = () => training?.next();
 
+/* Запуск тренировки. Общий для кнопки меню и для «ещё раз» на финише: две
+   копии разошлись бы, и повторный забег однажды поехал бы с другими
+   настройками, чем первый. */
+async function startTraining() {
+  const { wantedSource } = await import('./pose.js');
+  const want = wantedSource();
+
+  if (want.source === 'camera') {
+    // Комплект проверяется до запуска. Наполовину закэшированная модель не
+    // даёт ошибки сети — она даёт молчаливый abort внутри wasm, и по симптому
+    // это неотличимо от дефекта кода.
+    const { checkVendor } = await import('./vendor.js');
+    const v = await checkVendor();
+    log.event('offline.check', {
+      ok: v.ok, skipped: v.skipped || null,
+      missing: v.missing?.length || 0, wrong: v.wrongSize?.length || 0,
+    });
+    if (!v.ok) {
+      showSoon('Нужен интернет один раз',
+        'Распознавание движений скачалось не полностью, поэтому тренировка пока не запустится. '
+        + 'Подключитесь к сети, откройте приложение один раз и дождитесь загрузки — '
+        + 'дальше оно работает без сети.');
+      return;
+    }
+  }
+
+  const { createTraining } = await import('./train.js');
+  await training?.stop();
+  show('run');
+  runsInRow++;
+  training = createTraining({
+    canvas: $('runCanvas'),
+    video: $('runVideo'),
+    skeleton: $('runSkeleton'),
+    field: $('runField'),
+    fieldMark: $('runFieldMark'),
+    onHud: renderRunHud,
+  });
+  renderRunHud({ stage: 'setup', score: 0 });
+  await training.start({ source: want.source, script: want.script });
+}
+
 $('goTrain').onclick = async () => {
   $('goTrain').disabled = true;
   try {
-    const { wantedSource } = await import('./pose.js');
-    const want = wantedSource();
-
-    if (want.source === 'camera') {
-      // Комплект проверяется до запуска. Наполовину закэшированная модель не
-      // даёт ошибки сети — она даёт молчаливый abort внутри wasm, и по
-      // симптому это неотличимо от дефекта кода.
-      const { checkVendor } = await import('./vendor.js');
-      const v = await checkVendor();
-      log.event('offline.check', {
-        ok: v.ok, skipped: v.skipped || null,
-        missing: v.missing?.length || 0, wrong: v.wrongSize?.length || 0,
-      });
-      if (!v.ok) {
-        showSoon('Нужен интернет один раз',
-          'Распознавание движений скачалось не полностью, поэтому тренировка пока не запустится. '
-          + 'Подключитесь к сети, откройте приложение один раз и дождитесь загрузки — '
-          + 'дальше оно работает без сети.');
-        return;
-      }
-    }
-
-    const { createTraining } = await import('./train.js');
-    show('run');
-    training = createTraining({
-      canvas: $('runCanvas'),
-      video: $('runVideo'),
-      skeleton: $('runSkeleton'),
-      field: $('runField'),
-      fieldMark: $('runFieldMark'),
-      onHud: renderRunHud,
-    });
-    renderRunHud({ stage: 'setup', score: 0 });
-    await training.start({ source: want.source, script: want.script });
+    runsInRow = 0;
+    restSuggested = false;
+    await startTraining();
   } catch (e) {
     // Ошибку надо показать, а не проглотить: на телефоне консоли нет, и
     // «ничего не произошло» — худший из возможных ответов.
@@ -322,6 +361,20 @@ $('goTrain').onclick = async () => {
   } finally {
     $('goTrain').disabled = false;
   }
+};
+
+$('runAgain').onclick = async () => {
+  if (!training) return;
+  restSuggested = false;
+  await startTraining();
+};
+
+$('runDone').onclick = async () => {
+  runsInRow = 0;
+  restSuggested = false;
+  await training?.stop();
+  training = null;
+  show('menu');
 };
 
 $('runExit').onclick = async () => {

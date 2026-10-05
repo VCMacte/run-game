@@ -8,7 +8,7 @@
 // телеграфа пока нет: ребёнок обнаруживает, что вид едет за его телом, а мы
 // снимаем числа, от которых зависит всё остальное.
 
-import { SIGNALS as S, VIEW, POSE, OBSTACLES as O } from './config.js';
+import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
@@ -41,6 +41,9 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let score = 0;
   let invulnUntil = 0;
   let flash = 0;
+  let durationS = 240;
+  let hits = 0;
+  let result = null;
   let lastFrame = 0;
   let pauseWhy = null;
   let countdownUntil = 0;
@@ -90,7 +93,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   }
 
   function hud(extra = {}) {
-    onHud?.({ stage, run, why: pauseWhy, score, setupOk, ...extra });
+    onHud?.({
+      stage, run, why: pauseWhy, score, setupOk,
+      progress: durationS ? Math.min(1, elapsed / durationS) : 0,
+      ...extra,
+    });
   }
 
   function goStage(next) {
@@ -98,13 +105,17 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     stage = next;
     if (next === 'calibrate') calibrator = makeCalibration();
     if (next === 'free') {
-      stars = makeStars();
-      obstacles = makeLevel({ crouch: settings.get('crouch') });
+      durationS = settings.get('runLength') || 240;
+      stars = makeStars(Math.ceil(durationS * VIEW.speed / 3.5));
+      obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
       travel = 0;
       elapsed = 0;
       score = 0;
+      hits = 0;
+      result = null;
       invulnUntil = 0;
       run = RUN.running;
+      log.event('run.start', { durationS, obstacles: obstacles.length, stars: stars.length });
     }
     hud();
   }
@@ -239,8 +250,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       if (run === RUN.running) {
         travel += VIEW.speed * dt;
         // Время забега идёт только пока бежим: на паузе препятствия не
-        // должны проезжать мимо ребёнка, которого нет в кадре.
+        // должны проезжать мимо ребёнка, которого нет в кадре, — и финиш не
+        // должен приближаться, пока он вышел попить воды.
         elapsed += dt;
+        if (elapsed >= durationS) finish();
       }
     }
 
@@ -272,13 +285,19 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     flash = Math.max(0, flash - dt * 2.2);
     view.render({
       u, v, travel, stars, obstacles, elapsed,
+      finishIn: stage === 'free' ? durationS - elapsed : null,
       safe: lastSafe,
       pulse: (now / 220) % 2 < 1 ? 1 : 0,
       dim: Math.min(1, dim + flash),
     });
     if (skeleton && !skeleton.parentElement?.hidden) drawSkeleton(skeleton, lastLm, lastOk);
     if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
-    if (now - health.since > 1000) flushHealth(now);
+    if (now - health.since > 1000) {
+      flushHealth(now);
+      // Полоса до финиша — единственное в HUD, что меняется само по себе.
+      // Обновлять её каждый кадр незачем, раз в секунду достаточно.
+      if (stage === 'free') hud();
+    }
   }
 
   /* Препятствия: телеграф, столкновение и окно прощения.
@@ -309,7 +328,16 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       }
 
       // Пока препятствие в последней секунде, его состояние правит подсветку.
-      if (dt <= O.lastCallS && dt > 0) lastSafe = safe;
+      // И звучит один раз: подтверждение, если стоишь правильно, или
+      // предупреждение, если нет. Подтверждение не менее важно — в первом
+      // лице нет персонажа, по которому видно, достаточно ли ты ушёл.
+      if (dt <= O.lastCallS && dt > 0) {
+        lastSafe = safe;
+        if (!ob.calledAt) {
+          ob.calledAt = now;
+          audio.play(safe ? 'ready' : 'warn');
+        }
+      }
 
       if (dt > 0) continue;
 
@@ -327,6 +355,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         const counted = now > invulnUntil;
         if (counted) {
           ob.hit = true;
+          hits++;
           score = Math.max(0, score - O.starsLost);
           invulnUntil = now + O.invulnMs;
           flash = 0.5;
@@ -340,6 +369,28 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         });
       }
     }
+  }
+
+  /* Финиш. Забег кончается по времени, а не по числу препятствий: ребёнку
+     обещана полоса прогресса, и она должна дойти до конца ровно тогда, когда
+     показывает. */
+  function finish() {
+    const stars = score;
+    result = {
+      stars,
+      hits,
+      durationS,
+      // Похвала всегда положительная и всегда разная по степени, но никогда
+      // не отрицательная: проигрыша в этой игре нет, и экран результата не
+      // место, где он появится.
+      praise: hits === 0 ? 'Ни разу не задел!'
+        : stars >= hits * 4 ? 'Отличный забег!'
+          : 'Добежал!',
+    };
+    stage = 'result';
+    log.event('run.finish', { stars, hits, durationS: Math.round(durationS) });
+    audio.play('finish');
+    hud({ result });
   }
 
   function flushHealth(now) {
@@ -369,6 +420,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     get run() { return run; },
     get score() { return score; },
     get why() { return pauseWhy; },
+    get result() { return result; },
     get source() { return source; },
 
     /** Вручную шагнуть со стадии установки дальше. */

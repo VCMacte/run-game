@@ -16,7 +16,8 @@
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
 
-import { VIEW, OBSTACLES as O } from './config.js';
+// FIN, а не F: F здесь уже занято фокусным расстоянием.
+import { VIEW, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { clamp } from './util.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
@@ -42,6 +43,8 @@ const COLORS = {
   gap: '#4fd6a0',
   signal: '#ffb02e',
   rail: '#ffffff',
+  finish: '#ffd34d',
+  finishDark: '#b8912c',
 };
 
 const W = VIEW.width;
@@ -116,7 +119,8 @@ export function createView(canvas) {
      * `u` — боковое смещение тела в долях торса, `v` — присед, оба уже
      * сглажены и предсказаны: сюда приходит то, что надо показать сейчас.
      */
-    render({ u = 0, v = 0, travel = 0, stars = [], dim = 0, obstacles = [], elapsed = 0, safe = true, pulse = 0 }) {
+    render({ u = 0, v = 0, travel = 0, stars = [], dim = 0, obstacles = [],
+             elapsed = 0, safe = true, pulse = 0, finishIn = null }) {
       const cam = camera(u, v);
 
       ctx.fillStyle = COLORS.sky;
@@ -175,6 +179,13 @@ export function createView(canvas) {
         ctx.lineTo(d.sx, d.sy);
         ctx.closePath();
         ctx.fill();
+      }
+
+      // ── финиш ──
+      // Рисуется до препятствий: ворота стоят дальше них и не должны лезть
+      // поверх того, что ближе.
+      if (finishIn != null && finishIn <= FIN.visibleS) {
+        drawFinish(ctx, cam, Math.max(finishIn, 0) * VIEW.speed, { project, quad, pulse });
       }
 
       // ── препятствия и телеграф ──
@@ -326,6 +337,32 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
       );
     }
   }
+}
+
+/**
+ * Ворота финиша.
+ *
+ * Две стойки и перекладина, жёлтым — цветом звёзд, а не проёма: проём значит
+ * «сюда можно», а ворота значат «всё, добежал», и путать эти два сообщения
+ * нельзя. На подходе перекладина мигает: это единственное место в игре, где
+ * мигание уместно — оно обещает конец, а не требует реакции.
+ */
+function drawFinish(ctx, cam, z, { project, quad, pulse }) {
+  if (z < 0.4) return;
+  const w = FIN.postWidth;
+  const h = FIN.gateHeight;
+  const post = (x0, x1) => quad(
+    project(x0, 0, z, cam), project(x1, 0, z, cam),
+    project(x1, h, z, cam), project(x0, h, z, cam),
+    COLORS.finishDark,
+  );
+  post(-HALF, -HALF + w);
+  post(HALF - w, HALF);
+  quad(
+    project(-HALF, h, z, cam), project(HALF, h, z, cam),
+    project(HALF, h - w, z, cam), project(-HALF, h - w, z, cam),
+    z < 10 && pulse > 0.5 ? COLORS.finish : COLORS.finishDark,
+  );
 }
 
 /** Где кончается препятствие и начинается проём. Связано с ходом камеры. */
