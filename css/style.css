@@ -132,6 +132,16 @@ button.ghost {
   color: var(--fg);
   box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--dim);
 }
+
+/* Второстепенная кнопка — заливкой, а не рамкой. Прозрачная с тонким
+   контуром на телевизоре после сжатия выглядит не как кнопка, а как
+   пустое место: контур Miracast съедает первым. Отличается от главной
+   светлотой, а не только тоном — цветность режется сильнее светлоты. */
+button.secondary {
+  background: #39415c;
+  color: var(--fg);
+  box-shadow: 0 calc(var(--u) * 0.8) 0 rgba(0, 0, 0, 0.45);
+}
 button.big {
   font-size: calc(var(--u) * 5.4);
   padding: calc(var(--u) * 4) calc(var(--u) * 5);
