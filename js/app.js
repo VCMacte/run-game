@@ -120,14 +120,12 @@ $('installHint').hidden = installedApp;
    полный экран, ориентация, бодрый экран. Камера появится здесь же, когда
    будет распознавание позы: разрешение надо просить тем же единственным
    жестом, а не вторым отдельным. */
-$('start').onclick = async () => {
-  $('start').disabled = true;
-  await requestFullscreen();
-  keepFullscreen();
-  await keepScreenAwake();
-  updateStatus();
+$('start').onclick = () => {
+  // Запускаем цепочку и сразу уходим в меню, не дожидаясь её. Ждать нельзя:
+  // полный экран отвечает до трёх секунд, а на эти три секунды кнопка
+  // выглядела бы сломанной — ребёнок нажал бы ещё раз и ещё.
+  requestFullscreen().then(keepFullscreen).then(keepScreenAwake).then(updateStatus);
   show('menu');
-  $('start').disabled = false;
 };
 
 $('goTrain').onclick = () => showSoon('Тренировка',
