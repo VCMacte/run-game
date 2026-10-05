@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v13';
+const CACHE = 'run-v14';
 const ASSETS = [
   './',
   './index.html',
@@ -13,9 +13,11 @@ const ASSETS = [
   './icons/icon-512-maskable.png',
   './icons/icon-512.png',
   './js/app.js',
+  './js/calibrate.js',
   './js/config.js',
   './js/log.js',
   './js/settings.js',
+  './js/signals.js',
   './js/text.js',
   './js/util.js',
   './js/vendor.js',

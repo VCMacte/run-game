@@ -32,10 +32,17 @@ export const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 /** Линейная интерполяция. */
 export const lerp = (a, b, t) => a + (b - a) * t;
 
-export const isDev = ['localhost', '127.0.0.1'].includes(location.hostname);
+/* Проверки на `location` здесь не перестраховка: эти модули импортируются
+   тестами в node, где ни location, ни URLSearchParams над адресом нет. Вся
+   математика обязана оставаться запускаемой без браузера — ради этого и
+   затевалось разделение на чистые модули. */
+export const isDev = typeof location !== 'undefined'
+  && ['localhost', '127.0.0.1'].includes(location.hostname);
 
 /** Параметры адреса: ?fake=walk, ?pipeline=bitmap — ручки для отладки. */
-export const flag = (name) => new URLSearchParams(location.search).get(name);
+export const flag = (name) => (typeof location === 'undefined'
+  ? null
+  : new URLSearchParams(location.search).get(name));
 
 /** Медиана и процентиль по небольшому массиву. Нужны для сводок здоровья. */
 export function quantile(xs, q) {
