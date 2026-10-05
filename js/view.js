@@ -49,7 +49,11 @@ const HORIZON = H * 0.46;
  * источник укачивания, а непрерывная панорама на 55 дюймах и так риск.
  */
 export function camera(u = 0, v = 0) {
-  const un = clamp(u, -1.5, 1.5);
+  // Мёртвая зона: в покое распознавание всё равно дрожит на сотые доли, и без
+  // неё стены мелко шевелятся даже у неподвижного ребёнка.
+  const dead = VIEW.viewDeadband;
+  const squelch = (x) => (Math.abs(x) < dead ? 0 : x - Math.sign(x) * dead);
+  const un = clamp(squelch(u), -1.5, 1.5);
   const vn = clamp(v, 0, 0.6);
   return {
     x: un * VIEW.panGain * HALF,
@@ -137,6 +141,10 @@ export function createView(canvas) {
       const phase = travel % step;
       ctx.fillStyle = COLORS.line;
       for (let z = NEAR + step - phase; z < far; z += step) {
+        // У горизонта линии сходятся плотнее пикселя и начинают мерцать —
+        // это чистая резь в глазах без единой крупицы пользы. Расстояние
+        // между соседними линиями на экране ≈ F * step / z².
+        if (F * step / (z * z) < VIEW.lineMinGapPx) break;
         const thick = clamp(0.06 * (far - z) / far + 0.02, 0.02, 0.1);
         const a = project(-HALF, 0, z, cam);
         const b = project(HALF, 0, z, cam);

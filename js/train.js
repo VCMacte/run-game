@@ -9,7 +9,7 @@
 // снимаем числа, от которых зависит всё остальное.
 
 import { SIGNALS as S, VIEW, POSE, CAMERA } from './config.js';
-import { makeTracker, predict, geometry } from './signals.js';
+import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
@@ -37,14 +37,42 @@ export function createTraining({ canvas, video, onHud }) {
   let countdownUntil = 0;
   let setupOk = false;
 
-  // Последняя поза и момент её прихода: между отсчётами панорама живёт
-  // предсказанием, иначе 20 Гц в 60 fps дают по три одинаковых кадра.
-  let last = { u: 0, v: 0, speed: 0, t: 0 };
+  // Последняя поза — цель, за которой взгляд едет непрерывно. Именно
+  // непрерывно: экстраполяция по скорости, стоявшая здесь раньше, давала
+  // разрыв на каждом новом отсчёте, и вид дёргался двадцать раз в секунду.
+  let last = { u: 0, v: 0, t: 0 };
+  const followU = makeFollower(VIEW.followMs);
+  const followV = makeFollower(VIEW.followMs);
   let dim = 0;
 
   // Сводка здоровья копится секунду и уходит одним событием: писать каждую
   // позу — 24 МБ за сессию при потолке 25.
   const health = { frames: 0, poses: 0, ok: 0, infer: [], dropped: 0, since: 0, vis: 0, S: 0 };
+
+  /* Запись сырых точек скелета — для фикстур.
+     По умолчанию выключена и включается через ?record=1: на 20 Гц это около
+     полумегабайта за полминуты, а весь потолок журнала — 25 МБ. Пишется
+     пачками по двадцать отсчётов, иначе одних только заголовков событий
+     набежало бы больше, чем самих данных. Уходит обычной выгрузкой журнала —
+     отдельной кнопки не нужно.
+
+     Эти записи проверяют всё, что происходит ПОСЛЕ MediaPipe, и это
+     единственный способ тестировать распознавание, не держа ребёнка и камеру
+     в цикле. */
+  const recording = flag('record') !== null;
+  let batch = [];
+
+  function recordSkeleton(sample, now) {
+    if (!sample.lm) return;
+    const row = new Array(133);
+    row[0] = Math.round(now);
+    for (let i = 0; i < 132; i++) row[i + 1] = Math.round(sample.lm[i] * 1000) / 1000;
+    batch.push(row);
+    if (batch.length >= 20) {
+      log.event('skeleton', { n: batch.length, rows: batch });
+      batch = [];
+    }
+  }
 
   function hud(extra = {}) {
     onHud?.({ stage, run, why: pauseWhy, score, setupOk, ...extra });
@@ -70,6 +98,7 @@ export function createTraining({ canvas, video, onHud }) {
     health.poses++;
     health.dropped += sample.dropped || 0;
     if (sample.inferMs) health.infer.push(sample.inferMs);
+    if (recording) recordSkeleton(sample, now);
 
     if (stage === 'setup') return onSetup(sample, now);
     if (stage === 'calibrate') return onCalibrate(sample, now);
@@ -118,7 +147,7 @@ export function createTraining({ canvas, video, onHud }) {
       health.ok++;
       health.vis += rec.vis;
       health.S += rec.S;
-      last = { u: rec.u, v: rec.v, speed: rec.speed, t: now };
+      last = { u: rec.u, v: rec.v, t: now };
       if (run === RUN.paused) beginCountdown(now);
       if (rec.laneChanged) {
         log.event('gesture', {
@@ -184,10 +213,10 @@ export function createTraining({ canvas, video, onHud }) {
       if (run === RUN.running) travel += VIEW.speed * dt;
     }
 
-    // Панорама живёт предсказанием между отсчётами: интерполировать между ними
-    // нельзя — это добавило бы целый период задержки единственному сигналу,
-    // который мы обещали отдавать сразу.
-    const u = predict(last.u, last.speed, now - last.t);
+    // Взгляд догоняет тело кадр за кадром. Непрерывно по построению —
+    // разрывов, от которых тряслись стены, здесь быть не может.
+    const u = followU.step(last.u, dt);
+    const v = followV.step(last.v, dt);
     const moving = stage === 'free' && run === RUN.running;
     dim += ((moving ? 0 : 0.55) - dim) * Math.min(1, dt * 6);
 
@@ -197,20 +226,20 @@ export function createTraining({ canvas, video, onHud }) {
         const z = s.z - travel;
         // Правило дотягивания живёт в одном месте вместе с отрисовкой: две
         // копии разошлись бы, и звёзды собирались бы не там, где их видно.
-        if (z > 0 && z < 1.2 && canReach(s.x, u.value)) {
+        if (z > 0 && z < 1.2 && canReach(s.x, u)) {
           s.taken = true;
           score++;
-          log.event('star', { side: Math.sign(s.x), u: round(u.value) });
+          log.event('star', { side: Math.sign(s.x), u: round(u) });
           hud();
         }
       }
     }
 
-    view.render({ u: u.value, v: last.v, travel, stars, dim });
-    if (now - health.since > 1000) flushHealth(now, u.clamped);
+    view.render({ u, v, travel, stars, dim });
+    if (now - health.since > 1000) flushHealth(now);
   }
 
-  function flushHealth(now, clamped) {
+  function flushHealth(now) {
     const span = (now - health.since) / 1000;
     health.since = now;
     if (!span || !health.frames) return;
@@ -227,7 +256,6 @@ export function createTraining({ canvas, video, onHud }) {
       p95: infer.length ? Math.round(infer[Math.floor(infer.length * 0.95)]) : 0,
       u: round(last.u),
       v: round(last.v),
-      clamped: clamped ? 1 : 0,
     });
     health.frames = 0; health.poses = 0; health.ok = 0; health.dropped = 0;
     health.vis = 0; health.S = 0; health.infer = [];
@@ -280,6 +308,7 @@ export function createTraining({ canvas, video, onHud }) {
     async stop() {
       cancelAnimationFrame(raf);
       raf = 0;
+      if (batch.length) { log.event('skeleton', { n: batch.length, rows: batch }); batch = []; }
       await pose.stop();
       if (video) video.srcObject = null;
       source = null;

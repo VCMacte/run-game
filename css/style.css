@@ -229,11 +229,11 @@ button.big small {
   background: #000;
   box-shadow: 0 0 0 calc(var(--u) * 0.6) var(--dim);
 }
+/* В углу — слева: справа внизу живёт «Выйти», и они бы налезли друг на друга. */
 #runPreview.corner {
-  left: auto;
+  left: var(--safe);
   top: auto;
-  right: var(--safe);
-  bottom: calc(var(--safe) * 2.4);
+  bottom: calc(var(--safe) * 1.2);
   transform: none;
   width: 22%;
 }
