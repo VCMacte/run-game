@@ -9,7 +9,7 @@
 import { makeTracker, makeOneEuro, geometry, predict } from './js/signals.js';
 import { makeCalibration, STAGES, CLAMP, isStale } from './js/calibrate.js';
 import { SIGNALS as S, VIEW } from './js/config.js';
-import { camera, project, vanishX, horizonY, cameraX } from './js/view.js';
+import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 
 let failed = 0;
 let passed = 0;
@@ -321,6 +321,25 @@ group('вид', () => {
   // Дальше крайних значений вид не уезжает: иначе на дрожании распознавания
   // картинку швыряло бы за пределы коридора.
   check('панорама зажата по величине', camera(5, 0).yaw === camera(1.5, 0).yaw);
+});
+
+group('звёзды', () => {
+  // Вся ценность игры в том, что ребёнок двигается. Если боковую звезду можно
+  // собрать стоя столбом, игра превращается в заставку — и именно это и
+  // обнаружилось при первом прогоне: допуск был шире, чем ход панорамы.
+  const stars = makeStars();
+  const side = stars.find((s) => s.x > 0).x;
+  const middle = stars.find((s) => s.x === 0).x;
+
+  check('боковую звезду стоя посередине не достать', !canReach(side, 0),
+    `звезда на ${side.toFixed(2)} м, взгляд на ${cameraX(0).toFixed(2)} м`);
+  check('сместившись — достать', canReach(side, 1),
+    `взгляд уходит на ${cameraX(1).toFixed(2)} м`);
+  check('в другую сторону — не достать', !canReach(side, -1));
+
+  check('центральную звезду достать стоя посередине', canReach(middle, 0));
+  check('а сместившись — уже нет', !canReach(middle, 1),
+    'иначе можно висеть в одном положении и собирать всё подряд');
 });
 
 // ───────────────────────── калибровка ─────────────────────────

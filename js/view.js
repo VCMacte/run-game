@@ -159,7 +159,7 @@ export function createView(canvas) {
       for (const s of stars) {
         const z = s.z - travel;
         if (z < NEAR || z > far) continue;
-        const p = project(s.x, 1.0, z, cam);
+        const p = project(s.x, VIEW.starY, z, cam);
         const r = Math.max(3, p.scale * 0.16);
         ctx.fillStyle = s.taken ? COLORS.starDim : COLORS.star;
         ctx.beginPath();
@@ -191,6 +191,15 @@ export function createView(canvas) {
 export const cameraX = (u) => camera(u, 0).x;
 
 /**
+ * Дотянется ли ребёнок до звезды при таком смещении.
+ *
+ * Отдельной функцией, потому что это игровое правило, а не деталь
+ * отрисовки: оно решает, надо ли вообще двигаться, чтобы собирать звёзды.
+ * Проверяется в node.
+ */
+export const canReach = (starX, u) => Math.abs(starX - cameraX(u)) < VIEW.starReach;
+
+/**
  * Раскладка звёзд.
  *
  * Висят в боковых третях коридора: главная ценность игры в том, что ребёнок
@@ -200,7 +209,7 @@ export function makeStars(count = 40, from = 6, step = 3.5) {
   const stars = [];
   for (let i = 0; i < count; i++) {
     const side = i % 3 === 0 ? 0 : (i % 2 ? -1 : 1);
-    stars.push({ x: side * HALF * 0.62, z: from + i * step, taken: false });
+    stars.push({ x: side * HALF * VIEW.starX, z: from + i * step, taken: false });
   }
   return stars;
 }

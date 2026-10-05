@@ -10,7 +10,7 @@
 
 import { SIGNALS as S, VIEW, POSE } from './config.js';
 import { makeTracker, predict } from './signals.js';
-import { createView, makeStars, cameraX } from './view.js';
+import { createView, makeStars, canReach } from './view.js';
 import { clamp, round } from './util.js';
 import * as pose from './pose.js';
 import * as log from './log.js';
@@ -129,9 +129,9 @@ export function createTraining({ canvas, onHud }) {
       if (s.taken) continue;
       const z = s.z - travel;
       if (z > 0 && z < 1.2) {
-        // Та же формула, что и в отрисовке — через общий cameraX: две копии
-        // разошлись бы, и звёзды собирались бы не там, где их видно.
-        if (Math.abs(s.x - cameraX(u.value)) < VIEW.corridorWidth * 0.33) {
+        // Правило дотягивания живёт в одном месте вместе с отрисовкой: две
+        // копии разошлись бы, и звёзды собирались бы не там, где их видно.
+        if (canReach(s.x, u.value)) {
           s.taken = true;
           score++;
           log.event('star', { side: Math.sign(s.x), u: round(u.value) });
