@@ -33,8 +33,22 @@ function layout() {
   root.setProperty('--vh', `${h}px`);
   root.setProperty('--u', `${Math.min(w, h) / 100}px`);
 }
+/* Канвас скелета живёт поверх видео и обязан совпадать с ним по размеру.
+   Размер считается от разметки, а не от камеры: кадр камеры может быть
+   каким угодно, а окошко всегда 16:9. */
+function sizeSkeleton() {
+  const box = $('runPreview');
+  const cv = $('runSkeleton');
+  if (!box || !cv) return;
+  const r = box.getBoundingClientRect();
+  if (!r.width) return;
+  cv.width = Math.round(r.width);
+  cv.height = Math.round(r.height);
+}
+
 layout();
-addEventListener('resize', layout);
+sizeSkeleton();
+addEventListener('resize', () => { layout(); sizeSkeleton(); });
 addEventListener('orientationchange', layout);
 window.visualViewport?.addEventListener('resize', layout);
 
@@ -173,8 +187,25 @@ function renderRunHud(h = {}) {
   $('runScore').textContent = score;
   $('runHud').hidden = stage !== 'free';
   overlay.classList.toggle('setup', stage === 'setup');
-  $('runPreview').hidden = stage === 'free';
+
+  /* Окошко камеры. На установке и калибровке оно нужно всегда — там без него
+     непонятно, видит ли игра ребёнка вообще. Во время движения им управляет
+     взрослый: пока ребёнок привыкает к границам поля, окошко помогает, а
+     когда привыкнет — это лишний предмет на телевизоре.
+
+     Полоска поля дешевле окошка по вниманию и отвечает на главный вопрос
+     «я ещё в кадре?», поэтому у неё отдельный, средний вариант. */
+  const want = settings.get('preview');
+  const inGame = stage === 'free';
+  const showPreview = !inGame || want === 'on';
+  const showField = !inGame ? false : want !== 'off';
+
+  $('runPreview').hidden = !showPreview;
   $('runPreview').classList.toggle('corner', stage === 'calibrate');
+  $('runPreview').classList.toggle('watch', inGame);
+  $('runField').hidden = !showField;
+  $('runSilhouette').hidden = inGame;
+  if (showPreview) sizeSkeleton();
 
   if (stage === 'setup') {
     // Экран для взрослого: его читают через комнату, поэтому числа крупные,
@@ -255,7 +286,14 @@ $('goTrain').onclick = async () => {
 
     const { createTraining } = await import('./train.js');
     show('run');
-    training = createTraining({ canvas: $('runCanvas'), video: $('runVideo'), onHud: renderRunHud });
+    training = createTraining({
+      canvas: $('runCanvas'),
+      video: $('runVideo'),
+      skeleton: $('runSkeleton'),
+      field: $('runField'),
+      fieldMark: $('runFieldMark'),
+      onHud: renderRunHud,
+    });
     renderRunHud({ stage: 'setup', score: 0 });
     await training.start({ source: want.source, script: want.script });
   } catch (e) {
@@ -302,6 +340,7 @@ const PARENT_ROWS = [
   ['setSpeed', 'speedV', 'speed'],
   ['setCrouch', 'crouchV', 'crouch'],
   ['setSound', 'soundV', 'sound'],
+  ['setPreview', 'previewV', 'preview'],
 ];
 
 function renderParent() {

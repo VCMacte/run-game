@@ -13,13 +13,14 @@ import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
+import { drawSkeleton, updateField } from './preview.js';
 import { round, flag } from './util.js';
 import * as pose from './pose.js';
 import * as log from './log.js';
 
 const RUN = { running: 'running', paused: 'paused', countdown: 'countdown' };
 
-export function createTraining({ canvas, video, onHud }) {
+export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud }) {
   const view = createView(canvas);
   let tracker = null;
   let source = null;
@@ -41,6 +42,12 @@ export function createTraining({ canvas, video, onHud }) {
   // непрерывно: экстраполяция по скорости, стоявшая здесь раньше, давала
   // разрыв на каждом новом отсчёте, и вид дёргался двадцать раз в секунду.
   let last = { u: 0, v: 0, t: 0 };
+  // Последняя поза как есть — для окошка камеры. Рисуется она в кадре, а не
+  // в приходе отсчёта: иначе скелет мигал бы на 20 Гц поверх видео, идущего
+  // на 30, и выглядело бы это хуже, чем отсутствие скелета.
+  let lastLm = null;
+  let lastOk = false;
+  let lastCx = null;
   const followU = makeFollower(VIEW.followMs);
   const followV = makeFollower(VIEW.followMs);
   let dim = 0;
@@ -100,6 +107,7 @@ export function createTraining({ canvas, video, onHud }) {
     if (sample.inferMs) health.infer.push(sample.inferMs);
     if (recording) recordSkeleton(sample, now);
 
+    lastLm = sample.lm;
     if (stage === 'setup') return onSetup(sample, now);
     if (stage === 'calibrate') return onCalibrate(sample, now);
     return onFree(sample, now);
@@ -107,6 +115,8 @@ export function createTraining({ canvas, video, onHud }) {
 
   function onSetup(sample, now) {
     const g = sample.lm ? geometry(sample.lm) : null;
+    lastOk = !!g && g.vis >= S.visMin;
+    lastCx = g ? g.cx : null;
     const f = framing(source?.settings, g);
     setupOk = !!g && f.ok && g.vis >= S.visMin;
     if (g) { health.ok++; health.vis += g.vis; health.S += g.S; }
@@ -119,6 +129,9 @@ export function createTraining({ canvas, video, onHud }) {
   }
 
   function onCalibrate(sample, now) {
+    const g = sample.lm ? geometry(sample.lm) : null;
+    lastOk = !!g && g.vis >= S.visMin;
+    lastCx = g ? g.cx : null;
     const r = calibrator.push(sample.lm, now);
     if (r.done) {
       calibration = r.result;
@@ -143,6 +156,8 @@ export function createTraining({ canvas, video, onHud }) {
 
   function onFree(sample, now) {
     const rec = tracker.push({ lm: sample.lm, t: now });
+    lastOk = rec.ok;
+    lastCx = rec.cx ?? null;
     if (rec.ok) {
       health.ok++;
       health.vis += rec.vis;
@@ -236,6 +251,8 @@ export function createTraining({ canvas, video, onHud }) {
     }
 
     view.render({ u, v, travel, stars, dim });
+    if (skeleton && !skeleton.parentElement?.hidden) drawSkeleton(skeleton, lastLm, lastOk);
+    if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
     if (now - health.since > 1000) flushHealth(now);
   }
 

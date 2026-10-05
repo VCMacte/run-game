@@ -52,7 +52,16 @@
          калибровке — чтобы было видно, что игра его действительно видит. -->
     <div id="runPreview" hidden>
       <video id="runVideo" playsinline muted></video>
+      <canvas id="runSkeleton"></canvas>
       <div id="runSilhouette"></div>
+    </div>
+
+    <!-- Полоса игрового поля: вся ширина, которую видит камера, и где на ней
+         ребёнок. По ней видно край пространства, не вглядываясь в окошко. -->
+    <div id="runField" hidden>
+      <div class="zone"></div>
+      <div id="runFieldMark"></div>
+      <div id="runFieldHint"></div>
     </div>
 
     <div id="runHud">
@@ -88,6 +97,7 @@
         <button id="setSpeed" class="ghost">Скорость: <span id="speedV"></span></button>
         <button id="setCrouch" class="ghost">Приседания: <span id="crouchV"></span></button>
         <button id="setSound" class="ghost">Звук: <span id="soundV"></span></button>
+        <button id="setPreview" class="ghost">Окошко камеры: <span id="previewV"></span></button>
       </div>
     </div>
     <div class="card">

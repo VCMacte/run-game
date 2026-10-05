@@ -11,6 +11,7 @@ import { makeCalibration, STAGES, CLAMP, isStale } from './js/calibrate.js';
 import { SIGNALS as S, VIEW } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
+import { fieldPosition } from './js/preview.js';
 
 let failed = 0;
 let passed = 0;
@@ -438,6 +439,31 @@ group('звёзды', () => {
   check('центральную звезду достать стоя посередине', canReach(middle, 0));
   check('а сместившись — уже нет', !canReach(middle, 1),
     'иначе можно висеть в одном положении и собирать всё подряд');
+});
+
+// ──────────────────── окошко камеры и поле ────────────────────
+
+group('игровое поле', () => {
+  // Полоса показывает ребёнку край пространства, которое видит камера.
+  // Зеркалит: камера смотрит спереди, и без зеркала шаг влево уезжал бы на
+  // полосе вправо — подсказка, поставленная ради понимания, путала бы.
+  const mid = fieldPosition(0.5);
+  check('центр кадра — центр полосы', Math.abs(mid.x - 0.5) < 1e-9);
+  check('в центре край не грозит', !mid.nearEdge && !mid.outside);
+
+  const childLeft = fieldPosition(0.75);  // ребёнок шагнул влево → в кадре вправо
+  check('шаг ребёнка влево двигает отметку влево', childLeft.x < 0.5,
+    `отметка на ${childLeft.x.toFixed(2)}`);
+  const childRight = fieldPosition(0.25);
+  check('шаг вправо — вправо', childRight.x > 0.5);
+
+  const edge = fieldPosition(0.04);
+  check('у самого края — «вышел»', edge.outside);
+  const near = fieldPosition(0.12);
+  check('на подходе к краю — предупреждение', near.nearEdge && !near.outside,
+    'предупредить надо до того, как игра встанет на паузу, а не вместе с ней');
+
+  check('без позы поле считает, что ребёнка нет', fieldPosition(null).outside);
 });
 
 // ───────────────────────── калибровка ─────────────────────────

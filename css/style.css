@@ -237,7 +237,63 @@ button.big small {
   transform: none;
   width: 22%;
 }
-#runVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Зеркалим: камера смотрит на ребёнка спереди, и без зеркала его шаг влево
+   уезжал бы на окошке вправо. Окошко, поставленное ради понимания, добавляло
+   бы путаницы. Скелет зеркалится в коде, тем же способом. */
+#runVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1);
+}
+#runSkeleton { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Во время игры окошко маленькое и в углу: оно подсказка, а не зрелище. */
+#runPreview.watch {
+  left: var(--safe);
+  top: auto;
+  bottom: calc(var(--safe) * 4.6);
+  transform: none;
+  width: 17%;
+  opacity: 0.9;
+}
+
+/* ─── полоса игрового поля ─── */
+
+#runField {
+  position: absolute;
+  left: var(--safe);
+  bottom: calc(var(--safe) * 1.4);
+  width: 17%;
+  height: calc(var(--u) * 3.4);
+  border-radius: calc(var(--u) * 1.7);
+  background: #1b2237;
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.35) var(--dim);
+  overflow: hidden;
+}
+/* Безопасная зона — та часть кадра, где игра уверенно видит ребёнка. */
+#runField .zone {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 0;
+  bottom: 0;
+  background: #23406b;
+}
+#runFieldMark {
+  position: absolute;
+  top: 50%;
+  width: calc(var(--u) * 2.6);
+  height: calc(var(--u) * 2.6);
+  margin-left: calc(var(--u) * -1.3);
+  margin-top: calc(var(--u) * -1.3);
+  border-radius: 50%;
+  background: var(--ok);
+}
+#runField.near #runFieldMark { background: var(--warn); }
+#runField.lost { box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--warn); }
+#runField.lost #runFieldMark { background: var(--bad); }
 
 /* Силуэт-цель: куда встать ребёнку. Пунктир пережил бы сжатие хуже сплошной
    рамки, поэтому рамка сплошная и толстая. */
