@@ -16,14 +16,19 @@ import * as log from './log.js';
  * Последняя ступень — `true`, то есть «хоть что-нибудь»: отказ открыть камеру
  * вовсе хуже, чем неудобное разрешение, которое хотя бы видно в журнале.
  */
-export async function openCamera({ attempt = 1 } = {}) {
+export async function openCamera({ attempt = 1, facing = 'user' } = {}) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('камера недоступна: нужен защищённый контекст (https или localhost)');
   }
 
   let lastError = null;
   for (let rung = 0; rung < CAMERA.ladder.length; rung++) {
-    const video = CAMERA.ladder[rung];
+    const rungSpec = CAMERA.ladder[rung];
+    // Последняя ступень — просто `true`, «хоть что-нибудь»: туда камеру уже
+    // не подставить, и это нормально, отказ открыть камеру вовсе хуже.
+    const video = rungSpec === true
+      ? true
+      : { ...rungSpec, facingMode: rung < 2 ? { ideal: facing } : facing };
     const t0 = performance.now();
     try {
       const stream = await withTimeout(
@@ -39,6 +44,7 @@ export async function openCamera({ attempt = 1 } = {}) {
       log.event('cam.open', {
         n: attempt, rung,
         askW: video?.width?.ideal ?? null, askH: video?.height?.ideal ?? null,
+        askFacing: facing,
         gotW: got.width, gotH: got.height, gotFps: Math.round(got.frameRate || 0),
         facing: got.facingMode || null,
         ms: Math.round(performance.now() - t0),

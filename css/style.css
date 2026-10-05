@@ -397,6 +397,29 @@ button.big small {
    телевизоре — мусор поверх игры, да ещё и в том углу, где и так есть HUD. */
 body:has(#run:not([hidden])) #status { display: none; }
 
+/* Подсказка о повороте. Показывается только когда экран действительно
+   вертикальный, поэтому ей всё равно, сработала блокировка ориентации или
+   нет — а она на Android срабатывает не всегда. */
+#runRotate { display: none; }
+@media (orientation: portrait) {
+  body:has(#run:not([hidden])) #runRotate {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 3);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--safe);
+    background: var(--bg);
+  }
+}
+#runRotateIcon { font-size: calc(var(--u) * 18); line-height: 1; color: var(--accent); }
+#runRotateText { font-size: calc(var(--u) * 6); }
+#runRotateHint { font-size: calc(var(--u) * 3.4); font-weight: 400; color: var(--dim); }
+
 #runExit {
   position: absolute;
   right: var(--safe);

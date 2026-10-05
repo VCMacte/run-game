@@ -79,7 +79,18 @@
         <button id="runAgain">Ещё раз</button>
         <button id="runDone" class="secondary">Вернуться в меню</button>
       </div>
+      <button id="runCamSwitch" class="secondary" hidden>Другая камера</button>
       <button id="runNext" hidden>Дальше</button>
+    </div>
+
+    <!-- Блокировка ориентации на Android работает не всегда: ей нужен
+         полноэкранный режим, а у пользователя может быть выключен автоповорот.
+         Поэтому подсказка сделана на CSS и не зависит от того, удалась ли
+         блокировка: экран вертикальный — она видна. -->
+    <div id="runRotate">
+      <div id="runRotateIcon">⟲</div>
+      <div id="runRotateText">Поверните телефон горизонтально</div>
+      <div id="runRotateHint">Если не поворачивается — включите автоповорот в шторке</div>
     </div>
 
     <button id="runExit" class="ghost">Выйти</button>

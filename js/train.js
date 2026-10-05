@@ -437,6 +437,27 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     get source() { return source; },
 
     /**
+     * Переключить камеру и перезапустить распознавание.
+     *
+     * Перезапуск нужен целиком: facingMode задаётся при открытии дорожки, и
+     * поменять его у уже открытой нельзя. Калибровка при этом сбрасывается —
+     * другая камера это другая сцена, и прежние пороги описывают уже не её.
+     */
+    async switchCamera() {
+      const next = settings.cycle('camera');
+      log.event('cam.switch', { to: settings.get('camera') });
+      calibration = null;
+      await pose.stop();
+      source = await pose.start({ source: 'camera', hz: POSE.hz, onSample });
+      if (video && source.video) {
+        video.srcObject = source.video.srcObject;
+        video.play?.().catch(() => {});
+      }
+      hud();
+      return next;
+    },
+
+    /**
      * Шаг со стадии установки дальше.
      *
      * Калибровку переигрывать каждый раз незачем: она занимает двадцать

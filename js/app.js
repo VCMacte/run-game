@@ -149,7 +149,12 @@ let previous = 'menu';
 function show(name) {
   for (const id of SCREENS) $(id).hidden = id !== name;
   if (!ADULT.has(name)) previous = name;
-  lockOrientation(ORIENTATION[name] || 'portrait');
+  /* Полный экран запрашивается перед блокировкой ориентации, а не параллельно:
+     на Android lock() без полноэкранного режима просто отказывает, и забег
+     открывается горизонтальной вёрсткой внутри вертикального экрана. Если
+     откажет и так — вместо игры покажется подсказка повернуть телефон, она на
+     CSS и от успеха блокировки не зависит. */
+  requestFullscreen().then(() => lockOrientation(ORIENTATION[name] || 'portrait'));
   log.event('screen', { name });
   // Возврат в игру из родительского меню: показать то, что настроили.
   if (name === 'run') refreshHud();
@@ -242,6 +247,12 @@ function renderRunHud(h = {}) {
   $('runResult').hidden = !onResult;
   $('runResultRow').hidden = !onResult;
 
+  /* Кнопка смены камеры живёт ровно на одном экране — установке штатива:
+     только там видно, что камера снимает. Видимость решается здесь, одним
+     выражением, а не прячется в каждой ветке: на блоке результата я уже один
+     раз так ошибся, и он оставался висеть поверх следующего забега. */
+  $('runCamSwitch').hidden = !(stage === 'setup' && source === 'camera');
+
   const want = settings.get('preview');
   const inGame = stage === 'free';
   // На установке и калибровке окошко нужно всегда, в игре — по настройке, а
@@ -264,6 +275,9 @@ function renderRunHud(h = {}) {
     numbers.hidden = false;
     $('runNext').hidden = false;
     $('runNext').textContent = setupOk ? 'Всё видно, дальше' : 'Всё равно дальше';
+    // Переключать камеру имеет смысл только здесь: это единственный экран, где
+    // видно, что она снимает. И только когда камера вообще участвует.
+    $('runCamSwitch').textContent = `Другая камера (сейчас ${settings.label('camera')})`;
     title.textContent = 'Поставьте телефон на штатив';
     text.textContent = framing?.hint || 'Ребёнок должен помещаться в рамку целиком';
     $('runSilhouette').classList.toggle('bad', !setupOk);
@@ -330,6 +344,18 @@ function renderRunHud(h = {}) {
 }
 
 $('runNext').onclick = () => training?.next();
+
+$('runCamSwitch').onclick = async () => {
+  $('runCamSwitch').disabled = true;
+  try {
+    await training?.switchCamera();
+  } catch (e) {
+    log.event('error', { where: 'switchCamera', message: String(e?.message || e) });
+    showSoon('Не получилось переключить камеру', String(e?.message || e));
+  } finally {
+    $('runCamSwitch').disabled = false;
+  }
+};
 
 /* Запуск тренировки. Общий для кнопки меню и для «ещё раз» на финише: две
    копии разошлись бы, и повторный забег однажды поехал бы с другими

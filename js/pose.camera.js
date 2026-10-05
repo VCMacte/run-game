@@ -18,6 +18,7 @@
 
 import { POSE, VENDOR } from './config.js';
 import { flag, withTimeout } from './util.js';
+import { settings } from './settings.js';
 import { openCamera, watchTrack } from './camera.js';
 import * as log from './log.js';
 
@@ -45,7 +46,7 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
   let mode = choose(probes);
   log.event('pose.boot', { pipeline: mode, probes, hzTarget: hz });
 
-  const cam = await openCamera();
+  const cam = await openCamera({ facing: settings.get('camera') });
   const video = document.createElement('video');
   video.playsInline = true;
   video.muted = true;

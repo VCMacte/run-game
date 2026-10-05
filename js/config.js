@@ -61,10 +61,12 @@ export const CAMERA = {
   // чистые потери, которые ещё и греют кодировщик Miracast. Лестница: просим
   // лучшее, спускаемся при отказе. Последняя ступень без ограничений вовсе —
   // пусть телефон даст хоть что-нибудь.
+  // facingMode подставляется снаружи: какая камера смотрит на ребёнка —
+  // решает родительское меню, а не эта таблица.
   ladder: [
-    { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30, max: 30 } },
-    { facingMode: { ideal: 'environment' }, width: { ideal: 480 }, height: { ideal: 270 }, frameRate: { ideal: 30, max: 30 } },
-    { facingMode: 'environment' },
+    { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30, max: 30 } },
+    { width: { ideal: 480 }, height: { ideal: 270 }, frameRate: { ideal: 30, max: 30 } },
+    {},
     true,
   ],
   openTimeoutMs: 20000,
