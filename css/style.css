@@ -214,6 +214,9 @@ button.big small {
 #runHud {
   position: absolute;
   inset: var(--safe);
+  /* Полоса прогресса живёт отдельной строкой сверху, поэтому содержимому
+     нужен отступ: иначе счёт налезет на неё. */
+  padding-top: calc(var(--u) * 2.6);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -224,16 +227,20 @@ button.big small {
 #runScore::before { content: '★ '; color: #ffd34d; }
 
 /* Полоса до финиша. Ребёнку обещан конец забега, и он должен быть виден:
-   «сколько ещё» — первый вопрос, который задают на третьей минуте. */
+   «сколько ещё» — первый вопрос, который задают на третьей минуте.
+
+   Но стояла она посреди HUD, между счётом и «вижу тебя», то есть ровно в поле
+   зрения — и мешала. Теперь это тонкая линия по верхнему краю кадра: видно,
+   когда ищешь глазами, и не лезет, когда смотришь на коридор. */
 #runProgress {
-  flex: 1;
-  align-self: center;
-  margin: 0 calc(var(--u) * 4);
-  height: calc(var(--u) * 1.6);
-  border-radius: calc(var(--u) * 0.8);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(var(--u) * 0.9);
+  border-radius: calc(var(--u) * 0.45);
   background: #1b2237;
   overflow: hidden;
-  box-shadow: inset 0 0 0 calc(var(--u) * 0.25) rgba(255, 255, 255, 0.18);
 }
 #runProgressFill {
   height: 100%;
