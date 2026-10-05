@@ -210,30 +210,54 @@ async function collect() {
   };
 }
 
-/** Отдаёт журнал файлом: системным «Поделиться», иначе обычной загрузкой. */
+function download(blob, name) {
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Сохраняет журнал файлом и открывает «Поделиться».
+ *
+ * Именно в таком порядке и обязательно оба. Файл должен лечь на телефон
+ * независимо от того, чем кончится шторка: её можно закрыть случайно,
+ * промахнуться мимо Телеграма, передумать — и журнал не должен при этом
+ * пропасть. А шторка нужна потому, что искать файл в «Загрузках» телефона
+ * ради отправки — лишний шаг там, где и так всё делается на бегу.
+ */
 export async function save() {
   const data = await collect();
   const name = `run-game-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-
-  // На телефоне «Поделиться» — единственный удобный способ достать файл из
-  // приложения: загрузка уедет в общие «Загрузки», где её ещё надо найти.
   const file = new File([blob], name, { type: 'application/json' });
+
+  const saved = download(blob, name);
+
+  // Шторка требует «свежего» жеста пользователя. Сборка журнала выше занимает
+  // миллисекунды, и в отведённые браузером секунды мы укладываемся — но если
+  // когда-нибудь перестанем, share() откажет, а файл всё равно уже сохранён.
+  let shared = 'unavailable';
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: 'Журнал «Беги!»' });
-      return { how: 'share', name, bytes: blob.size };
+      await navigator.share({
+        files: [file],
+        title: 'Журнал «Беги!»',
+        text: `Журнал событий, ${data.sessions.length} сессий`,
+      });
+      shared = 'shared';
     } catch (e) {
-      if (e?.name === 'AbortError') return { how: 'cancelled', name, bytes: blob.size };
+      shared = e?.name === 'AbortError' ? 'cancelled' : 'failed';
     }
   }
 
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  return { how: 'download', name, bytes: blob.size };
+  return { name, bytes: blob.size, saved, shared, sessions: data.sessions.length };
 }
 
 export async function clear() {

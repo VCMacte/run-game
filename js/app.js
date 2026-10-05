@@ -243,11 +243,18 @@ $('logSave').onclick = async () => {
   $('logMsg').textContent = 'Собираю…';
   try {
     const r = await log.save();
-    $('logMsg').textContent = {
-      share: `Отправлено: ${r.name} (${fmtMB(r.bytes)} МБ). Положите файл в папку logs/ проекта.`,
-      download: `Сохранено в «Загрузки»: ${r.name} (${fmtMB(r.bytes)} МБ). Положите файл в папку logs/ проекта.`,
-      cancelled: 'Отправка отменена — журнал на месте.',
-    }[r.how];
+    // Сообщение из двух частей: что с файлом и что с отправкой. Они
+    // независимы — отправку можно отменить, а файл при этом остаётся.
+    const file = r.saved
+      ? `Сохранено в «Загрузки»: ${r.name} (${fmtMB(r.bytes)} МБ).`
+      : `Файл сохранить не удалось (${fmtMB(r.bytes)} МБ).`;
+    const sent = {
+      shared: 'Отправлено.',
+      cancelled: 'Отправку отменили — файл на телефоне остался.',
+      failed: 'Поделиться не получилось, но файл сохранён.',
+      unavailable: 'Телефон не предложил «Поделиться» — возьмите файл из «Загрузок».',
+    }[r.shared];
+    $('logMsg').textContent = `${file} ${sent}`;
   } catch (e) {
     $('logMsg').textContent = 'Не получилось выгрузить: ' + (e?.message || e);
   }
