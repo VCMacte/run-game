@@ -391,12 +391,41 @@ export const canReach = (starX, u) => Math.abs(starX - cameraX(u)) < VIEW.starRe
  *
  * Висят в боковых третях коридора: главная ценность игры в том, что ребёнок
  * двигается, и собирать их, стоя посередине, не должно получаться.
+ *
+ * Расставляются по ВРЕМЕНИ, а не через равные метры. Расстояние ничего не
+ * говорит о том, успеет ли ребёнок: на переход из левого положения в правое
+ * нужны секунды, и нужны они одни и те же при любой скорости бега. Поэтому
+ * промежуток перед звездой на другой стороне больше — ровно на цену перехода.
+ *
+ * Три подряд на одной стороне не ставим: смысл игры в том, что ребёнок
+ * двигается, а не стоит, подобрав удобное положение.
  */
-export function makeStars(count = 40, from = 6, step = 3.5) {
+export function makeStars({ durationS = 300, rng = Math.random } = {}) {
+  // Сначала стороны, потом расстановка: промежуток перед звездой зависит от
+  // того, придётся ли к ней переходить, то есть от следующей стороны.
+  const sides = [];
+  const n = Math.ceil(durationS / VIEW.starGapS) + 2;
+  let sameRun = 0;
+  for (let i = 0; i < n; i++) {
+    let side = rng() < 0.3 ? 0 : (rng() < 0.5 ? -1 : 1);
+    if (side !== 0 && side === sides[i - 1] && sameRun >= 1) side = -side;
+    sameRun = side !== 0 && side === sides[i - 1] ? sameRun + 1 : 0;
+    sides.push(side);
+  }
+
   const stars = [];
-  for (let i = 0; i < count; i++) {
-    const side = i % 3 === 0 ? 0 : (i % 2 ? -1 : 1);
-    stars.push({ x: side * HALF * VIEW.starX, z: from + i * step, taken: false });
+  let t = VIEW.starFirstS;
+  for (let i = 0; i < sides.length && t < durationS; i++) {
+    stars.push({
+      x: sides[i] * HALF * VIEW.starX,
+      z: t * VIEW.speed,
+      side: sides[i],
+      at: t,
+      taken: false,
+    });
+    const next = sides[i + 1];
+    const переход = next !== undefined && next !== 0 && sides[i] !== 0 && next !== sides[i];
+    t += переход ? VIEW.starSwitchS : VIEW.starGapS;
   }
   return stars;
 }

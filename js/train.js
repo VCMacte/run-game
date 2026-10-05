@@ -118,7 +118,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         || (settings.get('debug') === 'fast' ? 30 : 0)
         || settings.get('runLength')
         || 300;
-      stars = makeStars(Math.ceil(durationS * VIEW.speed / 3.5));
+      stars = makeStars({ durationS });
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
       travel = 0;
       elapsed = 0;
