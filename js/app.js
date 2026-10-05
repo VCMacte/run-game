@@ -6,7 +6,7 @@
 import { settings } from './settings.js';
 import * as log from './log.js';
 import { count, plural, SESSIONS, EVENTS, STARS, TIMES } from './text.js';
-import { withTimeout, isDev } from './util.js';
+import { withTimeout, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 
@@ -118,6 +118,9 @@ function updateStatus() {
     // дадут поиграть с синтетическим источником и будут гадать, почему он не
     // влияет на игру.
     ...(debug === 'off' ? [] : [mark(false, '', `отладка: ${settings.label('debug')}`)]),
+    // Выключенный кэш — состояние, которое меняет поведение и о котором легко
+    // забыть: игра перестаёт работать без сети. Поэтому его видно.
+    ...(settings.get('cache') === 'on' ? [] : [mark(false, '', 'офлайн-кэш выключен')]),
     // Версия: по ней видно, доехала ли сборка до телефона. Номер тот же, что
     // у офлайн-кэша, — значит он же отвечает на вопрос «какая версия сейчас
     // лежит в кэше», а не только «какая страница открыта».
@@ -438,6 +441,7 @@ const PARENT_ROWS = [
   ['setSound', 'soundV', 'sound'],
   ['setPreview', 'previewV', 'preview'],
   ['setDebug', 'debugV', 'debug'],
+  ['setCache', 'cacheV', 'cache'],
 ];
 
 function renderParent() {
@@ -448,7 +452,11 @@ for (const [btn, out, name] of PARENT_ROWS) {
   $(btn).onclick = () => {
     $(out).textContent = settings.cycle(name);
     refreshHud();  // настройка окошка должна отзываться сразу
-    updateStatus(); // и отладка — в полосе состояния
+    updateStatus(); // отладка и состояние кэша — в полосе состояния
+    // Выключение кэша должно срабатывать сразу, а не со следующего запуска:
+    // иначе взрослый выключает его, видит прежнее поведение и решает, что
+    // настройка не работает.
+    if (name === 'cache' && settings.get('cache') === 'off') dropOfflineCache();
   };
 }
 
@@ -515,12 +523,34 @@ $('logClear').onclick = async () => {
 
 // ───────────────────────── service worker ─────────────────────────
 
-/* На localhost service worker не регистрируется и зачищается: иначе правка
-   кода не доезжает до браузера, и полдня уходит на отладку изменений, которых
-   страница просто не видит. */
-if (isDev) {
-  navigator.serviceWorker?.getRegistrations?.().then((rs) => rs.forEach((r) => r.unregister()));
-  caches?.keys?.().then((ks) => ks.forEach((k) => caches.delete(k)));
+/** Снимает service worker и удаляет все кэши. Возвращает, что нашлось. */
+async function dropOfflineCache() {
+  const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+  for (const r of regs) await r.unregister();
+  const keys = (await caches?.keys?.()) || [];
+  for (const k of keys) await caches.delete(k);
+  return { registrations: regs.length, caches: keys };
+}
+
+$('resetCache').onclick = async () => {
+  const dropped = await dropOfflineCache();
+  log.event('cache.reset', dropped);
+  location.reload();
+};
+
+/* Офлайн-кэш выключается на localhost всегда и по настройке — где угодно.
+
+   На localhost иначе правка кода не доезжает до браузера, и полдня уходит на
+   отладку изменений, которых страница просто не видит. По настройке — чтобы то
+   же самое можно было сделать на телефоне, где кэш и доставляет больше всего
+   хлопот: там он держит не только код, но и семнадцать мегабайт MediaPipe.
+
+   Параметр адреса ?nocache=1 сильнее настройки и нужен для случая, когда в
+   кэше уже лежит сломанная версия и до меню не добраться. */
+const offlineWanted = !isDev && flag('nocache') === null && settings.get('cache') === 'on';
+
+if (!offlineWanted) {
+  dropOfflineCache();
 } else if ('serviceWorker' in navigator) {
   /* updateViaCache: 'none' — не косметика. GitHub Pages отдаёт файлы с
      max-age=600, и сам sw.js тоже: браузер до десяти минут не видит, что
