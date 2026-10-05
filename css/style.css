@@ -185,6 +185,61 @@ button.big small {
   height: calc(var(--u) * 14);
 }
 
+/* ─── экран забега ─── */
+
+/* Канвас занимает кадр целиком. Его внутренний буфер фиксирован (1280×720) и
+   не зависит от DPR — растягивает его браузер, и это дешевле, чем рисовать в
+   высоком разрешении ради картинки, которую Miracast всё равно пережмёт. */
+#run { padding: 0; }
+#runCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--bg);
+}
+
+/* HUD держится внутри запаса на overscan: у телевизора края обрезаются. */
+#runHud {
+  position: absolute;
+  inset: var(--safe);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  pointer-events: none;
+  font-size: calc(var(--u) * 6);
+  text-shadow: 0 calc(var(--u) * 0.5) 0 rgba(0, 0, 0, 0.6);
+}
+#runScore::before { content: '★ '; color: #ffd34d; }
+#runSeen { font-size: calc(var(--u) * 2.6); font-weight: 400; color: var(--dim); }
+#runSeen.lost { color: var(--warn); }
+
+/* Подсказка на паузе. Крупно: её читают с дивана, и читает её ребёнок. */
+#runOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--safe);
+}
+#runOverlayTitle { font-size: calc(var(--u) * 11); line-height: 1; }
+#runOverlayText { font-size: calc(var(--u) * 4); font-weight: 400; color: var(--dim); }
+
+#runExit {
+  position: absolute;
+  right: var(--safe);
+  bottom: var(--safe);
+  min-width: 0;
+  font-size: calc(var(--u) * 2.6);
+  padding: calc(var(--u) * 1.4) calc(var(--u) * 2.6);
+  opacity: 0.5;
+}
+
 /* Фон коридора: тот же рисунок, что в иконке. Чистый CSS, ничего не грузит.
    Треугольником, а не коническим градиентом: у клипа геометрия задана тремя
    точками и предсказуема, а градиент приходится подбирать углами. */

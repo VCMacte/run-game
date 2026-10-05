@@ -43,6 +43,21 @@
     <p class="lead" id="menuHint">Сначала тренировка: на ней игра научится узнавать именно тебя.</p>
   </section>
 
+  <!-- Забег. Единственный экран, который смотрят с дивана, поэтому .safe:
+       кадр 16:9 с запасом на overscan телевизора. -->
+  <section id="run" class="safe screen" hidden>
+    <canvas id="runCanvas"></canvas>
+    <div id="runHud">
+      <div id="runScore">0</div>
+      <div id="runSeen"></div>
+    </div>
+    <div id="runOverlay" hidden>
+      <div id="runOverlayTitle">—</div>
+      <div id="runOverlayText">—</div>
+    </div>
+    <button id="runExit" class="ghost">Выйти</button>
+  </section>
+
   <!-- Честная заглушка: экран существует, содержимого пока нет. -->
   <section id="soon" class="sheet screen center" hidden>
     <h1 id="soonTitle">—</h1>

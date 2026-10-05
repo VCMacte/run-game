@@ -103,15 +103,16 @@ addEventListener('fullscreenchange', updateStatus);
 
 // ─────────────────────────────── экраны ───────────────────────────────
 
-const SCREENS = ['gate', 'menu', 'soon', 'parent', 'logs'];
+const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs'];
 
-/* Все существующие экраны — телефонные, их держат в руке. Забег, когда он
-   появится, встанет сюда как 'landscape': менять ориентацию надо вместе с
-   экраном, а не один раз на запуске. В комиксе ровно на этом был баг — каталог
-   открывался в оставшейся от прошлой истории горизонтали. */
+/* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
+   телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
+   экраном, а не один раз на запуске: в комиксе ровно на этом был баг —
+   каталог открывался в оставшейся от прошлой истории горизонтали. */
 const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
+  run: 'landscape',
 };
 
 const ADULT = new Set(['parent', 'logs']); // экраны, в которые не «возвращаются»
@@ -148,9 +149,61 @@ $('start').onclick = () => {
   show('menu');
 };
 
-$('goTrain').onclick = () => showSoon('Тренировка',
-  'Обучающий забег ещё не собран. По плану это этап 3: шесть шагов — настройка штатива, '
-  + 'калибровка, свободное движение, только бока, только присед, вместе.');
+// ────────────────────────── тренировка ──────────────────────────
+
+let training = null;
+
+const PAUSE_TEXT = {
+  none: ['Вернись в рамку', 'Встань так, чтобы тебя было видно целиком'],
+  lowvis: ['Тебя плохо видно', 'Нужно больше света'],
+  edge: ['Встань поближе к середине', 'Ты у самого края кадра'],
+  scale: ['Отойди немного назад', 'Ты слишком близко к телефону'],
+  profile: ['Повернись к телевизору', 'Нужно видеть тебя спереди'],
+  jump: ['Кто-то ещё в кадре', 'Играть должен кто-то один'],
+};
+
+function renderRunHud({ state, why, score }) {
+  $('runScore').textContent = score ?? 0;
+  const paused = state === 'paused' || state === 'countdown';
+  $('runOverlay').hidden = !paused;
+  $('runSeen').textContent = paused ? 'тебя не видно' : 'вижу тебя';
+  $('runSeen').classList.toggle('lost', paused);
+  if (state === 'paused') {
+    const [title, text] = PAUSE_TEXT[why] || PAUSE_TEXT.none;
+    $('runOverlayTitle').textContent = title;
+    $('runOverlayText').textContent = text;
+  } else if (state === 'countdown') {
+    $('runOverlayTitle').textContent = 'Начинаем!';
+    $('runOverlayText').textContent = 'Приготовься';
+  }
+}
+
+$('goTrain').onclick = async () => {
+  const { wantedSource } = await import('./pose.js');
+  const want = wantedSource();
+
+  // Камера и MediaPipe появятся следующим шагом. До тех пор честно говорим
+  // об этом, вместо того чтобы показывать коридор, которым нельзя управлять.
+  if (want.source !== 'fake') {
+    showSoon('Тренировка',
+      'Камера и распознавание позы ещё не подключены — это следующий шаг. '
+      + 'Коридор и управление уже работают: откройте адрес с ?fake=demo, '
+      + 'чтобы посмотреть их на синтетических движениях.');
+    return;
+  }
+
+  const { createTraining } = await import('./train.js');
+  show('run');
+  training = createTraining({ canvas: $('runCanvas'), onHud: renderRunHud });
+  renderRunHud({ state: 'running', score: 0 });
+  await training.start({ source: want.source, script: want.script });
+};
+
+$('runExit').onclick = async () => {
+  await training?.stop();
+  training = null;
+  show('menu');
+};
 
 $('goPlay').onclick = () => showSoon('Игра',
   'Забег до финиша ещё не собран. По плану это этап 5 — после того, как тренировка измерит '
