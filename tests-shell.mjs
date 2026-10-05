@@ -41,7 +41,13 @@ group('манифест', () => {
   // Эти два поля Chrome запекает в WebAPK при установке. Менять их потом
   // означает переустановку, поэтому они проверяются, а не подразумеваются.
   check('display = fullscreen', m.display === 'fullscreen', `сейчас ${m.display}`);
-  check('orientation = landscape', m.orientation === 'landscape', `сейчас ${m.orientation}`);
+
+  // "any" здесь обязательно, и это не недосмотр: манифест запекается в WebAPK
+  // при установке, и жёсткий landscape сделал бы портретное меню недоступным.
+  // Ориентацию задаёт show() поэкранно.
+  check('orientation = any', m.orientation === 'any',
+    `сейчас ${m.orientation}; поэкранную блокировку делает js/app.js`);
+  check('ориентация задаётся поэкранно', /lockOrientation\(/.test(read('js/app.js')));
   check('есть display_override', Array.isArray(m.display_override) && m.display_override[0] === 'fullscreen');
   check('манифест подключён в разметке', html.includes('rel="manifest"'));
 

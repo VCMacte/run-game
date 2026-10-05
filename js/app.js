@@ -50,11 +50,19 @@ window.visualViewport?.addEventListener('resize', layout);
    первым же касанием» здесь сам по себе не сработает. Пробуем вернуть его на
    каждом удобном событии (без жеста запрос обычно отклоняется — это ничего не
    стоит), а касание остаётся запасным путём: его может сделать взрослый. */
+/* Ориентация задаётся поэкранно, а не манифестом. В манифесте стоит "any",
+   и это не недосмотр: Chrome запекает манифест в WebAPK при установке, и
+   жёсткий landscape сделал бы портрет недоступным вообще — а меню держат в
+   руке, его место вертикальное. Горизонталь нужна только забегу, который
+   уходит на телевизор. */
+function lockOrientation(kind) {
+  return withTimeout(screen.orientation?.lock?.(kind) ?? Promise.resolve(), 1500);
+}
+
 async function requestFullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement || !el.requestFullscreen) return;
   await withTimeout(el.requestFullscreen({ navigationUI: 'hide' }), 3000);
-  await withTimeout(screen.orientation?.lock?.('landscape') ?? Promise.resolve(), 1500);
 }
 
 function keepFullscreen() {
@@ -97,11 +105,19 @@ addEventListener('fullscreenchange', updateStatus);
 // ─────────────────────────────── экраны ───────────────────────────────
 
 const SCREENS = ['gate', 'menu', 'soon', 'parent'];
+
+/* Все существующие экраны — телефонные, их держат в руке. Забег, когда он
+   появится, встанет сюда как 'landscape': менять ориентацию надо вместе с
+   экраном, а не один раз на запуске. В комиксе ровно на этом был баг — каталог
+   открывался в оставшейся от прошлой истории горизонтали. */
+const ORIENTATION = { gate: 'portrait', menu: 'portrait', soon: 'portrait', parent: 'portrait' };
+
 let previous = 'menu';
 
 function show(name) {
   for (const id of SCREENS) $(id).hidden = id !== name;
   if (name !== 'parent') previous = name;
+  lockOrientation(ORIENTATION[name] || 'portrait');
 }
 
 /* Заглушка с честным текстом. Экран существует, содержимого пока нет — и так
