@@ -20,14 +20,15 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 let failed = 0;
+let passed = 0;
 function check(name, condition, detail = '') {
-  if (condition) return;
+  if (condition) { passed++; return; }
   failed++;
   console.error(`  ПРОВАЛ  ${name}${detail ? '\n          ' + detail : ''}`);
 }
 function group(name, fn) {
   console.log(name);
-  fn();
+  return fn(); // часть проверок асинхронна — вызывающий их дожидается
 }
 
 const html = read('index.html');
@@ -121,10 +122,35 @@ group('офлайн-кэш', () => {
   check('версия кэша задана', /const CACHE = 'run-v\d+';/.test(sw));
 });
 
+// ───────────────────────────── настройки ─────────────────────────────
+
+await group('настройки', async () => {
+  const { settings, OPTIONS } = await import('./js/settings.js');
+
+  // Умолчание обязано быть одним из предложенных вариантов, иначе подпись в
+  // родительском меню покажет сырое значение вместо слова.
+  for (const name of Object.keys(OPTIONS)) {
+    check(`умолчание ${name} есть в списке вариантов`,
+      OPTIONS[name].some((o) => o.value === settings.get(name)),
+      `сейчас ${JSON.stringify(settings.get(name))}`);
+  }
+
+  // Приседания — половина управления. Выключенными по умолчанию они уже были,
+  // когда умолчание выводилось из порядка вариантов.
+  check('приседания включены по умолчанию', settings.get('crouch') === true);
+
+  // Перебор по кругу возвращается в исходную точку.
+  const before = settings.get('speed');
+  for (let i = 0; i < OPTIONS.speed.length; i++) settings.cycle('speed');
+  check('перебор вариантов замкнут', settings.get('speed') === before);
+});
+
 // ───────────────────────────── итог ─────────────────────────────
 
 if (failed) {
-  console.error(`\n${failed} провал(ов)`);
+  console.error(`\n${failed} провал(ов) из ${passed + failed} проверок`);
   process.exit(1);
 }
-console.log('\nвсё сошлось');
+// Число проверок печатается намеренно: «всё сошлось» при нуле проверок
+// выглядит точно так же, как при полусотне.
+console.log(`\nвсё сошлось: ${passed} проверок`);

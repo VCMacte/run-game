@@ -36,9 +36,14 @@ export const OPTIONS = {
   ],
 };
 
-const DEFAULTS = Object.fromEntries(
-  Object.entries(OPTIONS).map(([k, list]) => [k, list[Math.min(1, list.length - 1)].value]),
-);
+// Умолчания заданы явно, а не «вторым вариантом списка»: у приседаний вторым
+// идёт «выключены», и выведенное правило молча выключало бы половину игры.
+const DEFAULTS = {
+  runLength: 240,
+  speed: 1.0,
+  crouch: true,
+  sound: 0.8,
+};
 
 function read() {
   try {
