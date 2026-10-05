@@ -19,18 +19,7 @@ export function withTimeout(promise, ms) {
   return Promise.race([promise, new Promise((r) => setTimeout(r, ms))]).catch(() => {});
 }
 
-/** То же, но отказом: нужно там, где молчание нельзя спутать с результатом. */
-export function withDeadline(promise, ms, what) {
-  return Promise.race([
-    promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`${what}: нет ответа ${ms} мс`)), ms)),
-  ]);
-}
-
 export const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
-
-/** Линейная интерполяция. */
-export const lerp = (a, b, t) => a + (b - a) * t;
 
 /* Проверки на `location` здесь не перестраховка: эти модули импортируются
    тестами в node, где ни location, ни URLSearchParams над адресом нет. Вся

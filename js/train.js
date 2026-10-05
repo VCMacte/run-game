@@ -18,7 +18,7 @@ import { makeLevel, isSafe } from './level.js';
 import * as audio from './audio.js';
 import { settings } from './settings.js';
 import { cameraX } from './view.js';
-import { round, flag } from './util.js';
+import { round, flag, quantile } from './util.js';
 import * as pose from './pose.js';
 import * as log from './log.js';
 
@@ -59,6 +59,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let lastLm = null;
   let lastOk = false;
   let lastCx = null;
+  let lastGeom = null;
   const followU = makeFollower(VIEW.followMs);
   const followV = makeFollower(VIEW.followMs);
   let dim = 0;
@@ -141,6 +142,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     const g = sample.lm ? geometry(sample.lm) : null;
     lastOk = !!g && g.vis >= S.visMin;
     lastCx = g ? g.cx : null;
+    lastGeom = g;
     const f = framing(source?.settings, g);
     setupOk = !!g && f.ok && g.vis >= S.visMin;
     if (g) { health.ok++; health.vis += g.vis; health.S += g.S; }
@@ -399,7 +401,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     const span = (now - health.since) / 1000;
     health.since = now;
     if (!span || !health.frames) return;
-    const infer = [...health.infer].sort((a, b) => a - b);
+    const infer = health.infer;
     log.event('health', {
       stage,
       fps: Math.round(health.frames / span),
@@ -408,8 +410,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       ok: round(health.poses ? health.ok / health.poses : 0),
       vis: round(health.ok ? health.vis / health.ok : 0),
       S: round(health.ok ? health.S / health.ok : 0),
-      p50: infer.length ? Math.round(infer[Math.floor(infer.length / 2)]) : 0,
-      p95: infer.length ? Math.round(infer[Math.floor(infer.length * 0.95)]) : 0,
+      p50: infer.length ? Math.round(quantile(infer, 0.5)) : 0,
+      p95: infer.length ? Math.round(quantile(infer, 0.95)) : 0,
       u: round(last.u),
       v: round(last.v),
     });
@@ -425,9 +427,20 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     get result() { return result; },
     get source() { return source; },
 
-    /** Вручную шагнуть со стадии установки дальше. */
+    /**
+     * Шаг со стадии установки дальше.
+     *
+     * Калибровку переигрывать каждый раз незачем: она занимает двадцать
+     * секунд, а ребёнок хочет бежать. Поэтому прошлая принимается, если сцена
+     * та же. А если штатив сдвинули или ребёнок стоит заметно дальше, прошлые
+     * пороги описывают уже не его — и тогда калибровка обязательна.
+     */
     next() {
-      if (stage === 'setup') goStage('calibrate');
+      if (stage !== 'setup') return;
+      const stale = isStale(calibration, lastGeom);
+      const reuse = !!calibration && !stale;
+      log.event('calib.reuse', { reuse, had: !!calibration, stale });
+      goStage(reuse ? 'free' : 'calibrate');
     },
 
     async start({ source: src, script, skipSetup = false }) {

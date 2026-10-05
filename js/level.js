@@ -87,5 +87,3 @@ export function isSafe(obstacle, { camX, crouching }) {
   return obstacle.side > 0 ? camX < -edge : camX > edge;
 }
 
-/** Сколько секунд осталось до препятствия при текущем положении забега. */
-export const timeTo = (obstacle, elapsedS) => obstacle.at - elapsedS;

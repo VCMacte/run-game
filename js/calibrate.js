@@ -29,7 +29,9 @@ export const CLAMP = {
   v: [0.25, 0.55],
 };
 
-export const MIN_EXCURSION = { u: 0.25, v: 0.20 };
+/* Меньший размах считается «не пошевелился» и просит повторить: порог,
+   выведенный из дрожания, был бы не порогом, а случайным числом. */
+const MIN_EXCURSION = { u: 0.25, v: 0.20 };
 
 export function load() {
   try {
@@ -72,7 +74,6 @@ export function makeCalibration() {
   let stage = 0;
   let since = null;
   let tries = 0;
-  const samples = [];
   const neutral = { x: 0, shoulderY: 0, hipY: 0, S: 0, n: 0 };
   let best = { left: 0, right: 0, crouch: 0 };
   let result = null;
@@ -136,7 +137,7 @@ export function makeCalibration() {
       }
 
       if (hold < st.ms) {
-        return { stage: st, say: st.say, hold, progress: hold / st.ms, samples: samples.length };
+        return { stage: st, say: st.say, hold, progress: hold / st.ms };
       }
 
       // Стадия вышла по времени — принимаем или просим повторить.
