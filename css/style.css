@@ -403,7 +403,11 @@ body:has(#run:not([hidden])) #status { display: none; }
 #runRotate { display: none; }
 @media (orientation: portrait) {
   body:has(#run:not([hidden])) #runRotate {
-    position: absolute;
+    /* fixed, а не absolute: кадр забега — коробка 16:9, и в вертикальном
+       экране она занимает лишь полосу посередине. Подсказка, накрывающая
+       только её, оставляет коридор торчать сверху и снизу и выглядит
+       сломанной ровно там, где должна объяснять. */
+    position: fixed;
     inset: 0;
     z-index: 5;
     display: flex;
