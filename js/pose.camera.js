@@ -16,7 +16,7 @@
 // запасной путь, который не работает. Поэтому любой из трёх включается
 // принудительно через ?pipeline=.
 
-import { POSE } from './config.js';
+import { POSE, VENDOR } from './config.js';
 import { flag, withTimeout } from './util.js';
 import { openCamera, watchTrack } from './camera.js';
 import * as log from './log.js';
@@ -62,7 +62,10 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
   const emit = (sample) => { if (!stopped) onSample(sample); };
 
   async function startWorker(kind, delegate) {
-    const w = new Worker(new URL('./pose.worker.js', import.meta.url), { type: 'module' });
+    // Воркер классический, не модульный: MediaPipe выполняет свой
+    // wasm-загрузчик через importScripts, которого в модульном воркере нет.
+    // Проверено — там он падает с «ModuleFactory not set.».
+    const w = new Worker(new URL('./pose.worker.js', import.meta.url));
     const ready = new Promise((resolve) => {
       w.onmessage = (e) => {
         const m = e.data;
@@ -75,7 +78,15 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
       w.onerror = (e) => resolve({ type: 'fail', stage: 'worker', message: String(e.message || e) });
     });
 
-    const init = { type: 'init', mode: kind, delegate, hz, mainTimeOrigin: performance.timeOrigin };
+    const init = {
+      type: 'init', mode: kind, delegate, hz,
+      mainTimeOrigin: performance.timeOrigin,
+      bundleUrl: VENDOR.bundleClassic,
+      packUrl: VENDOR.pack,
+      wasmBase: VENDOR.wasmBase,
+      modelUrl: VENDOR.model,
+      pose: POSE,
+    };
     if (kind === 'stream') {
       // Дорожка клонируется: оригинал остаётся на <video> для предпросмотра и
       // для запасного пути, и вопрос «можно ли одной дорожкой кормить и то и

@@ -30,7 +30,13 @@ export const VENDOR = {
   // библиотеки, FilesetResolver.isSimdSupported(), а не своим: своя проверка
   // могла бы разойтись с той, по которой библиотека строит путь.
   wasmBase: at('vendor/mediapipe/wasm'),
+  // Две сборки одной библиотеки, и обе нужны. Модульная (.mjs) — для
+  // главного потока. Классическая (.js, кладёт глобаль Vision) — для
+  // воркера: он обязан быть классическим, иначе MediaPipe не может
+  // выполнить свой wasm-загрузчик через importScripts.
   bundle: at('vendor/mediapipe/vision_bundle.mjs'),
+  bundleClassic: at('vendor/mediapipe/vision_bundle.js'),
+  pack: at('js/pose.pack.js'),
   model: at('vendor/models/pose_landmarker_lite.task'),
 
   // Размеры нужны для проверки целостности офлайн-кэша: наполовину
@@ -39,6 +45,7 @@ export const VENDOR = {
   // Обновлять вместе с файлами; tests-shell.mjs сверяет с диском.
   files: {
     './vendor/mediapipe/vision_bundle.mjs': 155439,
+    './vendor/mediapipe/vision_bundle.js': 155465,
     './vendor/mediapipe/wasm/vision_wasm_internal.js': 323377,
     './vendor/mediapipe/wasm/vision_wasm_internal.wasm': 11756954,
     './vendor/models/pose_landmarker_lite.task': 5777746,
