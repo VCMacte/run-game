@@ -5,7 +5,7 @@
 
 import { settings } from './settings.js';
 import * as log from './log.js';
-import { count, SESSIONS, EVENTS } from './text.js';
+import { count, plural, SESSIONS, EVENTS, STARS, TIMES } from './text.js';
 import { withTimeout, isDev } from './util.js';
 import { FINISH } from './config.js';
 
@@ -221,8 +221,11 @@ function renderRunHud(h = {}) {
      «я ещё в кадре?», поэтому у неё отдельный, средний вариант. */
   const want = settings.get('preview');
   const inGame = stage === 'free';
-  const showPreview = !inGame || want === 'on';
-  const showField = !inGame ? false : want !== 'off';
+  // На установке и калибровке окошко нужно всегда, в игре — по настройке, а
+  // на экране результата не нужно вовсе: там оно лезет поверх текста.
+  const setupLike = stage === 'setup' || stage === 'calibrate';
+  const showPreview = setupLike || (inGame && want === 'on');
+  const showField = inGame && want !== 'off';
 
   $('runPreview').hidden = !showPreview;
   $('runPreview').classList.toggle('corner', stage === 'calibrate');
@@ -276,9 +279,11 @@ function renderRunHud(h = {}) {
     text.textContent = restSuggested
       ? 'Три забега подряд — самое время передохнуть'
       : 'Финиш!';
+    const st = result?.stars ?? 0;
+    const ht = result?.hits ?? 0;
     $('runResult').innerHTML = [
-      `<div class="stars"><b>${result?.stars ?? 0}</b>звёзд собрано</div>`,
-      `<div><b>${result?.hits ?? 0}</b>раз задел</div>`,
+      `<div class="stars"><b>${st}</b>${plural(st, STARS)} собрано</div>`,
+      `<div><b>${ht}</b>${plural(ht, TIMES)} задел</div>`,
     ].join('');
     return;
   }

@@ -200,7 +200,7 @@ await group('MediaPipe', async () => {
 // ───────────────────────────── текст ─────────────────────────────
 
 await group('текст', async () => {
-  const { plural, count, SESSIONS } = await import('./js/text.js');
+  const { plural, count, SESSIONS, STARS, TIMES } = await import('./js/text.js');
   const forms = ['сессия', 'сессии', 'сессий'];
 
   // Проверяются именно те числа, на которых правило ломается: 11–14 берут
@@ -215,6 +215,17 @@ await group('текст', async () => {
       `получилось «${plural(Number(n), forms)}»`);
   }
   check('count склеивает число и форму', count(3, SESSIONS) === '3 сессии');
+
+  // Экран результата читает ребёнок, и «4 звёзд собрано» там особенно
+  // заметно: это первое, на что он смотрит после финиша.
+  check('1 звезда', plural(1, STARS) === 'звезда');
+  check('4 звезды', plural(4, STARS) === 'звезды');
+  check('5 звёзд', plural(5, STARS) === 'звёзд');
+  check('21 звезда', plural(21, STARS) === 'звезда');
+  check('11 звёзд', plural(11, STARS) === 'звёзд');
+  check('1 раз', plural(1, TIMES) === 'раз');
+  check('2 раза', plural(2, TIMES) === 'раза');
+  check('5 раз', plural(5, TIMES) === 'раз');
 });
 
 // ───────────────────────────── журнал ─────────────────────────────

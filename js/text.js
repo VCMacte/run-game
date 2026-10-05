@@ -21,3 +21,5 @@ export const count = (n, forms) => `${n} ${plural(n, forms)}`;
 
 export const SESSIONS = ['сессия', 'сессии', 'сессий'];
 export const EVENTS = ['событие', 'события', 'событий'];
+export const STARS = ['звезда', 'звезды', 'звёзд'];
+export const TIMES = ['раз', 'раза', 'раз'];
