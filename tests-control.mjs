@@ -10,6 +10,7 @@ import { makeTracker, makeOneEuro, geometry, makeFollower } from './js/signals.j
 import { makeCalibration, STAGES, CLAMP, isStale } from './js/calibrate.js';
 import { SIGNALS as S, VIEW } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
+import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 
 let failed = 0;
 let passed = 0;
@@ -318,6 +319,46 @@ group('панорама', () => {
   slow.step(0, dtFrame);
   const bigStep = slow.step(1, 3 * dtFrame);
   check('при редких кадрах догоняет быстрее за кадр', bigStep > oneFrame);
+
+  /* Та же проверка, но на настоящей цепочке: сценарий «ходьбы» → трекер →
+     One-Euro → слежение → поворот взгляда. Браузером это мерить бесполезно —
+     граница пола и так ходит на сотни пикселей, и рывок в ней не разглядеть.
+     Здесь же видно сам сигнал.
+
+     Тело качается синусоидой 0.3 Гц: за четыре секунды это чуть больше
+     одного периода, то есть законных разворотов два-три. Всё сверх этого —
+     дрожание. */
+  {
+    const tr = makeTracker();
+    const f = makeFollower(VIEW.followMs);
+    const yaws = [];
+    let tMs = 0;
+    let target = 0;
+    for (let frame = 0; frame < 240; frame++) {
+      // Позы приходят 20 Гц, кадры рисуются 60.
+      if (frame % 3 === 0) {
+        const p = SCRIPTS.walk(tMs / 1000);
+        const rec = tr.push({ lm: fakeLandmarks({ x: 0.5, ...p }), t: tMs });
+        if (rec.ok) target = rec.u;
+      }
+      yaws.push(camera(f.step(target, 1 / 60), 0).yaw);
+      tMs += 1000 / 60;
+    }
+    let turns = 0;
+    let dir = 0;
+    for (let i = 1; i < yaws.length; i++) {
+      const d = yaws[i] - yaws[i - 1];
+      if (Math.abs(d) < 1e-9) continue;
+      const s2 = Math.sign(d);
+      if (dir && s2 !== dir) turns++;
+      dir = s2;
+    }
+    check('на плавной ходьбе взгляд не дрожит', turns <= 3,
+      `разворотов направления: ${turns}; у синусоиды 0.3 Гц за 4 с их должно быть 2–3`);
+    check('и при этом действительно двигается',
+      Math.max(...yaws) - Math.min(...yaws) > 40,
+      'иначе «не дрожит» означало бы просто «не шевелится»');
+  }
 
   // Мёртвая зона: в покое дрожание распознавания не шевелит стены.
   check('дрожание в покое не двигает вид',
