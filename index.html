@@ -47,14 +47,26 @@
        кадр 16:9 с запасом на overscan телевизора. -->
   <section id="run" class="safe screen" hidden>
     <canvas id="runCanvas"></canvas>
+
+    <!-- Предпросмотр камеры. Нужен взрослому при наводке штатива и ребёнку на
+         калибровке — чтобы было видно, что игра его действительно видит. -->
+    <div id="runPreview" hidden>
+      <video id="runVideo" playsinline muted></video>
+      <div id="runSilhouette"></div>
+    </div>
+
     <div id="runHud">
       <div id="runScore">0</div>
       <div id="runSeen"></div>
     </div>
+
     <div id="runOverlay" hidden>
       <div id="runOverlayTitle">—</div>
       <div id="runOverlayText">—</div>
+      <div id="runNumbers" hidden></div>
+      <button id="runNext" hidden>Дальше</button>
     </div>
+
     <button id="runExit" class="ghost">Выйти</button>
   </section>
 

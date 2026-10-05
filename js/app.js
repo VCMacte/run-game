@@ -162,21 +162,71 @@ const PAUSE_TEXT = {
   jump: ['Кто-то ещё в кадре', 'Играть должен кто-то один'],
 };
 
-function renderRunHud({ state, why, score }) {
-  $('runScore').textContent = score ?? 0;
-  const paused = state === 'paused' || state === 'countdown';
-  $('runOverlay').hidden = !paused;
-  $('runSeen').textContent = paused ? 'тебя не видно' : 'вижу тебя';
-  $('runSeen').classList.toggle('lost', paused);
-  if (state === 'paused') {
-    const [title, text] = PAUSE_TEXT[why] || PAUSE_TEXT.none;
-    $('runOverlayTitle').textContent = title;
-    $('runOverlayText').textContent = text;
-  } else if (state === 'countdown') {
-    $('runOverlayTitle').textContent = 'Начинаем!';
-    $('runOverlayText').textContent = 'Приготовься';
+function renderRunHud(h = {}) {
+  // cam, а не settings: иначе имя затенило бы импортированные настройки.
+  const { stage = 'free', run = 'running', why, score = 0, setupOk, framing, settings: cam, pipeline, calib } = h;
+  const overlay = $('runOverlay');
+  const title = $('runOverlayTitle');
+  const text = $('runOverlayText');
+  const numbers = $('runNumbers');
+
+  $('runScore').textContent = score;
+  $('runHud').hidden = stage !== 'free';
+  overlay.classList.toggle('setup', stage === 'setup');
+  $('runPreview').hidden = stage === 'free';
+  $('runPreview').classList.toggle('corner', stage === 'calibrate');
+
+  if (stage === 'setup') {
+    // Экран для взрослого: его читают через комнату, поэтому числа крупные,
+    // а подсказка говорит, что делать, а не что не так.
+    overlay.hidden = false;
+    numbers.hidden = false;
+    $('runNext').hidden = false;
+    $('runNext').textContent = setupOk ? 'Всё видно, дальше' : 'Всё равно дальше';
+    title.textContent = 'Поставьте телефон на штатив';
+    text.textContent = framing?.hint || 'Ребёнок должен помещаться в рамку целиком';
+    $('runSilhouette').classList.toggle('bad', !setupOk);
+    const cell = (label, value, good) =>
+      `<div class="${good === undefined ? '' : good ? 'good' : 'bad'}"><b>${value}</b>${label}</div>`;
+    numbers.innerHTML = [
+      cell('камера', cam ? `${cam.width}×${cam.height}` : '—'),
+      cell('кадров в секунду', cam?.frameRate ? Math.round(cam.frameRate) : '—',
+        cam?.frameRate ? cam.frameRate >= 20 : undefined),
+      cell('ребёнок в кадре', framing ? `${Math.round(framing.fill * 100)}%` : '—', framing?.ok),
+      cell('уверенность', h.vis != null ? h.vis.toFixed(2) : '—', h.vis >= 0.6),
+      cell('конвейер', pipeline || '—'),
+    ].join('');
+    return;
+  }
+
+  if (stage === 'calibrate') {
+    overlay.hidden = false;
+    numbers.hidden = true;
+    $('runNext').hidden = true;
+    title.textContent = calib?.say || calib?.stage?.say || 'Приготовься';
+    text.textContent = calib?.waiting ? 'Встань так, чтобы тебя было видно'
+      : calib?.retry ? 'Попробуем ещё раз'
+        : calib?.progress ? '●'.repeat(Math.ceil(calib.progress * 5)) : '';
+    return;
+  }
+
+  const stopped = run === 'paused' || run === 'countdown';
+  overlay.hidden = !stopped;
+  numbers.hidden = true;
+  $('runNext').hidden = true;
+  $('runSeen').textContent = stopped ? 'тебя не видно' : 'вижу тебя';
+  $('runSeen').classList.toggle('lost', stopped);
+  if (run === 'paused') {
+    const [t, x] = PAUSE_TEXT[why] || PAUSE_TEXT.none;
+    title.textContent = t;
+    text.textContent = x;
+  } else if (run === 'countdown') {
+    title.textContent = 'Начинаем!';
+    text.textContent = 'Приготовься';
   }
 }
+
+$('runNext').onclick = () => training?.next();
 
 $('goTrain').onclick = async () => {
   $('goTrain').disabled = true;
@@ -205,8 +255,8 @@ $('goTrain').onclick = async () => {
 
     const { createTraining } = await import('./train.js');
     show('run');
-    training = createTraining({ canvas: $('runCanvas'), onHud: renderRunHud });
-    renderRunHud({ state: 'running', score: 0 });
+    training = createTraining({ canvas: $('runCanvas'), video: $('runVideo'), onHud: renderRunHud });
+    renderRunHud({ stage: 'setup', score: 0 });
     await training.start({ source: want.source, script: want.script });
   } catch (e) {
     // Ошибку надо показать, а не проглотить: на телефоне консоли нет, и
@@ -332,7 +382,15 @@ if (isDev) {
   navigator.serviceWorker?.getRegistrations?.().then((rs) => rs.forEach((r) => r.unregister()));
   caches?.keys?.().then((ks) => ks.forEach((k) => caches.delete(k)));
 } else if ('serviceWorker' in navigator) {
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  /* updateViaCache: 'none' — не косметика. GitHub Pages отдаёт файлы с
+     max-age=600, и сам sw.js тоже: браузер до десяти минут не видит, что
+     вышла новая версия, а service worker всё это время отдаёт из своего кэша
+     старые модули. Проверено на себе — полчаса ушло на отладку изменений,
+     которых страница просто не видела. Этот флаг заставляет проверять сам
+     sw.js всегда по сети, и новая сборка доезжает с первой перезагрузкой. */
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  });
 }
 
 log.watchLifecycle();
