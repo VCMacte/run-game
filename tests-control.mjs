@@ -17,6 +17,11 @@ import { obstacleEdge } from './js/view.js';
 import { OBSTACLES as O, FINISH } from './js/config.js';
 import { describe, motifFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
+import { makeDecor, ringSquash, palmSway, CORRIDOR_HALF, CLIFF_TOP } from './js/view.js';
+import {
+  THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS,
+  luminance, motionScale,
+} from './js/theme.js';
 
 
 let failed = 0;
@@ -27,6 +32,14 @@ function check(name, cond, detail = '') {
   console.error(`  ПРОВАЛ  ${name}${detail ? '\n          ' + detail : ''}`);
 }
 function group(name, fn) { console.log(name); return fn(); }
+
+/* Случайность с посевом. Генераторы уровня, звёзд и декораций принимают rng
+   снаружи именно для этого: тест прогоняет тысячу РАЗНЫХ уровней, а не один и
+   тот же, и при этом каждый прогон повторяем. */
+function seeded(seed) {
+  let s = seed;
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
 
 // ───────────────────── синтетический скелет ─────────────────────
 
@@ -507,8 +520,7 @@ group('расстановка звёзд', () => {
      Поэтому проверяется не «похоже на правду», а само физическое условие: на
      смену стороны всегда даётся больше времени, чем на звезду, за которой
      идти никуда не надо. Прогон на тысяче раскладок, а не на одной. */
-  let seed = 777;
-  const rng = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const rng = seeded(777);
 
   let худшийПереход = Infinity;
   let худшийОбычный = Infinity;
@@ -599,8 +611,7 @@ group('уровень', () => {
      держаться на любом уровне. Непроходимый уровень на глаз не виден — он
      виден ребёнку, который не понимает, почему проиграл. Поэтому тысяча
      разных уровней, а не один. */
-  let seed = 12345;
-  const rng = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const rng = seeded(12345);
 
   let minGap = Infinity;
   let sameSideRun = 0;
@@ -844,6 +855,135 @@ group('сдвиг штатива', () => {
   // Без калибровки и без позы решать нечего, и падать тоже не на чем.
   check('нет калибровки — не устарела', !isStale(null, geometry(pose({}))));
   check('нет позы — не устарела', !isStale(cal, null));
+});
+
+group('тема', () => {
+  /* Эта группа существует из-за одного риска. Тема «зелёные холмы» делает мир
+     светлым и зелёным, а до неё коридор был тёмно-синим, и контраст «плита /
+     проём» получался сам. Теперь он сам не получается, а именно он сообщает
+     ребёнку, куда уходить. Проверять его глазами нельзя: после Miracast кадр
+     выглядит иначе, чем на машине разработки.
+
+     Поэтому правило выражено числом: ФОРМА СООБЩАЕТ ТЕМУ, СВЕТЛОТА СООБЩАЕТ
+     РЕШЕНИЕ. */
+  const t = THEME.greenHill;
+  const L = luminance;
+
+  // Порог взят замером прежней палитры, а не выдуман: столько контраста уже
+  // было, и терять его при покраске нельзя ни в каком случае.
+  const baseline = L('#4fd6a0') - L('#c2415a');
+  check('контраст «плита / проём» не ниже прежнего',
+    L(t.gap) - L(t.block) >= baseline,
+    `было ${baseline.toFixed(3)}, стало ${(L(t.gap) - L(t.block)).toFixed(3)}`);
+
+  check('проём светлее всего фона',
+    BACKGROUND_KEYS.every((k) => L(t[k]) < L(t.gap)),
+    'иначе «куда идти» перестанет быть самым заметным местом кадра');
+
+  for (const k of BACKGROUND_KEYS) {
+    check(`фон «${k}» не лезет в канал решения`,
+      Math.abs(L(t[k]) - L(t.gap)) >= GAP_GUARD,
+      `${t[k]}: разница ${Math.abs(L(t[k]) - L(t.gap)).toFixed(3)} при пороге ${GAP_GUARD}`);
+  }
+
+  /* Цвет, не отнесённый ни к решению, ни к фону, не проверяется ничем — и
+     именно так в палитру и попадёт однажды белая декорация. Единственное
+     исключение названо в theme.js: глаз бадника в несколько пикселей. */
+  const classified = new Set([...DECISION_KEYS, ...BACKGROUND_KEYS, 'badnikEye', 'id', 'name']);
+  check('каждый цвет палитры отнесён к роли',
+    Object.keys(t).every((k) => classified.has(k)),
+    `без роли: ${Object.keys(t).filter((k) => !classified.has(k)).join(', ')}`);
+
+  check('левый и правый обрыв различаются по светлоте',
+    Math.abs(L(t.earthL) - L(t.earthR)) > 0.02,
+    'разница светлоты подсказывает, в какую сторону уехал взгляд');
+
+  check('шахматка пола различима',
+    Math.abs(L(t.floorA) - L(t.floorB)) > 0.1,
+    'без этого пол сливается и скорость перестаёт читаться');
+});
+
+group('декорации', () => {
+  const decor = makeDecor({ durationS: 60, rng: seeded(1) });
+
+  check('декорации расставлены', decor.length > 10);
+
+  /* Главное свойство: декорация не участвует в игре. Проверяется не доверием
+     к отрисовке, а положением — всё стоит строго за пределами коридора. */
+  check('ни одна декорация не стоит в игровой полосе',
+    decor.every((d) => Math.abs(d.x) > CORRIDOR_HALF),
+    'иначе пальма закроет проём, и ребёнок проиграет из-за украшения');
+
+  check('все декорации выше кромки обрыва',
+    decor.every((d) => d.y >= CLIFF_TOP),
+    'стены рисуются сплошными до тумана и всё за собой закрывают');
+
+  check('порядок по глубине не нарушен',
+    decor.every((d, i) => i === 0 || d.z >= decor[i - 1].z),
+    'по возрастанию глубины отбираются ближние — на них бюджет кадра, — '
+    + 'а рисуются они потом в обратную сторону, от дальних к ближним');
+
+  check('расставлены по обе стороны',
+    decor.some((d) => d.x < 0) && decor.some((d) => d.x > 0));
+
+  const kinds = new Set(decor.map((d) => d.kind));
+  check('виды не выродились в один', kinds.size >= 3, [...kinds].join(', '));
+  check('виды только из таблицы',
+    decor.every((d) => DECOR.kinds.some((k) => k.kind === d.kind)));
+
+  /* Детерминированность. Иначе в истории правок не видно, что изменилось: при
+     каждом прогоне уровень выглядит иначе, и сравнить два снимка нельзя. */
+  const again = makeDecor({ durationS: 60, rng: seeded(1) });
+  check('один и тот же посев даёт тот же уровень',
+    JSON.stringify(decor) === JSON.stringify(again));
+  const other = makeDecor({ durationS: 60, rng: seeded(2) });
+  check('другой посев даёт другой уровень',
+    JSON.stringify(decor) !== JSON.stringify(other));
+
+  // Плотность задана временем, а не метрами: при смене скорости бега уровень
+  // должен выглядеть так же густо.
+  const expected = 60 / DECOR.gapS;
+  check('плотность примерно та, что заказана',
+    Math.abs(decor.length - expected) < expected * 0.5,
+    `${decor.length} против ожидаемых ~${expected.toFixed(0)}`);
+
+  check('длинный забег не выродился', makeDecor({ durationS: 300, rng: seeded(3) }).length > 100);
+  check('нулевая длительность не ломает', makeDecor({ durationS: 0, rng: seeded(4) }).length === 0);
+});
+
+group('анимации', () => {
+  /* Все анимации — функции времени. Это проверяемо в node ровно потому, что
+     ни одна не копит состояние: при 20 Гц источника поз и просадках кадра
+     накопительная анимация расходится с картинкой, а функция — нет. */
+  check('кольцо: один и тот же момент даёт один и тот же вид',
+    ringSquash(3.25, 0.4) === ringSquash(3.25, 0.4));
+
+  const squashes = [];
+  for (let travel = 0; travel < 4; travel += 0.05) squashes.push(ringSquash(travel, 0));
+  check('кольцо не выворачивается наизнанку', squashes.every((s) => s > 0 && s <= 1),
+    'отрицательная ширина нарисует кольцо зеркально');
+  check('кольцо действительно крутится', Math.max(...squashes) - Math.min(...squashes) > 0.5);
+  check('кольцо не исчезает совсем', Math.min(...squashes) > 0.05,
+    'в профиль кольцо должно оставаться видимым: это цель, а не украшение');
+
+  check('пальма качается вокруг своего места',
+    Math.abs(palmSway(0, 0) + palmSway(2 / MOTION.palmSwayHz / 2, 0)) < 1e-9,
+    'иначе крона уедет от ствола');
+  const sway = [];
+  for (let travel = 0; travel < 8; travel += 0.1) sway.push(palmSway(travel, 0.3));
+  check('качание в заданных пределах',
+    sway.every((s) => Math.abs(s) <= MOTION.palmSwayM + 1e-9));
+
+  /* «Меньше движения» сжимает амплитуду, а не выключает код: нулевой путь,
+     который никто не видит, отдельно гниёт. Ребёнок на укачивание уже
+     жаловался — из-за этого в игре нет поворота взгляда. */
+  check('обычный режим — полная амплитуда', motionScale(false) === 1);
+  check('«меньше движения» сжимает, но не до нуля',
+    motionScale(true) > 0 && motionScale(true) < 0.2);
+  check('сжатие действует на качание',
+    Math.abs(palmSway(1.7, 0, motionScale(true))) < Math.abs(palmSway(1.7, 0, 1)));
+  check('сжатие действует на кольцо',
+    1 - ringSquash(1.7, 0, motionScale(true)) < 1 - ringSquash(1.7, 0, 1));
 });
 
 // ─────────────────────────── итог ───────────────────────────

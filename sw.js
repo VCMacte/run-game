@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v62';
+const CACHE = 'run-v66';
 const ASSETS = [
   './',
   './index.html',
@@ -29,6 +29,7 @@ const ASSETS = [
   './js/settings.js',
   './js/signals.js',
   './js/text.js',
+  './js/theme.js',
   './js/train.js',
   './js/util.js',
   './js/vendor.js',
@@ -39,6 +40,7 @@ const ASSETS = [
   './vendor/mediapipe/wasm/vision_wasm_internal.js',
   './vendor/mediapipe/wasm/vision_wasm_internal.wasm',
   './vendor/models/pose_landmarker_lite.task',
+  './assets/sky.webp',
 ];
 
 /* Установка качает файлы в обход обычного кэша браузера, и это не

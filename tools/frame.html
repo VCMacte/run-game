@@ -1,0 +1,212 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Кадр коридора</title>
+<!--
+  Один кадр забега по заказу, без игры.
+
+  Зачем: во-первых, посмотреть то, что в живом забеге поймать нечем — финишная
+  табличка закрывается экраном результата через полсекунды после появления, и
+  ровно на ней нашлась ошибка: табличка стояла посреди коридора и сливалась с
+  воротами в жёлтую стену. Во-вторых, здесь же готовится init-картинка для
+  Easy Diffusion.
+
+  Контракт, который этот файл обслуживает: ГОРИЗОНТ НА 46% ВЫСОТЫ. Столько же
+  у нашей проекции (HORIZON = H * 0.46). Фон с горизонтом в другом месте не
+  сойдётся с полом, и стык будет виден сразу.
+
+    ?finishIn=2.3                 — ворота и табличка
+    ?kind=side&side=1&dt=1.8&u=-0.9 — боковое препятствие, ребёнок ушёл влево
+    ?kind=duck&dt=1.2             — верхнее
+    ?band=1                       — init-полоса для фонового растра
+
+  В консоли браузера:
+    await saveFrame('tools/init/band.png')
+    await toWebp('tools/painted/sky-band.png', 'assets/sky.webp', 0.82, 0.704)
+    // последний аргумент обязателен: без него облака останутся белыми
+
+  Инструмент разработки: в офлайн-кэш не попадает, tools/ туда не берут.
+-->
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px system-ui; }
+  canvas { display: block; width: 100vw; max-width: 1280px; }
+  p { padding: 6px 10px; margin: 0; }
+  .ruler { position: absolute; left: 0; width: 100%; height: 1px; background: #f0f; opacity: .6; }
+  .wrap { position: relative; }
+</style>
+<div class="wrap">
+  <canvas id="c"></canvas>
+  <div class="ruler" id="ruler"></div>
+</div>
+<p id="info"></p>
+<script type="module">
+  import { createView, makeDecor, makeStars } from '../js/view.js';
+  import { VIEW } from '../js/config.js';
+
+  const q = new URLSearchParams(location.search);
+  const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
+
+  const canvas = document.getElementById('c');
+  canvas.width = VIEW.width;
+  canvas.height = VIEW.height;
+
+  /* Кладёт кадр в проект через POST /save в serve.js. Только для разработки. */
+  window.saveFrame = async (path = 'tools/init/frame.png') => {
+    const res = await fetch('/save', {
+      method: 'POST',
+      body: JSON.stringify({ path, dataUrl: canvas.toDataURL('image/png') }),
+    });
+    return { path, ...(await res.json()) };
+  };
+
+  /* PNG → WebP. Браузер здесь единственный доступный кодировщик: ни одного
+     графического инструмента на машине нет. Разница не косметическая — в
+     соседнем проекте тот же комплект весил 8.7 МБ в PNG против 170 КБ в WebP,
+     а фон целиком уходит в офлайн-кэш к ребёнку. */
+  window.toWebp = async (src, dest, quality = 0.82, clampTo = null) => {
+    const img = new Image();
+    img.src = '/' + src;
+    await img.decode();
+    const off = document.createElement('canvas');
+    off.width = img.naturalWidth;
+    off.height = img.naturalHeight;
+    const octx = off.getContext('2d');
+    octx.drawImage(img, 0, 0);
+
+    /* Зажим светлоты. Нейросеть рисует облака чисто белыми, а белое — это
+       светлота 1.0 при проёме 0.95: фон начинает спорить с каналом решения,
+       то есть с сообщением «иди сюда». Правило то же, что у палитры в
+       js/theme.js, и нарушить его растром было бы ровно так же плохо.
+       Проверка в tests-control.mjs растр увидеть не может — там нет
+       декодировщика картинок, — поэтому зажим делается здесь, один раз, при
+       сборке файла. */
+    if (clampTo != null) {
+      const d = octx.getImageData(0, 0, off.width, off.height);
+      const px = d.data;
+      const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+      for (let i = 0; i < px.length; i += 4) {
+        const L = 0.2126 * lin(px[i]) + 0.7152 * lin(px[i + 1]) + 0.0722 * lin(px[i + 2]);
+        if (L <= clampTo) continue;
+        // Приглушаем в gamma-пространстве: так цвет сохраняется, а светлота
+        // падает. Зажим по каналам порознь менял бы оттенок.
+        const k = (clampTo / L) ** (1 / 2.4);
+        px[i] *= k; px[i + 1] *= k; px[i + 2] *= k;
+      }
+      octx.putImageData(d, 0, 0);
+    }
+
+    const dataUrl = off.toDataURL('image/webp', quality);
+    const res = await fetch('/save', { method: 'POST', body: JSON.stringify({ path: dest, dataUrl }) });
+    return { dest, w: off.width, h: off.height, ...(await res.json()) };
+  };
+
+  const ruler = document.getElementById('ruler');
+  const info = document.getElementById('info');
+  const showRuler = () => { ruler.style.top = `${(canvas.clientHeight * 0.46).toFixed(1)}px`; };
+
+  if (q.has('band')) {
+    /* init-полоса для фонового растра — и это НЕ кадр коридора.
+
+       Кадр здесь не годится: в нём запечены обрывы, а фон едет по горизонтали
+       своим параллаксом, и коричневое поехало бы прямо в небо. Полоса — одно
+       только небо с горизонтом на тех же 46%, по всей ширине. Сдвигать такую
+       можно безнаказанно. */
+    const ctx = canvas.getContext('2d');
+    const W = VIEW.width;
+    const hy = VIEW.height * 0.46;
+    const g = ctx.createLinearGradient(0, 0, 0, hy);
+    g.addColorStop(0, '#3f97d4');
+    g.addColorStop(1, '#9bd6f2');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, hy);
+    ctx.fillStyle = '#2f7a4a';
+    ctx.fillRect(0, hy, W, VIEW.height - hy);
+
+    /* Полосе нужна КОМПОЗИЦИЯ, а не заливка. Проверено прямо здесь: от двух
+       плоских прямоугольников модель не построила ни облака, ни деревьев —
+       только сгладила градиент, потратив семь секунд впустую. В комиксе того
+       же автора init всегда был векторной сценой; это то же самое правило.
+       Поэтому грубые облака и горбы холмов рисуются здесь руками, а нейросеть
+       делает из них мягкие — ровно то, чего вектор не умеет. */
+    ctx.fillStyle = '#f4fbff';
+    for (const [cx, cy, r] of [[0.12, 0.42, 1], [0.34, 0.26, 0.7], [0.58, 0.47, 1.15], [0.8, 0.3, 0.85]]) {
+      const x = cx * W;
+      const y = cy * hy;
+      const rw = W * 0.075 * r;
+      const rh = hy * 0.1 * r;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rw, rh, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + rw * 0.8, y + rh * 0.35, rw * 0.65, rh * 0.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(x - rw * 0.7, y + rh * 0.4, rw * 0.55, rh * 0.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Гряда холмов по линии горизонта и редкие стволы: силуэт, из которого
+    // модели есть что вырастить.
+    ctx.fillStyle = '#287044';
+    for (let i = 0; i < 7; i++) {
+      const x = (i + 0.5) * W / 7;
+      const rw = W * (0.1 + 0.03 * (i % 3));
+      const rh = hy * (0.1 + 0.05 * ((i + 1) % 3));
+      ctx.beginPath();
+      ctx.moveTo(x - rw, hy);
+      ctx.quadraticCurveTo(x, hy - rh * 2, x + rw, hy);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = '#1f5c38';
+    for (let i = 0; i < 5; i++) {
+      const x = (i + 0.3) * W / 5;
+      ctx.fillRect(x, hy - hy * 0.1, W * 0.006, hy * 0.1);
+      ctx.beginPath();
+      ctx.ellipse(x + W * 0.003, hy - hy * 0.1, W * 0.022, hy * 0.022, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    showRuler();
+    info.textContent = 'init-полоса для фона: горизонт на 46%';
+  } else {
+    // ?sky=1 готовит init-кадр для генерации — в нём фонового растра быть не
+    // должно, иначе следующая генерация пойдёт от самой себя.
+    const bare = q.has('sky');
+    let backdrop = null;
+    if (!bare) {
+      backdrop = new Image();
+      backdrop.src = '/assets/sky.webp';
+      try { await backdrop.decode(); } catch { backdrop = null; }
+    }
+
+    const view = createView(canvas, { backdrop });
+    const travel = num('travel', 7.5);
+    const elapsed = num('elapsed', travel / VIEW.speed);
+
+    // Препятствие по заказу: время до прихода задаётся прямо, чтобы посмотреть
+    // любую отметку телеграфа, не дожидаясь её в забеге.
+    const obstacles = [];
+    if (q.get('kind')) {
+      obstacles.push({
+        kind: q.get('kind'),
+        side: num('side', -1),
+        at: elapsed + num('dt', 1.2),
+        passed: false, hit: false, verdictAt: null,
+      });
+    }
+
+    view.render({
+      u: num('u', 0),
+      v: num('v', 0),
+      travel,
+      elapsed,
+      obstacles,
+      stars: bare ? [] : makeStars({ durationS: 40 }),
+      decor: bare ? [] : makeDecor({ durationS: 40 }),
+      safe: q.get('safe') !== '0',
+      pulse: num('pulse', 1),
+      finishIn: q.has('finishIn') ? num('finishIn', 1.2) : null,
+      dim: 0,
+    });
+
+    showRuler();
+    info.textContent = `${VIEW.width}×${VIEW.height}, горизонт на 46% — розовая линия. `
+      + `travel=${travel} elapsed=${elapsed.toFixed(2)}`;
+  }
+</script>

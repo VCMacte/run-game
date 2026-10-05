@@ -13,3 +13,9 @@ logs/*
 # публичный. Папка и README остаются, содержимое нет.
 fixtures/*
 !fixtures/README.md
+
+# Промежуточные файлы конвейера арта: init-кадры и то, что вернула
+# нейросеть. Восстанавливаются за минуту из tools/frame.html и
+# tools/ed-generate.mjs, а в приложение уходит только сжатый assets/*.webp.
+tools/init/
+tools/painted/

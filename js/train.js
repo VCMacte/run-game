@@ -10,7 +10,8 @@
 
 import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
-import { createView, makeStars, canReach } from './view.js';
+import { createView, makeStars, makeDecor, canReach } from './view.js';
+import { MOTION } from './theme.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
@@ -25,7 +26,18 @@ import * as log from './log.js';
 const RUN = { running: 'running', paused: 'paused', countdown: 'countdown' };
 
 export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud }) {
-  const view = createView(canvas);
+  /* Фон неба растром. Грузится без ожидания: пока картинки нет, `drawSky`
+     рисует плоские полосы и силуэт холмов, и игра работает полностью. Так и
+     задумано — арт собирается отдельным прогоном Easy Diffusion, и забег не
+     должен от него зависеть. Ошибка загрузки тоже ничего не ломает: у
+     незагруженной картинки `width` равен нулю, а именно это и проверяется.
+
+     Путь абсолютный, от модуля: относительный разрешался бы от того, кто
+     вызывает, и на телефоне выяснилось бы, что он указывает не туда. */
+  const backdrop = new Image();
+  backdrop.src = new URL('../assets/sky.webp', import.meta.url).href;
+
+  const view = createView(canvas, { backdrop });
   let tracker = null;
   let source = null;
   let calibrator = null;
@@ -41,6 +53,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let score = 0;
   let invulnUntil = 0;
   let flash = 0;
+  let decor = [];
+  let lastSpeed = 0;   // боковая скорость; по ней бадники решают, икать ли
   let durationS = 240;
   let hits = 0;
   let result = null;
@@ -123,6 +137,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         || settings.get('runLength')
         || 300;
       stars = makeStars({ durationS });
+      decor = makeDecor({ durationS });
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
       travel = 0;
       elapsed = 0;
@@ -198,6 +213,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     lastOk = rec.ok;
     lastCx = rec.cx ?? null;
     if (rec.ok) {
+      lastSpeed = rec.speed ?? 0;
       health.ok++;
       health.vis += rec.vis;
       health.S += rec.S;
@@ -291,6 +307,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         // копии разошлись бы, и звёзды собирались бы не там, где их видно.
         if (z > 0 && z < 1.2 && canReach(s.x, u)) {
           s.taken = true;
+          s.takenAtS = elapsed;
           score++;
           log.event('star', { side: Math.sign(s.x), u: round(u) });
           audio.play('star');
@@ -301,6 +318,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
     flash = Math.max(0, flash - dt * 2.2);
     view.render({
+      decor,
+      speed: lastSpeed,
       u, v, travel, stars, obstacles, elapsed,
       finishIn: stage === 'free' ? durationS - elapsed : null,
       safe: lastSafe,
@@ -379,7 +398,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           hits++;
           score = Math.max(0, score - O.starsLost);
           invulnUntil = now + O.invulnMs;
-          flash = 0.5;
+          flash = MOTION.flashPeak;
           audio.play('hit');
           hud();
         }
