@@ -12,6 +12,16 @@
 
 // ─────────────────────────── MediaPipe ───────────────────────────
 
+/* Корень приложения, вычисленный от этого модуля.
+
+   Пути к MediaPipe обязаны быть абсолютными, и это не стиль. Динамический
+   import() разрешает относительный путь от *своего* модуля, а загрузчик wasm —
+   от базы того контекста, где он работает. Из воркера, лежащего в js/, строка
+   './vendor/...' указала бы в js/vendor/... — то есть в никуда, и выяснилось
+   бы это только на телефоне, в виде молчаливого отказа внутри wasm. */
+const ROOT = new URL('../', import.meta.url);
+const at = (path) => new URL(path, ROOT).href;
+
 export const VENDOR = {
   // Путь передаётся в FilesetResolver.forVisionTasks(). Загрузчик сам
   // достраивает имя: `${base}/vision_wasm_internal.js` при поддержке SIMD и
@@ -19,9 +29,9 @@ export const VENDOR = {
   // (ещё 10.7 МБ), поэтому поддержку проверяем до запуска — предикатом самой
   // библиотеки, FilesetResolver.isSimdSupported(), а не своим: своя проверка
   // могла бы разойтись с той, по которой библиотека строит путь.
-  wasmBase: './vendor/mediapipe/wasm',
-  bundle: './vendor/mediapipe/vision_bundle.mjs',
-  model: './vendor/models/pose_landmarker_lite.task',
+  wasmBase: at('vendor/mediapipe/wasm'),
+  bundle: at('vendor/mediapipe/vision_bundle.mjs'),
+  model: at('vendor/models/pose_landmarker_lite.task'),
 
   // Размеры нужны для проверки целостности офлайн-кэша: наполовину
   // закэшированная модель даёт молчаливый abort в wasm при создании

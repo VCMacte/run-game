@@ -183,8 +183,13 @@ await group('MediaPipe', async () => {
       'забыли пересобрать или генератор не знает расширение');
   }
 
-  check('путь к wasm указывает на существующий каталог',
-    existsSync(join(ROOT, VENDOR.wasmBase.slice(2))));
+  // Пути к MediaPipe абсолютные: относительные указывали бы из воркера в
+  // js/vendor/..., и всплыло бы это только на телефоне.
+  for (const [name, url] of Object.entries({ wasmBase: VENDOR.wasmBase, bundle: VENDOR.bundle, model: VENDOR.model })) {
+    check(`${name} — абсолютный URL`, /^[a-z]+:\/\//.test(url), `сейчас «${url}»`);
+    check(`${name} указывает внутрь vendor/`, url.includes('/vendor/'));
+  }
+  check('каталог wasm существует', existsSync(join(ROOT, 'vendor/mediapipe/wasm')));
 
   // Вариант без SIMD мы намеренно не кладём, зато обязаны проверять поддержку
   // до запуска — иначе загрузчик уйдёт за несуществующим файлом.

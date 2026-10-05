@@ -179,24 +179,45 @@ function renderRunHud({ state, why, score }) {
 }
 
 $('goTrain').onclick = async () => {
-  const { wantedSource } = await import('./pose.js');
-  const want = wantedSource();
+  $('goTrain').disabled = true;
+  try {
+    const { wantedSource } = await import('./pose.js');
+    const want = wantedSource();
 
-  // Камера и MediaPipe появятся следующим шагом. До тех пор честно говорим
-  // об этом, вместо того чтобы показывать коридор, которым нельзя управлять.
-  if (want.source !== 'fake') {
-    showSoon('Тренировка',
-      'Камера и распознавание позы ещё не подключены — это следующий шаг. '
-      + 'Коридор и управление уже работают: откройте адрес с ?fake=demo, '
-      + 'чтобы посмотреть их на синтетических движениях.');
-    return;
+    if (want.source === 'camera') {
+      // Комплект проверяется до запуска. Наполовину закэшированная модель не
+      // даёт ошибки сети — она даёт молчаливый abort внутри wasm, и по
+      // симптому это неотличимо от дефекта кода.
+      const { checkVendor } = await import('./vendor.js');
+      const v = await checkVendor();
+      log.event('offline.check', {
+        ok: v.ok, skipped: v.skipped || null,
+        missing: v.missing?.length || 0, wrong: v.wrongSize?.length || 0,
+      });
+      if (!v.ok) {
+        showSoon('Нужен интернет один раз',
+          'Распознавание движений скачалось не полностью, поэтому тренировка пока не запустится. '
+          + 'Подключитесь к сети, откройте приложение один раз и дождитесь загрузки — '
+          + 'дальше оно работает без сети.');
+        return;
+      }
+    }
+
+    const { createTraining } = await import('./train.js');
+    show('run');
+    training = createTraining({ canvas: $('runCanvas'), onHud: renderRunHud });
+    renderRunHud({ state: 'running', score: 0 });
+    await training.start({ source: want.source, script: want.script });
+  } catch (e) {
+    // Ошибку надо показать, а не проглотить: на телефоне консоли нет, и
+    // «ничего не произошло» — худший из возможных ответов.
+    log.event('error', { where: 'goTrain', message: String(e?.message || e) });
+    await training?.stop().catch(() => {});
+    training = null;
+    showSoon('Не получилось начать', String(e?.message || e));
+  } finally {
+    $('goTrain').disabled = false;
   }
-
-  const { createTraining } = await import('./train.js');
-  show('run');
-  training = createTraining({ canvas: $('runCanvas'), onHud: renderRunHud });
-  renderRunHud({ state: 'running', score: 0 });
-  await training.start({ source: want.source, script: want.script });
 };
 
 $('runExit').onclick = async () => {

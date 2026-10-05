@@ -5,17 +5,15 @@
 // проверяешь уже не то, что поедет на телефон.
 
 import { POSE } from './config.js';
-import { isDev, flag } from './util.js';
+import { flag } from './util.js';
 import * as log from './log.js';
 
 let active = null;
 
-/** Какой источник просили: ?fake=walk на localhost, иначе камера. */
+/** Какой источник просили: ?fake=walk — синтетика, иначе камера. */
 export function wantedSource() {
   const fake = flag('fake');
-  if (fake !== null && (isDev || flag('fake') !== null)) {
-    return { source: 'fake', script: fake || 'demo' };
-  }
+  if (fake !== null) return { source: 'fake', script: fake || 'demo' };
   return { source: 'camera' };
 }
 
@@ -35,12 +33,12 @@ export async function start({ source, script, hz = POSE.hz, onSample, onStatus }
     return active;
   }
 
-  // Камера и MediaPipe подключатся сюда следующим шагом, по требованию: это
-  // семнадцать мегабайт, и грузить их ради синтетического прогона незачем.
-  // Пока ветка недостижима — вызывающий проверяет источник заранее, — но
-  // молчать она не должна.
-  log.event('pose.source', { source: 'camera', ready: false });
-  throw new Error('камера ещё не подключена');
+  // Камера и MediaPipe подключаются по требованию: это семнадцать мегабайт,
+  // и грузить их ради синтетического прогона незачем.
+  const { createCameraSource } = await import('./pose.camera.js');
+  active = await createCameraSource({ hz, onSample, onStatus });
+  log.event('pose.source', { source: 'camera', hz, pipeline: active.pipeline });
+  return active;
 }
 
 export async function stop() {
