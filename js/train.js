@@ -105,7 +105,9 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     stage = next;
     if (next === 'calibrate') calibrator = makeCalibration();
     if (next === 'free') {
-      durationS = settings.get('runLength') || 240;
+      // ?run=20 — короткий забег для отладки финиша: ждать три минуты на
+      // каждую проверку экрана результата бессмысленно.
+      durationS = Number(flag('run')) || settings.get('runLength') || 240;
       stars = makeStars(Math.ceil(durationS * VIEW.speed / 3.5));
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
       travel = 0;
