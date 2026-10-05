@@ -151,6 +151,39 @@ await group('настройки', async () => {
   check('перебор вариантов замкнут', settings.get('speed') === before);
 });
 
+// ───────────────────────────── MediaPipe ─────────────────────────────
+
+await group('MediaPipe', async () => {
+  const { VENDOR } = await import('./js/config.js');
+  const sw = read('sw.js');
+  const listed = new Set([...sw.matchAll(/^\s*'(\.\/[^']*)',$/gm)].map((m) => m[1]));
+
+  for (const [path, bytes] of Object.entries(VENDOR.files)) {
+    const file = join(ROOT, path.slice(2));
+    check(`${path} на месте`, existsSync(file));
+    if (!existsSync(file)) continue;
+
+    // Размер сверяется, потому что по нему на телефоне определяется
+    // целостность офлайн-кэша. Разошёлся с файлом — проверка станет врать.
+    check(`${path}: размер совпадает с объявленным`, statSync(file).size === bytes,
+      `в config.js ${bytes}, на диске ${statSync(file).size}`);
+
+    // Вот ради чего эта группа: vision_bundle.mjs однажды уже не попал в
+    // кэш, потому что генератор не знал расширение .mjs. На разработке это
+    // незаметно — там всё берётся из сети.
+    check(`${path} попал в офлайн-кэш`, listed.has(path),
+      'забыли пересобрать или генератор не знает расширение');
+  }
+
+  check('путь к wasm указывает на существующий каталог',
+    existsSync(join(ROOT, VENDOR.wasmBase.slice(2))));
+
+  // Вариант без SIMD мы намеренно не кладём, зато обязаны проверять поддержку
+  // до запуска — иначе загрузчик уйдёт за несуществующим файлом.
+  check('поддержка SIMD проверяется перед запуском',
+    /isSimdSupported/.test(read('js/vendor.js')));
+});
+
 // ───────────────────────────── текст ─────────────────────────────
 
 await group('текст', async () => {

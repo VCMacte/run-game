@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v11';
+const CACHE = 'run-v13';
 const ASSETS = [
   './',
   './index.html',
@@ -13,9 +13,16 @@ const ASSETS = [
   './icons/icon-512-maskable.png',
   './icons/icon-512.png',
   './js/app.js',
+  './js/config.js',
   './js/log.js',
   './js/settings.js',
   './js/text.js',
+  './js/util.js',
+  './js/vendor.js',
+  './vendor/mediapipe/vision_bundle.mjs',
+  './vendor/mediapipe/wasm/vision_wasm_internal.js',
+  './vendor/mediapipe/wasm/vision_wasm_internal.wasm',
+  './vendor/models/pose_landmarker_lite.task',
 ];
 
 self.addEventListener('install', (e) => {

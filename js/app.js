@@ -6,25 +6,17 @@
 import { settings } from './settings.js';
 import * as log from './log.js';
 import { count, SESSIONS, EVENTS } from './text.js';
+import { withTimeout, isDev } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 
 // ─────────────────────────── общие приёмы ───────────────────────────
-
-/* Обещания полного экрана, блокировки ориентации и разрешений умеют не
-   завершаться никогда. В комиксе на этом приложение зависало на экране
-   загрузки, и единственное лечение — не ждать их дольше разумного. */
-function withTimeout(promise, ms) {
-  return Promise.race([promise, new Promise((r) => setTimeout(r, ms))]).catch(() => {});
-}
 
 /* Установленное приложение против вкладки браузера. Разница не косметическая:
    во вкладке на телевизор уезжают адресная строка и системные кнопки. */
 const installedApp = matchMedia('(display-mode: fullscreen)').matches
   || matchMedia('(display-mode: standalone)').matches
   || navigator.standalone === true;
-
-const isDev = ['localhost', '127.0.0.1'].includes(location.hostname);
 
 // ─────────────────────────── размеры кадра ───────────────────────────
 
