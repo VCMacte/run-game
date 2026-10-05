@@ -86,6 +86,10 @@
         <button id="runAgain">Ещё раз</button>
         <button id="runDone" class="secondary">Вернуться в меню</button>
       </div>
+      <div class="row center" id="runPauseRow" hidden>
+        <button id="runResume">Продолжить</button>
+        <button id="runToMenu" class="secondary">В главное меню</button>
+      </div>
       <button id="runCamSwitch" class="secondary" hidden>Другая камера</button>
       <button id="runNext" hidden>Дальше</button>
     </div>
@@ -100,7 +104,9 @@
       <div id="runRotateHint">Если не поворачивается — включите автоповорот в шторке</div>
     </div>
 
-    <button id="runExit" class="ghost">Выйти</button>
+    <!-- Пауза вместо «Выйти»: выход одним нажатием посреди забега — это
+         потерянный забег, а ребёнку чаще нужно просто остановиться. -->
+    <button id="runExit" class="ghost">Пауза</button>
   </section>
 
   <!-- Честная заглушка: экран существует, содержимого пока нет. -->

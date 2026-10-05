@@ -253,6 +253,12 @@ function renderRunHud(h = {}) {
      раз так ошибся, и он оставался висеть поверх следующего забега. */
   $('runCamSwitch').hidden = !(stage === 'setup' && source === 'camera');
 
+  // Кнопки паузы — там же и по тому же правилу: видимость решается один раз,
+  // от состояния, а не прячется по веткам.
+  const наПаузе = stage === 'free' && run === 'paused' && h.manual;
+  $('runPauseRow').hidden = !наПаузе;
+  $('runExit').hidden = !(stage === 'free' && !наПаузе);
+
   const want = settings.get('preview');
   const inGame = stage === 'free';
   // На установке и калибровке окошко нужно всегда, в игре — по настройке, а
@@ -333,7 +339,10 @@ function renderRunHud(h = {}) {
   $('runSeen').textContent = fake ? 'синтетика, камера не работает'
     : stopped ? 'тебя не видно' : 'вижу тебя';
   $('runSeen').classList.toggle('lost', stopped || fake);
-  if (run === 'paused') {
+  if (run === 'paused' && h.manual) {
+    title.textContent = 'Пауза';
+    text.textContent = 'Можно передохнуть';
+  } else if (run === 'paused') {
     const [t, x] = PAUSE_TEXT[why] || PAUSE_TEXT.none;
     title.textContent = t;
     text.textContent = x;
@@ -433,9 +442,19 @@ $('runDone').onclick = async () => {
   show('menu');
 };
 
-$('runExit').onclick = async () => {
+$('runExit').onclick = () => training?.pauseManual();
+
+$('runResume').onclick = () => training?.resumeManual();
+
+/* Выход в меню прерывает забег, и это намеренно: продолжать с середины
+   нечего — ребёнок уже ушёл от камеры, калибровка сцены могла устареть, а
+   половина забега без начала не считается результатом. */
+$('runToMenu').onclick = async () => {
   await training?.stop();
   training = null;
+  runsInRow = 0;
+  restSuggested = false;
+  log.event('run.abort', { where: 'pause' });
   show('menu');
 };
 

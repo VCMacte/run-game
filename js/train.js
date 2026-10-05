@@ -48,6 +48,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let pauseWhy = null;
   let countdownUntil = 0;
   let setupOk = false;
+  /* Ручная пауза отличается от автопаузы тем, что сама не кончается. Автопауза
+     снимается, как только ребёнка снова видно, — а нажатую взрослым снимать
+     по появлению ребёнка в кадре нельзя: он из кадра и не уходил. */
+  let manual = false;
 
   // Последняя поза — цель, за которой взгляд едет непрерывно. Именно
   // непрерывно: экстраполяция по скорости, стоявшая здесь раньше, давала
@@ -99,7 +103,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
   function hud(extra = {}) {
     onHud?.({
-      stage, run, why: pauseWhy, score, setupOk,
+      stage, run, why: pauseWhy, score, setupOk, manual,
       source: source?.kind || null,
       progress: durationS ? Math.min(1, elapsed / durationS) : 0,
       ...extra,
@@ -198,7 +202,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       health.vis += rec.vis;
       health.S += rec.S;
       last = { u: rec.u, v: rec.v, t: now };
-      if (run === RUN.paused) beginCountdown(now);
+      if (run === RUN.paused && !manual) beginCountdown(now);
       if (rec.laneChanged) {
         log.event('gesture', {
           kind: rec.lane === 0 ? 'center' : rec.lane < 0 ? 'left' : 'right',
@@ -459,6 +463,27 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       }
       hud();
       return next;
+    },
+
+    /** Остановить забег по просьбе человека. */
+    pauseManual() {
+      if (stage !== 'free' || manual) return;
+      manual = true;
+      run = RUN.paused;
+      pauseWhy = null;
+      log.event('pause', { why: 'manual', elapsed: round(elapsed, 1) });
+      hud();
+    },
+
+    /**
+     * Снять ручную паузу — через тот же отсчёт, что и после автопаузы.
+     * Ребёнку надо дать время вернуться на место: он отходил, пока стояла
+     * пауза, и бросать его сразу под препятствие нечестно.
+     */
+    resumeManual() {
+      if (!manual) return;
+      manual = false;
+      beginCountdown(performance.now());
     },
 
     /**
