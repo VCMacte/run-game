@@ -20,7 +20,11 @@ let active = null;
 export function wantedSource() {
   const fake = flag('fake');
   if (fake !== null) return { source: 'fake', script: fake || 'demo' };
-  if (settings.get('debug') !== 'off') return { source: 'fake', script: 'demo' };
+  // Сценарий «ходьба», а не «demo»: в demo ребёнок периодически уходит из
+  // кадра, срабатывает автопауза, время забега останавливается — и «быстрый
+  // забег на 30 секунд» перестаёт быть быстрым. Для отладки нужен тот, кто из
+  // кадра не пропадает. Остальные сценарии доступны через ?fake=.
+  if (settings.get('debug') !== 'off') return { source: 'fake', script: 'walk' };
   return { source: 'camera' };
 }
 
