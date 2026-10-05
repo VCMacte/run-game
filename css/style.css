@@ -156,16 +156,16 @@ button.big small {
   height: calc(var(--u) * 14);
 }
 
-/* Фон коридора: тот же рисунок, что в иконке. Чистый CSS, ничего не грузит. */
+/* Фон коридора: тот же рисунок, что в иконке. Чистый CSS, ничего не грузит.
+   Треугольником, а не коническим градиентом: у клипа геометрия задана тремя
+   точками и предсказуема, а градиент приходится подбирать углами. */
 .corridor {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   z-index: -1;
-  opacity: 0.22;
-  background:
-    conic-gradient(from 180deg at 50% 118%,
-      transparent 0deg 62deg, var(--accent) 62deg 118deg, transparent 118deg 360deg);
+  opacity: 0.18;
+  background: var(--accent);
+  clip-path: polygon(50% 16%, 108% 112%, -8% 112%);
 }
 
 @media (prefers-reduced-motion: reduce) {
