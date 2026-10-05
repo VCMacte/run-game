@@ -16,7 +16,7 @@
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
 
-import { VIEW } from './config.js';
+import { VIEW, OBSTACLES as O } from './config.js';
 import { clamp } from './util.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
@@ -33,6 +33,15 @@ const COLORS = {
   line: '#e8eeff',
   star: '#ffd34d',
   starDim: '#8a7430',
+
+  // Препятствие и проём различаются и тоном, и светлотой. Только тоном
+  // нельзя: H.264 режет цветность сильнее светлоты, а дальтонизм в семь лет
+  // ещё не диагностирован.
+  block: '#c2415a',
+  blockDark: '#8e2d40',
+  gap: '#4fd6a0',
+  signal: '#ffb02e',
+  rail: '#ffffff',
 };
 
 const W = VIEW.width;
@@ -107,7 +116,7 @@ export function createView(canvas) {
      * `u` — боковое смещение тела в долях торса, `v` — присед, оба уже
      * сглажены и предсказаны: сюда приходит то, что надо показать сейчас.
      */
-    render({ u = 0, v = 0, travel = 0, stars = [], dim = 0 }) {
+    render({ u = 0, v = 0, travel = 0, stars = [], dim = 0, obstacles = [], elapsed = 0, safe = true, pulse = 0 }) {
       const cam = camera(u, v);
 
       ctx.fillStyle = COLORS.sky;
@@ -168,6 +177,11 @@ export function createView(canvas) {
         ctx.fill();
       }
 
+      // ── препятствия и телеграф ──
+      // Рисуются до звёзд: звезда перед препятствием должна быть видна
+      // поверх него, иначе она теряется ровно там, где важна.
+      drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse });
+
       // Звёзды. Квадратами, а не звёздочками: мелкая фигурная форма после
       // сжатия превращается в кашу, а крупный ромб читается.
       for (const s of stars) {
@@ -194,6 +208,120 @@ export function createView(canvas) {
     },
   };
 }
+
+/**
+ * Препятствия и четыре отметки телеграфа.
+ *
+ * Порядок отметок и их смысл — в config.OBSTACLES. Коротко: за четыре секунды
+ * в глубине коридора загорается полоса на той стороне, которая будет закрыта;
+ * за три проявляется само препятствие; за две по полу идёт линия, которая
+ * дойдёт до игрока ровно вместе с ним; за секунду проём пульсирует, а
+ * неверное положение подсвечивается.
+ *
+ * Самая важная из них — линия по полу. Семилетка плохо оценивает «сколько
+ * осталось до того столба», но прекрасно ждёт, пока линия доедет до него:
+ * задача оценки расстояния подменяется задачей ожидания ритма, а ритм в этом
+ * возрасте уже освоен.
+ */
+function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse }) {
+  const edge = obstacleEdge();
+  for (const ob of obstacles) {
+    if (ob.passed) continue;
+    const dt = ob.at - elapsed;          // секунд до прихода
+    if (dt > O.signalS || dt < -0.6) continue;
+    const z = dt * VIEW.speed;
+
+    // Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
+    // дальнем плане сжатие уничтожает первым.
+    if (dt <= O.signalS && dt > O.visibleS) {
+      const zf = far * 0.92;
+      const h = 0.9;
+      if (ob.kind === 'duck') {
+        quad(
+          project(-HALF, WALL, zf, cam), project(HALF, WALL, zf, cam),
+          project(HALF, WALL - h, zf, cam), project(-HALF, WALL - h, zf, cam),
+          COLORS.signal,
+        );
+      } else {
+        const x0 = ob.side > 0 ? edge : -HALF;
+        const x1 = ob.side > 0 ? HALF : -edge;
+        quad(
+          project(x0, 0, zf, cam), project(x1, 0, zf, cam),
+          project(x1, WALL * 0.5, zf, cam), project(x0, WALL * 0.5, zf, cam),
+          COLORS.signal,
+        );
+      }
+    }
+
+    if (dt > O.visibleS) continue;
+    const zBack = z + O.thickness;
+
+    // Проём заливается ярким: ребёнку надо показать, куда идти, а не только
+    // куда нельзя.
+    if (ob.kind === 'duck') {
+      quad(
+        project(-HALF, WALL, z, cam), project(HALF, WALL, z, cam),
+        project(HALF, O.duckHeight, z, cam), project(-HALF, O.duckHeight, z, cam),
+        COLORS.block,
+      );
+      quad(
+        project(-HALF, WALL, zBack, cam), project(HALF, WALL, zBack, cam),
+        project(HALF, O.duckHeight, zBack, cam), project(-HALF, O.duckHeight, zBack, cam),
+        COLORS.blockDark,
+      );
+      quad(
+        project(-HALF, 0.02, z, cam), project(HALF, 0.02, z, cam),
+        project(HALF, 0.02, zBack, cam), project(-HALF, 0.02, zBack, cam),
+        COLORS.gap,
+      );
+    } else {
+      const x0 = ob.side > 0 ? edge : -HALF;
+      const x1 = ob.side > 0 ? HALF : -edge;
+      quad(
+        project(x0, 0, z, cam), project(x1, 0, z, cam),
+        project(x1, WALL, z, cam), project(x0, WALL, z, cam),
+        COLORS.block,
+      );
+      quad(
+        project(x0, 0, zBack, cam), project(x1, 0, zBack, cam),
+        project(x1, WALL, zBack, cam), project(x0, WALL, zBack, cam),
+        COLORS.blockDark,
+      );
+      // Пол в проёме.
+      const g0 = ob.side > 0 ? -HALF : edge;
+      const g1 = ob.side > 0 ? -edge : HALF;
+      quad(
+        project(g0, 0.02, z, cam), project(g1, 0.02, z, cam),
+        project(g1, 0.02, zBack, cam), project(g0, 0.02, zBack, cam),
+        COLORS.gap,
+      );
+    }
+
+    // Линия по полу, которая дойдёт вместе с препятствием.
+    if (dt <= O.railS && dt > 0) {
+      quad(
+        project(-HALF, 0.03, z - 0.12, cam), project(HALF, 0.03, z - 0.12, cam),
+        project(HALF, 0.03, z, cam), project(-HALF, 0.03, z, cam),
+        COLORS.rail,
+      );
+    }
+
+    // Последний зов: если ребёнок не там, закрытая сторона наливается цветом.
+    // Подтверждение правильного положения не менее важно, чем предупреждение:
+    // в первом лице нет персонажа, по которому видно, достаточно ли ты ушёл.
+    if (dt <= O.lastCallS && dt > 0 && pulse > 0.5) {
+      const warn = safe ? COLORS.gap : COLORS.block;
+      quad(
+        project(-HALF, 0, 0.75, cam), project(HALF, 0, 0.75, cam),
+        project(HALF, 0.08, 0.75, cam), project(-HALF, 0.08, 0.75, cam),
+        warn,
+      );
+    }
+  }
+}
+
+/** Где кончается препятствие и начинается проём. Связано с ходом камеры. */
+export const obstacleEdge = () => Math.abs(camera(1, 0).x) * O.blockFrac;
 
 /**
  * Где находятся глаза при таком смещении тела.

@@ -12,6 +12,9 @@ import { SIGNALS as S, VIEW } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition } from './js/preview.js';
+import { makeLevel, telegraph, isSafe } from './js/level.js';
+import { obstacleEdge } from './js/view.js';
+import { OBSTACLES as O } from './js/config.js';
 
 let failed = 0;
 let passed = 0;
@@ -464,6 +467,108 @@ group('игровое поле', () => {
     'предупредить надо до того, как игра встанет на паузу, а не вместе с ней');
 
   check('без позы поле считает, что ребёнка нет', fieldPosition(null).outside);
+});
+
+// ──────────────────── препятствия и телеграф ────────────────────
+
+group('уровень', () => {
+  /* Проверяется не «похоже на правду», а инварианты, которые обязаны
+     держаться на любом уровне. Непроходимый уровень на глаз не виден — он
+     виден ребёнку, который не понимает, почему проиграл. Поэтому тысяча
+     разных уровней, а не один. */
+  let seed = 12345;
+  const rng = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+  let minGap = Infinity;
+  let sameSideRun = 0;
+  let worstSameSide = 0;
+  let total = 0;
+  let ducks = 0;
+  let firstTooEarly = 0;
+
+  for (let i = 0; i < 1000; i++) {
+    const level = makeLevel({ durationS: 180, crouch: true, rng });
+    if (!level.length) continue;
+    if (level[0].at < O.firstAtS) firstTooEarly++;
+
+    let prevSide = 0;
+    sameSideRun = 0;
+    for (let k = 0; k < level.length; k++) {
+      total++;
+      if (level[k].kind === 'duck') ducks++;
+      if (k > 0) minGap = Math.min(minGap, level[k].at - level[k - 1].at);
+      if (level[k].kind === 'side') {
+        sameSideRun = level[k].side === prevSide ? sameSideRun + 1 : 0;
+        worstSameSide = Math.max(worstSameSide, sameSideRun);
+        prevSide = level[k].side;
+      }
+    }
+  }
+
+  check('между препятствиями хватает места на телеграф', minGap >= O.minGapS - 1e-9,
+    `самый тесный промежуток ${minGap.toFixed(2)} с при телеграфе ${O.signalS} с`);
+  check('времени на решение хватает всегда', minGap >= O.minLeadS,
+    'иначе ребёнок физически не успевает — и дело не в ловкости');
+  check('разминка не прерывается', firstTooEarly === 0);
+  check('подряд в одну сторону не больше двух', worstSameSide <= 2,
+    `встретилось ${worstSameSide + 1} подряд; смысл игры в том, что ребёнок двигается`);
+  check('приседания встречаются, но не преобладают',
+    ducks / total > 0.1 && ducks / total < 0.5,
+    `их доля ${(ducks / total * 100).toFixed(0)}%`);
+
+  // Выключенные приседания должны убирать их совсем, а не «пореже».
+  const flat = makeLevel({ durationS: 300, crouch: false, rng });
+  check('без приседаний верхних препятствий нет', flat.every((o) => o.kind === 'side'),
+    'настройка для взрослого обязана работать буквально');
+});
+
+group('телеграф', () => {
+  // Порядок отметок — это и есть механика. Ошибка в нём не видна на глаз, но
+  // ломает игру: ребёнок узнаёт о препятствии позже, чем может среагировать.
+  const order = [O.signalS, O.visibleS, O.railS, O.lastCallS];
+  check('отметки идут по убыванию', order.every((x, i) => i === 0 || x < order[i - 1]),
+    JSON.stringify(order));
+  check('сигнал раньше, чем препятствие видно', O.signalS > O.visibleS,
+    'звук опережает картинку намеренно: у динамика телефона задержки нет');
+  check('времени на решение не меньше заявленного', O.minLeadS <= O.visibleS);
+
+  const far = telegraph(5);
+  check('за пять секунд ещё ничего не показано', !far.signal && !far.visible);
+  const sig = telegraph(3.5);
+  check('за 3.5 с идёт только сигнал', sig.signal && !sig.visible && !sig.rail);
+  const vis = telegraph(2.5);
+  check('за 2.5 с препятствие видно, рельса ещё нет', vis.visible && !vis.rail);
+  const rail = telegraph(1.5);
+  check('за 1.5 с идёт рельс', rail.rail && !rail.lastCall);
+  const last = telegraph(0.5);
+  check('за полсекунды — последний зов', last.lastCall && !last.arrived);
+  check('ноль — это приход', telegraph(0).arrived);
+});
+
+group('уклонение', () => {
+  const edge = obstacleEdge();
+  const full = Math.abs(cameraX(1));
+
+  // Уйти должно быть можно. Край препятствия выражен долей хода камеры именно
+  // поэтому: развязать эти числа значит получить препятствие, от которого
+  // нельзя уклониться в принципе, и заметить это только на ребёнке.
+  check('от препятствия можно уйти', edge < full,
+    `край на ${edge.toFixed(2)} м при ходе камеры ${full.toFixed(2)} м`);
+  check('но уйти надо заметно, а не качнуться', edge > full * 0.2,
+    'иначе достаточно стоять и чуть шевелиться');
+
+  const right = { kind: 'side', side: 1 };
+  check('закрыта правая — спасает левая', isSafe(right, { camX: -full }));
+  check('стоять посередине не спасает', !isSafe(right, { camX: 0 }));
+  check('уйти в закрытую сторону не спасает', !isSafe(right, { camX: full }));
+
+  const left = { kind: 'side', side: -1 };
+  check('и симметрично', isSafe(left, { camX: full }) && !isSafe(left, { camX: -full }));
+
+  const duck = { kind: 'duck', side: 0 };
+  check('верхнее проходится приседом', isSafe(duck, { camX: 0, crouching: true }));
+  check('а смещением вбок — нет', !isSafe(duck, { camX: full, crouching: false }),
+    'иначе присед можно было бы не делать вовсе');
 });
 
 // ───────────────────────── калибровка ─────────────────────────

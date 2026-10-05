@@ -8,12 +8,16 @@
 // телеграфа пока нет: ребёнок обнаруживает, что вид едет за его телом, а мы
 // снимаем числа, от которых зависит всё остальное.
 
-import { SIGNALS as S, VIEW, POSE, CAMERA } from './config.js';
+import { SIGNALS as S, VIEW, POSE, OBSTACLES as O } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, canReach } from './view.js';
 import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
 import { framing } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
+import { makeLevel, isSafe } from './level.js';
+import * as audio from './audio.js';
+import { settings } from './settings.js';
+import { cameraX } from './view.js';
 import { round, flag } from './util.js';
 import * as pose from './pose.js';
 import * as log from './log.js';
@@ -31,8 +35,12 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let run = RUN.running;
   let raf = 0;
   let travel = 0;
+  let elapsed = 0;     // секунд забега; по нему живёт весь телеграф
   let stars = [];
+  let obstacles = [];
   let score = 0;
+  let invulnUntil = 0;
+  let flash = 0;
   let lastFrame = 0;
   let pauseWhy = null;
   let countdownUntil = 0;
@@ -91,8 +99,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     if (next === 'calibrate') calibrator = makeCalibration();
     if (next === 'free') {
       stars = makeStars();
+      obstacles = makeLevel({ crouch: settings.get('crouch') });
       travel = 0;
+      elapsed = 0;
       score = 0;
+      invulnUntil = 0;
       run = RUN.running;
     }
     hud();
@@ -225,7 +236,12 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         log.event('resume', {});
         hud();
       }
-      if (run === RUN.running) travel += VIEW.speed * dt;
+      if (run === RUN.running) {
+        travel += VIEW.speed * dt;
+        // Время забега идёт только пока бежим: на паузе препятствия не
+        // должны проезжать мимо ребёнка, которого нет в кадре.
+        elapsed += dt;
+      }
     }
 
     // Взгляд догоняет тело кадр за кадром. Непрерывно по построению —
@@ -234,6 +250,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     const v = followV.step(last.v, dt);
     const moving = stage === 'free' && run === RUN.running;
     dim += ((moving ? 0 : 0.55) - dim) * Math.min(1, dt * 6);
+
+    if (stage === 'free') stepObstacles(now, u, v);
 
     if (stage === 'free') {
       for (const s of stars) {
@@ -245,15 +263,83 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           s.taken = true;
           score++;
           log.event('star', { side: Math.sign(s.x), u: round(u) });
+          audio.play('star');
           hud();
         }
       }
     }
 
-    view.render({ u, v, travel, stars, dim });
+    flash = Math.max(0, flash - dt * 2.2);
+    view.render({
+      u, v, travel, stars, obstacles, elapsed,
+      safe: lastSafe,
+      pulse: (now / 220) % 2 < 1 ? 1 : 0,
+      dim: Math.min(1, dim + flash),
+    });
     if (skeleton && !skeleton.parentElement?.hidden) drawSkeleton(skeleton, lastLm, lastOk);
     if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
     if (now - health.since > 1000) flushHealth(now);
+  }
+
+  /* Препятствия: телеграф, столкновение и окно прощения.
+
+     Опоздание на треть секунды прощается задним числом — и в первом лице это
+     вообще незаметно, потому что персонажа, который уже стукнулся, на экране
+     нет. Первое лицо здесь работает на нас. */
+  let lastSafe = true;
+
+  function stepObstacles(now, u, v) {
+    const camX = cameraX(u);
+    const crouching = tracker?.crouch ?? false;
+    lastSafe = true;
+
+    for (const ob of obstacles) {
+      if (ob.passed) continue;
+      const dt = ob.at - elapsed;
+      if (dt > O.signalS) break; // список по времени — дальше смотреть незачем
+
+      const safe = isSafe(ob, { camX, crouching });
+
+      // Звук за четыре секунды: он говорит, что именно делать, и приходит
+      // раньше картинки — у динамика телефона задержки нет.
+      if (!ob.announced && dt <= O.signalS) {
+        ob.announced = true;
+        audio.play(audio.motifFor(ob));
+        log.event('telegraph', { kind: ob.kind, side: ob.side, at: round(ob.at, 1) });
+      }
+
+      // Пока препятствие в последней секунде, его состояние правит подсветку.
+      if (dt <= O.lastCallS && dt > 0) lastSafe = safe;
+
+      if (dt > 0) continue;
+
+      // Пришло. Либо сразу засчитываем проход, либо открываем окно прощения.
+      if (safe) {
+        ob.passed = true;
+        audio.play('clear');
+        log.event('obstacle', { kind: ob.kind, side: ob.side, result: 'clear', camX: round(camX) });
+      } else if (ob.verdictAt === null) {
+        ob.verdictAt = now + O.lateForgiveMs;
+      } else if (now >= ob.verdictAt) {
+        ob.passed = true;
+        // Решение запоминается до того, как мы выставим неуязвимость:
+        // иначе в журнал всегда уходило бы «прощено».
+        const counted = now > invulnUntil;
+        if (counted) {
+          ob.hit = true;
+          score = Math.max(0, score - O.starsLost);
+          invulnUntil = now + O.invulnMs;
+          flash = 0.5;
+          audio.play('hit');
+          hud();
+        }
+        log.event('obstacle', {
+          kind: ob.kind, side: ob.side,
+          result: counted ? 'hit' : 'grace',
+          camX: round(camX), crouch: crouching,
+        });
+      }
+    }
   }
 
   function flushHealth(now) {
