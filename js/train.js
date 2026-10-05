@@ -96,6 +96,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function hud(extra = {}) {
     onHud?.({
       stage, run, why: pauseWhy, score, setupOk,
+      source: source?.kind || null,
       progress: durationS ? Math.min(1, elapsed / durationS) : 0,
       ...extra,
     });
@@ -106,9 +107,13 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     stage = next;
     if (next === 'calibrate') calibrator = makeCalibration();
     if (next === 'free') {
-      // ?run=20 — короткий забег для отладки финиша: ждать три минуты на
-      // каждую проверку экрана результата бессмысленно.
-      durationS = Number(flag('run')) || settings.get('runLength') || 240;
+      /* Длина забега. Параметр адреса сильнее всего, затем режим ускоренной
+         отладки, затем родительская настройка: ждать пять минут на каждую
+         проверку экрана финиша бессмысленно. */
+      durationS = Number(flag('run'))
+        || (settings.get('debug') === 'fast' ? 30 : 0)
+        || settings.get('runLength')
+        || 300;
       stars = makeStars(Math.ceil(durationS * VIEW.speed / 3.5));
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
       travel = 0;

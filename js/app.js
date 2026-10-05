@@ -108,10 +108,15 @@ async function keepScreenAwake() {
    выглядит не так, как ожидалось. Ребёнку она не мешает — мелкая и в углу. */
 function updateStatus() {
   const mark = (ok, yes, no) => `<b class="${ok ? 'yes' : 'no'}">${ok ? yes : no}</b>`;
+  const debug = settings.get('debug');
   $('status').innerHTML = [
     mark(installedApp, 'приложение', 'вкладка браузера'),
     mark(!!document.fullscreenElement || installedApp, 'во весь экран', 'не во весь экран'),
     mark(!!wakeLock, 'экран не гаснет', 'экран может погаснуть'),
+    // Включённую отладку надо видеть, не заходя в меню: иначе однажды ребёнку
+    // дадут поиграть с синтетическим источником и будут гадать, почему он не
+    // влияет на игру.
+    ...(debug === 'off' ? [] : [mark(false, '', `отладка: ${settings.label('debug')}`)]),
   ].join(' · ');
 }
 addEventListener('fullscreenchange', updateStatus);
@@ -201,7 +206,7 @@ function renderRunHud(h = {}) {
   lastHud = h;
   // cam, а не settings: иначе имя затенило бы импортированные настройки.
   const { stage = 'free', run = 'running', why, score = 0, setupOk, framing,
-    settings: cam, pipeline, calib, result, progress = 0 } = h;
+    settings: cam, pipeline, calib, result, progress = 0, source } = h;
   const overlay = $('runOverlay');
   const title = $('runOverlayTitle');
   const text = $('runOverlayText');
@@ -299,8 +304,13 @@ function renderRunHud(h = {}) {
   overlay.hidden = !stopped;
   numbers.hidden = true;
   $('runNext').hidden = true;
-  $('runSeen').textContent = stopped ? 'тебя не видно' : 'вижу тебя';
-  $('runSeen').classList.toggle('lost', stopped);
+  /* При синтетическом источнике так и написано. Это не придирка: с ним игра
+     ведёт себя почти как настоящая, и забыть, что камера не участвует, очень
+     легко — а потом удивляться, почему «распознавание работает идеально». */
+  const fake = source === 'fake';
+  $('runSeen').textContent = fake ? 'синтетика, камера не работает'
+    : stopped ? 'тебя не видно' : 'вижу тебя';
+  $('runSeen').classList.toggle('lost', stopped || fake);
   if (run === 'paused') {
     const [t, x] = PAUSE_TEXT[why] || PAUSE_TEXT.none;
     title.textContent = t;
@@ -420,6 +430,7 @@ const PARENT_ROWS = [
   ['setCrouch', 'crouchV', 'crouch'],
   ['setSound', 'soundV', 'sound'],
   ['setPreview', 'previewV', 'preview'],
+  ['setDebug', 'debugV', 'debug'],
 ];
 
 function renderParent() {
@@ -429,7 +440,8 @@ function renderParent() {
 for (const [btn, out, name] of PARENT_ROWS) {
   $(btn).onclick = () => {
     $(out).textContent = settings.cycle(name);
-    refreshHud(); // настройка окошка должна отзываться сразу
+    refreshHud();  // настройка окошка должна отзываться сразу
+    updateStatus(); // и отладка — в полосе состояния
   };
 }
 

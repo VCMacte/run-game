@@ -6,14 +6,21 @@
 
 import { POSE } from './config.js';
 import { flag } from './util.js';
+import { settings } from './settings.js';
 import * as log from './log.js';
 
 let active = null;
 
-/** Какой источник просили: ?fake=walk — синтетика, иначе камера. */
+/**
+ * Какой источник просили.
+ *
+ * Параметр адреса сильнее настройки: он задаётся осознанно и на один раз, а
+ * настройка живёт между запусками и про неё легко забыть.
+ */
 export function wantedSource() {
   const fake = flag('fake');
   if (fake !== null) return { source: 'fake', script: fake || 'demo' };
+  if (settings.get('debug') !== 'off') return { source: 'fake', script: 'demo' };
   return { source: 'camera' };
 }
 
