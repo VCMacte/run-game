@@ -495,6 +495,26 @@ $('recal').onclick = () => {
 
 $('goParent').onclick = () => { renderParent(); show('parent'); };
 
+/* Выгрузка журнала прямо из настроек, одной кнопкой. Подробный экран остаётся,
+   но когда что-то пошло не так, лишний переход — это лишний шанс потерять
+   запись: журнал пишется дальше и вытесняет старое. */
+$('saveLogs').onclick = async () => {
+  const b = $('saveLogs');
+  const было = b.textContent;
+  b.disabled = true;
+  b.textContent = 'Собираю…';
+  try {
+    const r = await log.save();
+    b.textContent = r.shared === 'shared' ? 'Отправлено' : 'Сохранено в «Загрузки»';
+  } catch (e) {
+    b.textContent = 'Не получилось';
+    log.event('error', { where: 'saveLogs', message: String(e?.message || e) });
+  } finally {
+    b.disabled = false;
+    setTimeout(() => { b.textContent = было; }, 4000);
+  }
+};
+
 $('parentBack').onclick = () => show(previous);
 
 // ────────────────────────── журнал событий ──────────────────────────

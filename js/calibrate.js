@@ -60,7 +60,7 @@ export function clear() {
 export function isStale(cal, g, tolerance = 0.25) {
   if (!cal || !g) return false;
   const dS = Math.abs(g.S - cal.S0) / cal.S0;
-  const dX = Math.abs(g.cx - cal.neutralX) / g.S;
+  const dX = Math.abs(g.cxh - cal.neutralX) / g.S;
   return dS > tolerance || dX > tolerance * 2;
 }
 
@@ -70,7 +70,7 @@ export function isStale(cal, g, tolerance = 0.25) {
  * `push(lm, t)` возвращает состояние: текущая стадия, что говорить ребёнку,
  * сколько осталось, и — на последней — готовую калибровку.
  */
-export function makeCalibration() {
+export function makeCalibration({ aspect = 1 } = {}) {
   let stage = 0;
   let since = null;
   let tries = 0;
@@ -114,7 +114,7 @@ export function makeCalibration() {
       if (!st) return { done: true, result };
 
       if (!lm) return { stage: st, say: 'Тебя не видно — встань в рамку', hold: 0, waiting: true };
-      const g = geometry(lm);
+      const g = geometry(lm, aspect);
       if (g.vis < S.visMin) {
         return { stage: st, say: 'Тебя плохо видно', hold: 0, waiting: true };
       }
@@ -123,14 +123,14 @@ export function makeCalibration() {
       const hold = t - since;
 
       if (st.id === 'neutral') {
-        neutral.x += g.cx; neutral.shoulderY += g.shoulderY;
+        neutral.x += g.cxh; neutral.shoulderY += g.shoulderY;
         neutral.hipY += g.hipY; neutral.S += g.S; neutral.n++;
       } else {
         const base = mean();
         if (st.id === 'crouch') {
           best.crouch = Math.max(best.crouch, (g.shoulderY - base.neutralShoulderY) / g.S);
         } else {
-          const u = S.mirrorX * (g.cx - base.neutralX) / g.S;
+          const u = S.mirrorX * (g.cxh - base.neutralX) / g.S;
           if (st.id === 'left' && u < 0) best.left = Math.max(best.left, -u);
           if (st.id === 'right' && u > 0) best.right = Math.max(best.right, u);
         }

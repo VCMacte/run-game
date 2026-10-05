@@ -60,6 +60,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let lastOk = false;
   let lastCx = null;
   let lastGeom = null;
+  /* Отношение сторон кадра. Без него x и y меряются в разных единицах, и
+     ширина плеч выходит вдвое меньше настоящей — ребёнок, стоящий лицом,
+     читается как повёрнутый боком. Берём у источника, а не угадываем. */
+  let aspect = 16 / 9;
   const followU = makeFollower(VIEW.followMs);
   const followV = makeFollower(VIEW.followMs);
   let dim = 0;
@@ -105,7 +109,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function goStage(next) {
     log.event('train.stage', { from: stage, to: next });
     stage = next;
-    if (next === 'calibrate') calibrator = makeCalibration();
+    if (next === 'calibrate') calibrator = makeCalibration({ aspect });
     if (next === 'free') {
       /* Длина забега. Параметр адреса сильнее всего, затем режим ускоренной
          отладки, затем родительская настройка: ждать пять минут на каждую
@@ -144,7 +148,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   }
 
   function onSetup(sample, now) {
-    const g = sample.lm ? geometry(sample.lm) : null;
+    const g = sample.lm ? geometry(sample.lm, aspect) : null;
     lastOk = !!g && g.vis >= S.visMin;
     lastCx = g ? g.cx : null;
     lastGeom = g;
@@ -160,7 +164,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   }
 
   function onCalibrate(sample, now) {
-    const g = sample.lm ? geometry(sample.lm) : null;
+    const g = sample.lm ? geometry(sample.lm, aspect) : null;
     lastOk = !!g && g.vis >= S.visMin;
     lastCx = g ? g.cx : null;
     const r = calibrator.push(sample.lm, now);
@@ -175,7 +179,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           crouch: round(calibration.excursion.crouch),
         },
       });
-      tracker = makeTracker(calibration);
+      tracker = makeTracker(calibration, { aspect });
       goStage('free');
       return;
     }
@@ -475,11 +479,17 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
     async start({ source: src, script, skipSetup = false }) {
       calibration = loadCalibration();
-      tracker = makeTracker(calibration || {});
+      tracker = makeTracker(calibration || {}, { aspect });
       travel = 0; score = 0; dim = 0; lastFrame = 0;
       health.since = performance.now();
 
       source = await pose.start({ source: src, script, hz: POSE.hz, onSample });
+      // Отношение сторон — у камеры настоящее, у синтетики то, под которое
+      // нарисован её скелет.
+      const st = source?.settings;
+      aspect = st?.width && st?.height ? st.width / st.height : 16 / 9;
+      tracker = makeTracker(calibration || {}, { aspect });
+      log.event('cam.aspect', { aspect: round(aspect, 2), w: st?.width ?? null, h: st?.height ?? null });
 
       // Предпросмотр: у синтетики камеры нет, и показывать нечего.
       if (video && source.video) {

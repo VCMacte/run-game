@@ -75,18 +75,36 @@ function angleAt(lm, a, b, c) {
  * Ширина плеч для масштаба не годится — она схлопывается, когда ребёнок
  * поворачивается боком. Зато именно поэтому она хороший детектор поворота.
  */
-export function geometry(lm) {
-  const shoulderX = (px(lm, LM.lShoulder) + px(lm, LM.rShoulder)) / 2;
+export function geometry(lm, aspect = 1) {
+  /* Приведение x к единицам y — обязательное, а не косметическое.
+
+     MediaPipe нормирует x по ШИРИНЕ кадра, а y по ВЫСОТЕ. Складывать их в
+     одной формуле нельзя: при кадре 16:9 горизонтальные расстояния выходят
+     вдвое меньше, чем есть. Считано на живом ребёнке: отношение ширины плеч к
+     длине торса получалось 0.48 при пороге 0.45 — то есть стоящий строго
+     лицом висел на волосок от «повернись к телевизору» и однажды там застрял.
+     Физически верное отношение — 0.86.
+
+     Умножая x на отношение сторон, получаем длины в одних единицах (долях
+     высоты кадра), и все производные величины становятся физическими:
+     `u` — смещение в длинах торса, `shoulderRatio` — настоящее отношение
+     ширины плеч к торсу. */
+  const X = (i) => px(lm, i) * aspect;
+
+  const shoulderX = (X(LM.lShoulder) + X(LM.rShoulder)) / 2;
   const shoulderY = (py(lm, LM.lShoulder) + py(lm, LM.rShoulder)) / 2;
-  const hipX = (px(lm, LM.lHip) + px(lm, LM.rHip)) / 2;
+  const hipX = (X(LM.lHip) + X(LM.rHip)) / 2;
   const hipY = (py(lm, LM.lHip) + py(lm, LM.rHip)) / 2;
 
   const torso = Math.hypot(shoulderX - hipX, shoulderY - hipY);
-  const shoulderWidth = Math.abs(px(lm, LM.lShoulder) - px(lm, LM.rShoulder));
+  const shoulderWidth = Math.abs(X(LM.lShoulder) - X(LM.rShoulder));
 
   // Центр тела — по четырём точкам, а не по всему скелету: машущие руки не
-  // должны сдвигать показание.
+  // должны сдвигать показание. Отдаётся дважды: cx в долях ширины кадра — для
+  // проверок «у края» и «кто-то второй», где рамка меряется именно шириной;
+  // и cxh в тех же единицах, что длины, — для смещения в длинах торса.
   const cx = (px(lm, LM.lShoulder) + px(lm, LM.rShoulder) + px(lm, LM.lHip) + px(lm, LM.rHip)) / 4;
+  const cxh = cx * aspect;
 
   const vis = (pv(lm, LM.lShoulder) + pv(lm, LM.rShoulder) + pv(lm, LM.lHip) + pv(lm, LM.rHip)) / 4;
 
@@ -95,7 +113,7 @@ export function geometry(lm) {
   const kneeVis = Math.min(pv(lm, LM.lKnee), pv(lm, LM.rKnee));
 
   return {
-    S: torso, cx, shoulderY, hipY, shoulderWidth, vis,
+    S: torso, cx, cxh, shoulderY, hipY, shoulderWidth, vis,
     knee: Math.min(kneeL, kneeR), kneeVis,
     shoulderRatio: torso > 0 ? shoulderWidth / torso : 0,
   };
@@ -124,7 +142,7 @@ const DEFAULT_CALIBRATION = {
  * Сырые uRaw и vRaw отдаются тоже, но только для журнала и отладки: по ним
  * видно, дошёл ли сигнал до порога вообще. В игру они не идут.
  */
-export function makeTracker(calibration = {}) {
+export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
   const cal = { ...DEFAULT_CALIBRATION, ...calibration };
 
   const fu = makeOneEuro(S.oneEuro);
@@ -174,7 +192,7 @@ export function makeTracker(calibration = {}) {
         return { t, ok: false, why: 'none', lostMs: t - lostSince, lane, crouch };
       }
 
-      const g = geometry(lm);
+      const g = geometry(lm, aspect);
       const why = presence(g, t);
       prevCx = g.cx;
 
@@ -188,7 +206,7 @@ export function makeTracker(calibration = {}) {
 
       // Первая достоверная поза задаёт нейтраль, если калибровки ещё нет.
       if (cal.neutralX === null) {
-        cal.neutralX = g.cx;
+        cal.neutralX = g.cxh;
         cal.neutralShoulderY = g.shoulderY;
         cal.neutralHipY = g.hipY;
         cal.S0 = g.S;
@@ -197,7 +215,7 @@ export function makeTracker(calibration = {}) {
       // Знак инвертируется: задняя камера смотрит на ребёнка, повёрнутого к
       // ней лицом, и «влево» в кадре противоположно «влево» у ребёнка. Это та
       // ошибка, которая делает игру неиграбельной.
-      const uRaw = S.mirrorX * (g.cx - cal.neutralX) / g.S;
+      const uRaw = S.mirrorX * (g.cxh - cal.neutralX) / g.S;
       const vRaw = (g.shoulderY - cal.neutralShoulderY) / g.S;
       const vHip = (g.hipY - cal.neutralHipY) / g.S;
 
@@ -217,7 +235,7 @@ export function makeTracker(calibration = {}) {
         if (centeredSince === null) centeredSince = t;
         if (t - centeredSince > S.driftRequiresCenteredMs) {
           const k = 1 - Math.exp(-(dt * 1000) / S.driftTauMs);
-          cal.neutralX += k * (g.cx - cal.neutralX);
+          cal.neutralX += k * (g.cxh - cal.neutralX);
           cal.neutralShoulderY += k * (g.shoulderY - cal.neutralShoulderY);
           cal.neutralHipY += k * (g.hipY - cal.neutralHipY);
           driftApplied = true;
