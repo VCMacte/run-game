@@ -137,6 +137,8 @@ function show(name) {
   if (!ADULT.has(name)) previous = name;
   lockOrientation(ORIENTATION[name] || 'portrait');
   log.event('screen', { name });
+  // Возврат в игру из родительского меню: показать то, что настроили.
+  if (name === 'run') refreshHud();
 }
 
 /* Заглушка с честным текстом. Экран существует, содержимого пока нет — и так
@@ -176,7 +178,18 @@ const PAUSE_TEXT = {
   jump: ['Кто-то ещё в кадре', 'Играть должен кто-то один'],
 };
 
+/* Последнее состояние HUD. Нужно, чтобы перерисовать его не дожидаясь
+   события от игры: взрослый меняет настройку окошка в родительском меню и
+   возвращается — изменение должно быть видно сразу, а не после следующей
+   собранной звезды. */
+let lastHud = {};
+
+function refreshHud() {
+  if (training) renderRunHud(lastHud);
+}
+
 function renderRunHud(h = {}) {
+  lastHud = h;
   // cam, а не settings: иначе имя затенило бы импортированные настройки.
   const { stage = 'free', run = 'running', why, score = 0, setupOk, framing, settings: cam, pipeline, calib } = h;
   const overlay = $('runOverlay');
@@ -348,7 +361,10 @@ function renderParent() {
 }
 
 for (const [btn, out, name] of PARENT_ROWS) {
-  $(btn).onclick = () => { $(out).textContent = settings.cycle(name); };
+  $(btn).onclick = () => {
+    $(out).textContent = settings.cycle(name);
+    refreshHud(); // настройка окошка должна отзываться сразу
+  };
 }
 
 $('recal').onclick = () => {
