@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d14">
+<title>Беги!</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="stage">
+  <div class="corridor"></div>
+
+  <!-- Калитка. Нужна обязательно: без жеста пользователя браузер не даст ни
+       полноэкранный режим, ни камеру. Нажатие кнопки и есть этот жест. -->
+  <section id="gate" class="safe screen center">
+    <h1>Беги!</h1>
+    <p class="lead">Поставьте телефон на штатив под телевизором и включите трансляцию экрана.</p>
+
+    <div class="card warn" id="installHint" hidden>
+      <h2>Откройте как приложение</h2>
+      <p class="lead">Во вкладке браузера на телевизор уедут адресная строка и кнопки телефона.
+        В меню Chrome выберите <b>«Установить приложение»</b> — именно этот пункт,
+        а не «Добавить на главный экран».</p>
+    </div>
+
+    <div class="row center">
+      <button id="start" class="big">Начать<small>экран останется включённым</small></button>
+    </div>
+  </section>
+
+  <!-- Главное меню. Две двери: тренировка и игра. -->
+  <section id="menu" class="safe screen center" hidden>
+    <h1>Беги!</h1>
+    <div class="row center">
+      <button id="goTrain" class="big">Тренировка<small id="trainSub">учимся двигаться</small></button>
+      <button id="goPlay" class="big ghost">Игра<small id="playSub">забег до финиша</small></button>
+    </div>
+    <p class="lead" id="menuHint">Сначала тренировка: на ней игра научится узнавать именно тебя.</p>
+  </section>
+
+  <!-- Честная заглушка: экран существует, содержимого пока нет. -->
+  <section id="soon" class="safe screen center" hidden>
+    <h1 id="soonTitle">—</h1>
+    <div class="card">
+      <p class="lead" id="soonText">—</p>
+    </div>
+    <div class="row center"><button id="soonBack" class="ghost">Назад</button></div>
+  </section>
+
+  <!-- Родительское меню. Открывается долгим удержанием правого верхнего угла. -->
+  <section id="parent" class="safe screen" hidden>
+    <h2>Настройки для взрослого</h2>
+    <div class="card">
+      <div class="row">
+        <button id="setLen" class="ghost">Длина забега: <span id="lenV"></span></button>
+        <button id="setSpeed" class="ghost">Скорость: <span id="speedV"></span></button>
+        <button id="setCrouch" class="ghost">Приседания: <span id="crouchV"></span></button>
+        <button id="setSound" class="ghost">Звук: <span id="soundV"></span></button>
+      </div>
+    </div>
+    <div class="card">
+      <p class="lead">Звук должен идти <b>с телефона</b>, а на телевизоре быть приглушён:
+        зеркалированный звук опаздывает вместе с картинкой, а телефон слышно сразу.</p>
+    </div>
+    <div class="row">
+      <button id="recal" class="ghost">Сбросить калибровку</button>
+      <button id="parentBack">Закрыть</button>
+    </div>
+  </section>
+
+  <div id="status"></div>
+  <div id="parentCorner"></div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

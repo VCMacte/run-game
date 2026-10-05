@@ -1,0 +1,668 @@
+<!doctype html>
+<!--
+  Замер задержки тракта «телефон → телевизор». Этап 0, риск R1.
+
+  Инструмент одноразовый и в игру не входит. Смысл в том, что главное число
+  проекта — сколько миллисекунд проходит от кадра на телефоне до картинки на
+  телевизоре — из кода не измеряется в принципе, а от него зависят скорость
+  бега, длина телеграфа и вообще осуществимость затеи.
+
+  Три метода, по убыванию доступности:
+    A. Звуковая петля   — только телефон, ±5 мс. Основной.
+    B. Счётчик для 240 fps — нужен второй телефон, ±4 мс. Эталон.
+    C. Оптическая петля — только телефон, ±35 мс. Проверка порядка величины.
+
+  Страницу надо открыть в защищённом контексте, иначе Chrome не даст ни
+  микрофон, ни камеру (см. README).
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Замер задержки трансляции</title>
+<style>
+  /* Вёрстка рассчитана на зеркалирование: крупные формы, жирный шрифт,
+     высокий контраст — Miracast сжимает картинку и съедает тонкие линии. */
+  :root {
+    --bg: #0b0d14; --fg: #f2f5ff; --dim: #8b94b2;
+    --ok: #39d98a; --warn: #ffb02e; --bad: #ff5a5f; --accent: #5aa9ff;
+    --safe: 3.5%; /* запас на overscan телевизора */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 700 3.2vmin/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  #app { min-height: 100%; padding: var(--safe); display: flex; flex-direction: column; gap: 2.4vmin; }
+  h1 { font-size: 4.6vmin; margin: 0; letter-spacing: .02em; }
+  h2 { font-size: 3.6vmin; margin: 0 0 1vmin; }
+  p { margin: 0 0 1.2vmin; }
+  .dim { color: var(--dim); }
+  [hidden] { display: none !important; }
+
+  button {
+    font: inherit; font-size: 3.4vmin; color: #07111f; background: var(--accent);
+    border: 0; border-radius: 2.4vmin; padding: 2.2vmin 3.4vmin; cursor: pointer;
+    text-shadow: none; min-width: 28vmin;
+  }
+  button.ghost { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 .45vmin var(--dim); }
+  button:disabled { opacity: .4; }
+  .row { display: flex; flex-wrap: wrap; gap: 1.8vmin; align-items: center; }
+
+  .card { background: #141827; border-radius: 3vmin; padding: 2.8vmin; }
+  .note { border-left: .8vmin solid var(--warn); padding-left: 2vmin; }
+  .note.bad { border-color: var(--bad); }
+
+  /* Главное число — его читают с дивана, поэтому оно крупнее всего на странице. */
+  .big { font-size: 16vmin; line-height: 1; letter-spacing: -.02em; }
+  .big small { font-size: 4vmin; color: var(--dim); }
+  .stat { display: flex; gap: 3vmin; flex-wrap: wrap; }
+  .stat div { font-size: 3vmin; color: var(--dim); }
+  .stat b { display: block; font-size: 4.4vmin; color: var(--fg); }
+
+  table { border-collapse: collapse; font-size: 2.6vmin; width: 100%; }
+  th, td { text-align: right; padding: .6vmin 1.4vmin; }
+  th:first-child, td:first-child { text-align: left; }
+  tbody tr:nth-child(odd) { background: #1b2033; }
+
+  input[type=number] { font: inherit; font-size: 3vmin; width: 14vmin; padding: 1vmin;
+    border-radius: 1.4vmin; border: .3vmin solid var(--dim); background: #0b0d14; color: var(--fg); }
+
+  /* Режим B: мигающий счётчик для съёмки на 240 fps. */
+  #flash { position: fixed; inset: 0; display: grid; place-items: center; z-index: 9; }
+  #flashNum { font-size: 34vmin; line-height: 1; font-variant-numeric: tabular-nums; }
+
+  #optView { width: 40vmin; border-radius: 2vmin; background: #000; }
+  #optPane { position: fixed; inset: 0; z-index: 8; }
+</style>
+
+<div id="app">
+  <h1>Замер задержки «телефон → телевизор»</h1>
+
+  <div id="insecure" class="card note bad" hidden>
+    <h2>Нет защищённого контекста</h2>
+    <p>Chrome не даст микрофон и камеру по этому адресу. Нужен <b>https</b> или <b>localhost</b> —
+       как это устроить, написано в <span class="dim">README.md</span>.</p>
+    <p class="dim" id="originLine"></p>
+  </div>
+
+  <div id="menu" class="card">
+    <h2>Что измеряем</h2>
+    <p class="dim">Порядок такой: сначала калибровка петли при <b>выключенной</b> трансляции,
+       потом замер при включённой. Без калибровки результат бессмысленен — в нём останутся
+       задержки звуковой подсистемы самого телефона.</p>
+    <div class="row">
+      <button data-go="audio">A. Звуковая петля</button>
+      <button data-go="flash" class="ghost">B. Счётчик для 240 fps</button>
+      <button data-go="optic" class="ghost">C. Оптическая петля</button>
+    </div>
+    <p class="dim" style="margin-top:2vmin">
+      Расстояние от динамика телевизора до телефона, см:
+      <input id="dist" type="number" value="50" min="0" max="500" step="10">
+      <span class="dim">— на эту дистанцию звук летит заметное время, его вычитаем</span>
+    </p>
+  </div>
+
+  <!-- ─────────────────────────── A. Звуковая петля ─────────────────────────── -->
+  <section id="audio" hidden>
+    <div class="card">
+      <h2>A. Звуковая петля</h2>
+      <p class="dim">Телефон издаёт короткий свип, его же слышит своим микрофоном.
+        При включённой трансляции тот же свип звучит из телевизора и приходит позже —
+        разница и есть задержка тракта.</p>
+      <div class="row">
+        <button id="aCal">① Калибровка (трансляция выключена)</button>
+        <button id="aRun" disabled>② Замер (трансляция включена)</button>
+        <button id="aBack" class="ghost">Назад</button>
+      </div>
+    </div>
+
+    <div class="card note" id="aWarn" hidden></div>
+
+    <div class="card">
+      <div class="big"><span id="aMain">—</span><small> мс</small></div>
+      <div class="stat">
+        <div>калибровка петли<b id="aCalV">—</b></div>
+        <div>разброс (межквартильный)<b id="aIqr">—</b></div>
+        <div>попыток зачтено<b id="aN">—</b></div>
+        <div>поправка на звук<b id="aAc">—</b></div>
+      </div>
+      <p class="dim" id="aStatus" style="margin-top:1.6vmin">Готов.</p>
+    </div>
+
+    <div class="card">
+      <table><thead><tr><th>попытка</th><th>прямой, мс</th><th>с телевизора, мс</th><th>задержка, мс</th></tr></thead>
+        <tbody id="aRows"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ──────────────────── B. Счётчик для съёмки на 240 fps ──────────────────── -->
+  <section id="flashPane" hidden>
+    <div id="flash">
+      <div id="flashNum">000</div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── C. Оптическая петля ───────────────────────── -->
+  <section id="optic" hidden>
+    <div class="card">
+      <h2>C. Оптическая петля</h2>
+      <p class="dim">Телефон мигает известной последовательностью, его задняя камера смотрит
+        на телевизор и видит её с опозданием. Меряет весь круг: рендер + трансляция + матрица
+        + камера. Поэтому результат — <b>граница сверху</b>, а не само число.</p>
+      <p class="dim">Штатив нужно развернуть на телевизор, экран телефона при этом виден
+        в кадре быть не должен.</p>
+      <div class="row">
+        <button id="oStart">Начать (6 секунд)</button>
+        <button id="oBack" class="ghost">Назад</button>
+      </div>
+      <div class="row" style="margin-top:2vmin"><video id="optView" muted playsinline></video></div>
+    </div>
+    <div class="card">
+      <div class="big"><span id="oMain">—</span><small> мс (весь круг)</small></div>
+      <div class="stat">
+        <div>уверенность совпадения<b id="oConf">—</b></div>
+        <div>кадров камеры<b id="oFrames">—</b></div>
+      </div>
+      <p class="dim" id="oStatus" style="margin-top:1.6vmin">Готов.</p>
+    </div>
+    <div id="optPane" hidden></div>
+  </section>
+
+  <div class="card row" id="saveRow" hidden>
+    <button id="save" class="ghost">Сохранить результаты</button>
+    <span class="dim" id="saveMsg"></span>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ───────────────────────────── общее ─────────────────────────────
+
+const $ = (id) => document.getElementById(id);
+const SOUND_SPEED = 343; // м/с, для поправки на расстояние до телевизора
+const results = { startedAt: new Date().toISOString(), audio: null, optic: null, env: {} };
+
+if (!window.isSecureContext) {
+  $('insecure').hidden = false;
+  $('originLine').textContent = location.origin;
+}
+
+results.env = {
+  ua: navigator.userAgent,
+  screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+  cores: navigator.hardwareConcurrency || null,
+};
+
+function show(name) {
+  for (const id of ['menu', 'audio', 'flashPane', 'optic']) $(id).hidden = true;
+  $(name).hidden = false;
+}
+for (const b of document.querySelectorAll('[data-go]')) {
+  b.onclick = () => ({ audio: openAudio, flash: openFlash, optic: openOptic })[b.dataset.go]();
+}
+$('aBack').onclick = $('oBack').onclick = () => { stopAll(); show('menu'); };
+
+const stoppers = [];
+function stopAll() { while (stoppers.length) { try { stoppers.pop()(); } catch {} } }
+
+function median(xs) {
+  const a = [...xs].sort((x, y) => x - y), n = a.length;
+  if (!n) return NaN;
+  return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
+}
+function quantile(xs, q) {
+  const a = [...xs].sort((x, y) => x - y);
+  if (!a.length) return NaN;
+  const i = (a.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return a[lo] + (a[hi] - a[lo]) * (i - lo);
+}
+const ms = (x) => Number.isFinite(x) ? x.toFixed(1) : '—';
+
+// Обещания разрешений и полного экрана умеют не завершаться никогда —
+// в комиксе на этом приложение зависало на экране загрузки.
+function withTimeout(promise, msLimit, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label}: нет ответа ${msLimit} мс`)), msLimit)),
+  ]);
+}
+
+// ──────────────────────── A. Звуковая петля ────────────────────────
+//
+// Почему именно свип, а не щелчок: у свипа узкий и однозначный пик
+// взаимной корреляции, и он переживает АЧХ динамика телевизора, тогда как
+// одиночный щелчок размазывается и даёт несколько сравнимых пиков.
+
+const CHIRP = { dur: 0.012, f0: 1500, f1: 6000 };
+const TRIALS = 12;
+const WINDOW = 0.9;   // с — где ищем отражение; 900 мс с запасом покрывают худший случай
+const GAP_MIN = 0.025; // с — ближе 25 мс пик от телевизора не отличить от прямого
+
+let actx = null, micStream = null, recNode = null;
+let capture = null; // { startFrame, buf, len }
+let audioCal = Number(localStorage.getItem('run-game.audioCal')) || null;
+
+function chirpBuffer(ctx) {
+  const sr = ctx.sampleRate, n = Math.round(sr * CHIRP.dur);
+  const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  const { f0, f1, dur } = CHIRP;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const phase = 2 * Math.PI * (f0 * t + (f1 - f0) * t * t / (2 * dur));
+    d[i] = Math.sin(phase) * 0.5 * (1 - Math.cos(2 * Math.PI * i / n)); // окно Ханна
+  }
+  return buf;
+}
+function chirpTemplate(sr) {
+  const n = Math.round(sr * CHIRP.dur), out = new Float32Array(n);
+  const { f0, f1, dur } = CHIRP;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const phase = 2 * Math.PI * (f0 * t + (f1 - f0) * t * t / (2 * dur));
+    out[i] = Math.sin(phase) * 0.5 * (1 - Math.cos(2 * Math.PI * i / n));
+  }
+  return out;
+}
+
+const RECORDER_SRC = `
+  class Rec extends AudioWorkletProcessor {
+    process(inputs) {
+      const ch = inputs[0] && inputs[0][0];
+      if (ch) this.port.postMessage({ frame: currentFrame, data: new Float32Array(ch) });
+      return true;
+    }
+  }
+  registerProcessor('rec', Rec);
+`;
+
+async function initAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  await actx.resume();
+
+  // Критично: эхоподавление, шумодав и автоусиление должны быть выключены.
+  // AEC устроен так, что вычитает из записи именно то, что телефон только что
+  // проиграл, — то есть ровно наш сигнал с телевизора. С включённым AEC замер
+  // не «шумит», он молча показывает, что отражения нет вовсе.
+  micStream = await withTimeout(navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+      channelCount: 1,
+    },
+  }), 20000, 'микрофон');
+  stoppers.push(() => micStream.getTracks().forEach((t) => t.stop()));
+
+  const s = micStream.getAudioTracks()[0].getSettings();
+  results.env.mic = s;
+  const bad = [];
+  if (s.echoCancellation) bad.push('эхоподавление');
+  if (s.noiseSuppression) bad.push('шумоподавление');
+  if (s.autoGainControl) bad.push('автоусиление');
+  if (bad.length) {
+    $('aWarn').hidden = false;
+    $('aWarn').classList.add('bad');
+    $('aWarn').innerHTML = `<h2>Обработка микрофона не отключилась</h2>
+      <p>Телефон оставил включённым: <b>${bad.join(', ')}</b>. Эхоподавление вычитает из
+      записи именно сигнал с телевизора, и замер покажет «отражения нет».
+      Результату в таком виде верить нельзя — надёжнее метод B.</p>`;
+  }
+
+  await actx.audioWorklet.addModule(URL.createObjectURL(
+    new Blob([RECORDER_SRC], { type: 'application/javascript' })));
+  recNode = new AudioWorkletNode(actx, 'rec');
+  actx.createMediaStreamSource(micStream).connect(recNode);
+  // Воркле́т должен крутиться, а для этого быть подключённым к выходу. Но через
+  // него нельзя пропустить микрофон в динамик: это была бы настоящая
+  // акустическая обратная связь. Поэтому выход глушится в ноль.
+  const mute = actx.createGain();
+  mute.gain.value = 0;
+  recNode.connect(mute).connect(actx.destination);
+
+  recNode.port.onmessage = (e) => {
+    if (!capture) return;
+    const at = e.data.frame - capture.startFrame;
+    if (at < 0) return;
+    if (at + e.data.data.length > capture.buf.length) { capture.full = true; return; }
+    capture.buf.set(e.data.data, at);
+    capture.len = Math.max(capture.len, at + e.data.data.length);
+  };
+
+  results.env.audio = {
+    sampleRate: actx.sampleRate,
+    baseLatency: actx.baseLatency ?? null,
+    outputLatency: actx.outputLatency ?? null,
+  };
+}
+
+// Матчед-фильтр и огибающая. Возвращает массив по отсчётам окна.
+function envelope(sig, len, tpl) {
+  const n = len - tpl.length;
+  const corr = new Float32Array(Math.max(0, n));
+  for (let i = 0; i < n; i++) {
+    let acc = 0;
+    for (let k = 0; k < tpl.length; k++) acc += sig[i + k] * tpl[k];
+    corr[i] = acc;
+  }
+  // Скользящее СКЗ по ~0.7 мс сглаживает фазовые нули внутри пика.
+  const w = Math.max(4, Math.round(0.0007 * actx.sampleRate));
+  const env = new Float32Array(corr.length);
+  let acc = 0;
+  for (let i = 0; i < corr.length; i++) {
+    acc += corr[i] * corr[i];
+    if (i >= w) acc -= corr[i - w] * corr[i - w];
+    env[i] = Math.sqrt(acc / Math.min(i + 1, w));
+  }
+  return env;
+}
+
+function peakAt(env, from, to) {
+  let bi = -1, bv = -Infinity;
+  for (let i = Math.max(0, from); i < Math.min(env.length, to); i++) {
+    if (env[i] > bv) { bv = env[i]; bi = i; }
+  }
+  return { index: bi, value: bv };
+}
+
+async function oneTrial(tpl) {
+  const sr = actx.sampleRate;
+  const t0 = actx.currentTime + 0.25;
+  capture = { startFrame: Math.round(t0 * sr), buf: new Float32Array(Math.round(sr * WINDOW)), len: 0 };
+
+  const src = actx.createBufferSource();
+  src.buffer = chirpBuffer(actx);
+  src.connect(actx.destination);
+  src.start(t0);
+
+  await new Promise((r) => setTimeout(r, (WINDOW + 0.3) * 1000));
+  const cap = capture; capture = null;
+  if (cap.len < sr * WINDOW * 0.8) throw new Error('микрофон отдал слишком мало данных');
+
+  const env = envelope(cap.buf, cap.len, tpl);
+  const toIdx = (s) => Math.round(s * sr);
+  const gap = toIdx(GAP_MIN);
+
+  const global = peakAt(env, 0, env.length);
+  if (!(global.value > 0)) throw new Error('пик не найден');
+
+  // Android при зеркалировании обычно уводит звук целиком на телевизор, и
+  // прямого щелчка из динамика телефона тогда нет вовсе. Поэтому прямой путь
+  // не угадывается по «первому пику», а ищется там, где его поставила
+  // калибровка. Нашёлся — слышны оба экземпляра, и задержка берётся как
+  // разница между ними. Не нашёлся — единственный пик и есть телевизор, а
+  // роль прямого пути играет калиброванное число.
+  let nearCal = null, after = null;
+  if (audioCal != null) {
+    const c = toIdx(audioCal / 1000);
+    const n = peakAt(env, c - toIdx(0.02), c + toIdx(0.02));
+    if (n.index >= 0 && n.value > global.value * 0.15) nearCal = n;
+    const base = (nearCal ? nearCal.index : 0) + gap;
+    const a = peakAt(env, base, env.length);
+    if (a.index >= 0 && a.value > global.value * 0.2) after = a;
+  }
+
+  const noise = median(Array.from(env).filter((_, i) => i % 97 === 0));
+  return {
+    globalMs: global.index / sr * 1000,
+    nearCalMs: nearCal ? nearCal.index / sr * 1000 : null,
+    afterMs: after ? after.index / sr * 1000 : null,
+    snr: global.value / (noise || 1e-9),
+  };
+}
+
+// Из пиков одной попытки — задержка тракта. Два случая, см. комментарий выше.
+function latencyOf(t, acoustic) {
+  if (t.nearCalMs != null && t.afterMs != null) {
+    return { ms: t.afterMs - t.nearCalMs - acoustic, both: true, arrival: t.afterMs };
+  }
+  if (audioCal != null && t.globalMs > audioCal + GAP_MIN * 1000) {
+    return { ms: t.globalMs - audioCal - acoustic, both: false, arrival: t.globalMs };
+  }
+  return null;
+}
+
+function openAudio() { show('audio'); renderAudio(); }
+
+function renderAudio() {
+  $('aCalV').textContent = audioCal == null ? '—' : ms(audioCal) + ' мс';
+  $('aRun').disabled = audioCal == null;
+  const cm = Number($('dist').value) || 0;
+  $('aAc').textContent = ms(cm / 100 / SOUND_SPEED * 1000) + ' мс';
+}
+$('dist').oninput = renderAudio;
+
+async function runTrials(mode) {
+  $('aCal').disabled = $('aRun').disabled = true;
+  $('aRows').innerHTML = '';
+  const rows = [];
+  try {
+    await initAudio();
+    const tpl = chirpTemplate(actx.sampleRate);
+    for (let i = 1; i <= TRIALS; i++) {
+      $('aStatus').textContent = `${mode === 'cal' ? 'Калибровка' : 'Замер'}: попытка ${i} из ${TRIALS}…`;
+      let t;
+      try { t = await oneTrial(tpl); } catch (e) { rows.push({ i, err: e.message }); continue; }
+      const acoustic0 = (Number($('dist').value) || 0) / 100 / SOUND_SPEED * 1000;
+      const lat = mode === 'cal' ? null : latencyOf(t, acoustic0);
+      rows.push({ i, ...t, latency: lat ? lat.ms : null });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i}</td>` +
+        `<td>${t.nearCalMs == null ? (mode === 'cal' ? ms(t.globalMs) : '—') : ms(t.nearCalMs)}</td>` +
+        `<td>${lat ? ms(lat.arrival) : (mode === 'cal' ? '—' : ms(t.globalMs))}</td>` +
+        `<td>${lat ? ms(lat.ms) : '—'}</td>`;
+      $('aRows').appendChild(tr);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    if (mode === 'cal') {
+      const vals = rows.filter((r) => !r.err).map((r) => r.globalMs);
+      if (!vals.length) throw new Error('ни одной удачной попытки');
+      audioCal = median(vals);
+      localStorage.setItem('run-game.audioCal', String(audioCal));
+      $('aMain').textContent = '—';
+      $('aN').textContent = vals.length;
+      $('aIqr').textContent = ms(quantile(vals, .75) - quantile(vals, .25)) + ' мс';
+      $('aStatus').textContent = 'Калибровка готова. Включите трансляцию на телевизор и жмите «Замер».';
+    } else {
+      const acoustic = (Number($('dist').value) || 0) / 100 / SOUND_SPEED * 1000;
+      const vals = rows.map((r) => r.latency).filter((x) => x != null);
+      if (!vals.length) {
+        $('aMain').textContent = '—';
+        $('aStatus').textContent = 'Отражения с телевизора не слышно. Громче телевизор, ' +
+          'проверьте, что трансляция идёт, и что эхоподавление выключено (предупреждение выше).';
+      } else {
+        const m = median(vals);
+        $('aMain').textContent = m.toFixed(0);
+        $('aN').textContent = vals.length;
+        $('aIqr').textContent = ms(quantile(vals, .75) - quantile(vals, .25)) + ' мс';
+        $('aStatus').textContent = vals.length < TRIALS / 2
+          ? 'Зачтено меньше половины попыток — число ненадёжное, повторите громче.'
+          : 'Готово. Повторите замер с игровым режимом телевизора — разница и будет выигрышем.';
+        results.audio = { median: m, trials: rows, acoustic, cal: audioCal, n: vals.length };
+        $('saveRow').hidden = false;
+      }
+    }
+  } catch (e) {
+    $('aStatus').textContent = 'Ошибка: ' + e.message;
+  } finally {
+    $('aCal').disabled = false;
+    renderAudio();
+  }
+}
+$('aCal').onclick = () => runTrials('cal');
+$('aRun').onclick = () => runTrials('run');
+
+// ────────────────── B. Счётчик для съёмки на 240 fps ──────────────────
+//
+// Телефон и телевизор попадают в один кадр замедленной съёмки, на обоих
+// виден один и тот же счётчик, разница показаний — задержка. Фон мигает,
+// чтобы на видео было видно границы кадров.
+
+function openFlash() {
+  show('flashPane');
+  const pane = $('flash'), num = $('flashNum');
+  let raf = 0, i = 0;
+  const t0 = performance.now();
+  const tick = () => {
+    const el = performance.now() - t0;
+    num.textContent = String(Math.round(el) % 1000).padStart(3, '0');
+    pane.style.background = (i >> 1) & 1 ? '#fff' : '#000';
+    num.style.color = (i >> 1) & 1 ? '#000' : '#fff';
+    i++;
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  stoppers.push(() => cancelAnimationFrame(raf));
+  // Выход — касанием, кнопке на мигающем фоне делать нечего.
+  const off = () => { stopAll(); show('menu'); pane.removeEventListener('pointerdown', off); };
+  pane.addEventListener('pointerdown', off);
+}
+
+// ───────────────────── C. Оптическая петля ─────────────────────
+
+const OPT = { bits: 150, hz: 25, lagMaxMs: 900, gridMs: 5 };
+
+function openOptic() { show('optic'); }
+
+$('oStart').onclick = async () => {
+  $('oStart').disabled = true;
+  $('oStatus').textContent = 'Включаю камеру…';
+  let stream;
+  try {
+    stream = await withTimeout(navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30 } },
+    }), 20000, 'камера');
+  } catch (e) {
+    $('oStatus').textContent = 'Ошибка: ' + e.message;
+    $('oStart').disabled = false;
+    return;
+  }
+  stoppers.push(() => stream.getTracks().forEach((t) => t.stop()));
+
+  const video = $('optView');
+  video.srcObject = stream;
+  await video.play();
+  results.env.camera = stream.getVideoTracks()[0].getSettings();
+
+  // Последовательность мигания. Случайная, но зафиксированная: по ней потом
+  // ищем совпадение. Чередование через один дало бы периодичность и
+  // неоднозначный лаг, поэтому биты именно случайные.
+  const bits = Array.from({ length: OPT.bits }, () => Math.random() < .5 ? 0 : 1);
+  const emitted = [];  // { t, bit }
+  const sampled = [];  // { t, lum }
+
+  // Съём яркости центра кадра. Маленький канвас — чтобы это не стоило кадров.
+  const cv = document.createElement('canvas'); cv.width = 32; cv.height = 18;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  let stopped = false;
+  const grab = () => {
+    if (stopped) return;
+    cx.drawImage(video, 0, 0, cv.width, cv.height);
+    const d = cx.getImageData(8, 4, 16, 10).data;
+    let s = 0;
+    for (let i = 0; i < d.length; i += 4) s += d[i] * .299 + d[i + 1] * .587 + d[i + 2] * .114;
+    sampled.push({ t: performance.now(), lum: s / (d.length / 4) });
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(grab);
+    else requestAnimationFrame(grab);
+  };
+  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(grab);
+  else requestAnimationFrame(grab);
+
+  const pane = $('optPane');
+  pane.hidden = false;
+  $('oStatus').textContent = 'Мигаю. Телефон должен смотреть на телевизор…';
+
+  let idx = -1;
+  const step = () => {
+    const next = Math.floor((performance.now() - start) / (1000 / OPT.hz));
+    if (next !== idx && next < bits.length) {
+      idx = next;
+      pane.style.background = bits[idx] ? '#fff' : '#000';
+      emitted.push({ t: performance.now(), bit: bits[idx] });
+    }
+    if (next < bits.length) raf = requestAnimationFrame(step);
+    else finish();
+  };
+  const start = performance.now();
+  let raf = requestAnimationFrame(step);
+  stoppers.push(() => { stopped = true; cancelAnimationFrame(raf); pane.hidden = true; });
+
+  function finish() {
+    stopped = true;
+    pane.hidden = true;
+    $('oFrames').textContent = sampled.length;
+    if (sampled.length < 40) {
+      $('oStatus').textContent = 'Кадров камеры слишком мало — замер не получился.';
+      $('oStart').disabled = false;
+      return;
+    }
+
+    // Обе дорожки приводим к сетке 5 мс и считаем взаимную корреляцию.
+    const t0 = emitted[0].t, t1 = emitted[emitted.length - 1].t;
+    const n = Math.floor((t1 - t0) / OPT.gridMs);
+    const grid = (arr, pick) => {
+      const out = new Float64Array(n);
+      let j = 0;
+      for (let i = 0; i < n; i++) {
+        const t = t0 + i * OPT.gridMs;
+        while (j + 1 < arr.length && arr[j + 1].t <= t) j++;
+        out[i] = pick(arr[j]);
+      }
+      return out;
+    };
+    const centre = (a) => { const m = a.reduce((s, x) => s + x, 0) / a.length; return a.map((x) => x - m); };
+    const emit = centre(Array.from(grid(emitted, (e) => e.bit)));
+    const seen = centre(Array.from(grid(sampled, (s) => s.lum)));
+
+    const maxLag = Math.floor(OPT.lagMaxMs / OPT.gridMs);
+    let best = { lag: 0, r: -Infinity };
+    const norm = (a, from, len) => {
+      let s = 0; for (let i = 0; i < len; i++) s += a[from + i] * a[from + i];
+      return Math.sqrt(s) || 1e-9;
+    };
+    for (let lag = 0; lag < maxLag; lag++) {
+      const len = n - lag;
+      if (len < maxLag) break;
+      let acc = 0;
+      for (let i = 0; i < len; i++) acc += emit[i] * seen[i + lag];
+      const r = acc / (norm(emit, 0, len) * norm(seen, lag, len));
+      if (r > best.r) best = { lag, r };
+    }
+
+    $('oMain').textContent = (best.lag * OPT.gridMs).toFixed(0);
+    $('oConf').textContent = best.r.toFixed(2);
+    $('oStatus').textContent = best.r < 0.4
+      ? 'Совпадение слабое: телевизор, видимо, не в кадре или кадр пересвечен. Повторите.'
+      : 'Это весь круг: рендер + трансляция + матрица + камера. Задержку камеры надо вычесть.';
+    results.optic = { lagMs: best.lag * OPT.gridMs, r: best.r, frames: sampled.length };
+    $('saveRow').hidden = false;
+    $('oStart').disabled = false;
+  }
+};
+
+// ─────────────────────────── сохранение ───────────────────────────
+
+$('save').onclick = async () => {
+  const name = `measurements/latency-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  const text = JSON.stringify(results, null, 2);
+  // На localhost результат кладётся прямо в проект через serve.js; в бою
+  // (GitHub Pages) такого приёмника нет — остаётся файл в загрузки.
+  try {
+    const r = await fetch('/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: name, text }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    $('saveMsg').textContent = 'Сохранено в ' + name;
+  } catch {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name.split('/').pop();
+    a.click();
+    $('saveMsg').textContent = 'Приёмника нет — файл ушёл в загрузки.';
+  }
+};
+
+renderAudio();
+</script>
