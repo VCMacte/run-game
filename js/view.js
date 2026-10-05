@@ -44,11 +44,18 @@ export function createView(canvas) {
   const H = VIEW.height;
   const f = (W / 2) / Math.tan(FOV / 2);
 
-  // Проекция точки мира на экран. camX — боковой уход взгляда, camY — высота
-  // глаз (падает в приседе).
-  function project(x, y, z, camX, camY) {
+  /* Проекция точки мира на экран.
+     cam.x и cam.y — положение глаз; cam.yaw и cam.pitch сдвигают центр
+     проекции, то есть поворачивают взгляд. Именно сдвигом центра, а не
+     вращением сцены: так горизонт остаётся строго горизонтальным по
+     построению, а не по аккуратности — крен это главный источник укачивания. */
+  function project(x, y, z, cam) {
     const d = Math.max(z, 0.05);
-    return { sx: W / 2 + (x - camX) * f / d, sy: H * 0.46 + (camY - y) * f / d, scale: f / d };
+    return {
+      sx: W / 2 + cam.yaw + (x - cam.x) * f / d,
+      sy: H * 0.46 + cam.pitch + (cam.y - y) * f / d,
+      scale: f / d,
+    };
   }
 
   function quad(p1, p2, p3, p4, fill) {
@@ -71,8 +78,14 @@ export function createView(canvas) {
      * сглажены и предсказаны: сюда приходит то, что надо показать сейчас.
      */
     render({ u = 0, v = 0, travel = 0, stars = [], dim = 0 }) {
-      const camX = clamp(u, -1.5, 1.5) * VIEW.panGain * HALF;
-      const camY = EYE * (1 - clamp(v, 0, 0.6) * VIEW.pitchGain);
+      const un = clamp(u, -1.5, 1.5);
+      const vn = clamp(v, 0, 0.6);
+      const cam = {
+        x: un * VIEW.panGain * HALF,
+        y: EYE * (1 - vn * VIEW.pitchGain),
+        yaw: -un * VIEW.yawPx,
+        pitch: (vn / 0.6) * VIEW.pitchPx,
+      };
 
       ctx.fillStyle = COLORS.sky;
       ctx.fillRect(0, 0, W, H);
@@ -81,27 +94,27 @@ export function createView(canvas) {
 
       // Пол. Один четырёхугольник от ближнего края до тумана.
       quad(
-        project(-HALF, 0, NEAR, camX, camY),
-        project(HALF, 0, NEAR, camX, camY),
-        project(HALF, 0, far, camX, camY),
-        project(-HALF, 0, far, camX, camY),
+        project(-HALF, 0, NEAR, cam),
+        project(HALF, 0, NEAR, cam),
+        project(HALF, 0, far, cam),
+        project(-HALF, 0, far, cam),
         COLORS.floor,
       );
 
       // Стены. Разного тона: при боковом уходе взгляда разница в светлоте
       // подсказывает направление даже после сжатия, когда цвет уже размыт.
       quad(
-        project(-HALF, 0, NEAR, camX, camY),
-        project(-HALF, WALL, NEAR, camX, camY),
-        project(-HALF, WALL, far, camX, camY),
-        project(-HALF, 0, far, camX, camY),
+        project(-HALF, 0, NEAR, cam),
+        project(-HALF, WALL, NEAR, cam),
+        project(-HALF, WALL, far, cam),
+        project(-HALF, 0, far, cam),
         COLORS.wallL,
       );
       quad(
-        project(HALF, 0, NEAR, camX, camY),
-        project(HALF, WALL, NEAR, camX, camY),
-        project(HALF, WALL, far, camX, camY),
-        project(HALF, 0, far, camX, camY),
+        project(HALF, 0, NEAR, cam),
+        project(HALF, WALL, NEAR, cam),
+        project(HALF, WALL, far, cam),
+        project(HALF, 0, far, cam),
         COLORS.wallR,
       );
 
@@ -112,10 +125,10 @@ export function createView(canvas) {
       ctx.fillStyle = COLORS.line;
       for (let z = NEAR + step - phase; z < far; z += step) {
         const thick = clamp(0.06 * (far - z) / far + 0.02, 0.02, 0.1);
-        const a = project(-HALF, 0, z, camX, camY);
-        const b = project(HALF, 0, z, camX, camY);
-        const c = project(HALF, 0, z + thick, camX, camY);
-        const d = project(-HALF, 0, z + thick, camX, camY);
+        const a = project(-HALF, 0, z, cam);
+        const b = project(HALF, 0, z, cam);
+        const c = project(HALF, 0, z + thick, cam);
+        const d = project(-HALF, 0, z + thick, cam);
         // Дальние линии бледнее, но не прозрачнее: прозрачность стоит дорого,
         // а разница в светлоте переживает сжатие лучше.
         ctx.fillStyle = z > far * 0.6 ? '#9fb0d8' : COLORS.line;
@@ -133,7 +146,7 @@ export function createView(canvas) {
       for (const s of stars) {
         const z = s.z - travel;
         if (z < NEAR || z > far) continue;
-        const p = project(s.x, 1.0, z, camX, camY);
+        const p = project(s.x, 1.0, z, cam);
         const r = Math.max(3, p.scale * 0.16);
         ctx.fillStyle = s.taken ? COLORS.starDim : COLORS.star;
         ctx.beginPath();
@@ -154,6 +167,15 @@ export function createView(canvas) {
     },
   };
 }
+
+/**
+ * Где находятся глаза при таком смещении тела.
+ *
+ * Отдаётся наружу, чтобы сбор звёзд считался по тому же числу, по которому
+ * рисуется картинка: две копии этой формулы разошлись бы, и звёзды начали бы
+ * собираться не там, где их видно.
+ */
+export const cameraX = (u) => clamp(u, -1.5, 1.5) * VIEW.panGain * HALF;
 
 /**
  * Раскладка звёзд.

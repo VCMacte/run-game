@@ -230,6 +230,10 @@ button.big small {
 #runOverlayTitle { font-size: calc(var(--u) * 11); line-height: 1; }
 #runOverlayText { font-size: calc(var(--u) * 4); font-weight: 400; color: var(--dim); }
 
+/* Полоса состояния адресована взрослому при настройке. Во время забега она на
+   телевизоре — мусор поверх игры, да ещё и в том углу, где и так есть HUD. */
+body:has(#run:not([hidden])) #status { display: none; }
+
 #runExit {
   position: absolute;
   right: var(--safe);
