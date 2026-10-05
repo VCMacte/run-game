@@ -4,6 +4,7 @@
 // телефоне, стоящем на штативе, и доезжало до телевизора в приличном виде.
 
 import { settings } from './settings.js';
+import * as log from './log.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -81,7 +82,12 @@ async function keepScreenAwake() {
   if (!navigator.wakeLock) return;
   const acquire = async () => {
     if (document.visibilityState !== 'visible') return;
-    try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      log.event('wakelock', { got: true });
+    } catch (e) {
+      log.event('wakelock', { got: false, why: String(e?.name || e) });
+    }
     updateStatus();
   };
   await acquire();
@@ -104,20 +110,25 @@ addEventListener('fullscreenchange', updateStatus);
 
 // ─────────────────────────────── экраны ───────────────────────────────
 
-const SCREENS = ['gate', 'menu', 'soon', 'parent'];
+const SCREENS = ['gate', 'menu', 'soon', 'parent', 'logs'];
 
 /* Все существующие экраны — телефонные, их держат в руке. Забег, когда он
    появится, встанет сюда как 'landscape': менять ориентацию надо вместе с
    экраном, а не один раз на запуске. В комиксе ровно на этом был баг — каталог
    открывался в оставшейся от прошлой истории горизонтали. */
-const ORIENTATION = { gate: 'portrait', menu: 'portrait', soon: 'portrait', parent: 'portrait' };
+const ORIENTATION = {
+  gate: 'portrait', menu: 'portrait', soon: 'portrait',
+  parent: 'portrait', logs: 'portrait',
+};
 
+const ADULT = new Set(['parent', 'logs']); // экраны, в которые не «возвращаются»
 let previous = 'menu';
 
 function show(name) {
   for (const id of SCREENS) $(id).hidden = id !== name;
-  if (name !== 'parent') previous = name;
+  if (!ADULT.has(name)) previous = name;
   lockOrientation(ORIENTATION[name] || 'portrait');
+  log.event('screen', { name });
 }
 
 /* Заглушка с честным текстом. Экран существует, содержимого пока нет — и так
@@ -192,6 +203,52 @@ $('recal').onclick = () => {
 
 $('parentBack').onclick = () => show(previous);
 
+// ────────────────────────── журнал событий ──────────────────────────
+
+const MB = 1024 * 1024;
+const fmtMB = (b) => (b / MB).toFixed(b < MB ? 2 : 1);
+
+async function renderLogs() {
+  $('logLimits').textContent = `Потолок — ${log.LIMITS.bytes / MB} МБ и `
+    + `${log.LIMITS.sessions} сессий. При переполнении сами удаляются самые старые.`;
+  const s = await log.status();
+  if (s.broken) {
+    $('logStat').textContent = 'Журнал недоступен: база не открылась. '
+      + 'Так бывает в приватном режиме или когда на телефоне кончилось место.';
+    return;
+  }
+  const when = s.from
+    ? `с ${new Date(s.from).toLocaleString('ru')} по ${new Date(s.to).toLocaleString('ru')}`
+    : 'записей пока нет';
+  $('logStat').textContent = `${s.sessions} сессий, ${s.events} событий, `
+    + `${fmtMB(s.bytes)} МБ (${Math.round(s.share * 100)}% потолка). ${when}.`;
+}
+
+$('goLogs').onclick = () => { show('logs'); renderLogs(); };
+$('logsBack').onclick = () => show('parent');
+
+$('logSave').onclick = async () => {
+  $('logMsg').textContent = 'Собираю…';
+  try {
+    const r = await log.save();
+    $('logMsg').textContent = {
+      share: `Отправлено: ${r.name} (${fmtMB(r.bytes)} МБ). Положите файл в папку logs/ проекта.`,
+      download: `Сохранено в «Загрузки»: ${r.name} (${fmtMB(r.bytes)} МБ). Положите файл в папку logs/ проекта.`,
+      cancelled: 'Отправка отменена — журнал на месте.',
+    }[r.how];
+  } catch (e) {
+    $('logMsg').textContent = 'Не получилось выгрузить: ' + (e?.message || e);
+  }
+};
+
+$('logClear').onclick = async () => {
+  // Без подтверждения: журнал не ценность сам по себе, а выгрузка уже сделана
+  // тем, кому он нужен. Лишний вопрос на экране, который держат в руке, дороже.
+  await log.clear();
+  $('logMsg').textContent = 'Журнал очищен.';
+  renderLogs();
+};
+
 // ───────────────────────── service worker ─────────────────────────
 
 /* На localhost service worker не регистрируется и зачищается: иначе правка
@@ -204,5 +261,6 @@ if (isDev) {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
+log.watchLifecycle();
 show('gate');
 updateStatus();

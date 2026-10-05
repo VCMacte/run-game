@@ -68,9 +68,26 @@
         зеркалированный звук опаздывает вместе с картинкой, а телефон слышно сразу.</p>
     </div>
     <div class="row">
+      <button id="goLogs" class="ghost">Журнал событий</button>
       <button id="recal" class="ghost">Сбросить калибровку</button>
       <button id="parentBack">Закрыть</button>
     </div>
+  </section>
+
+  <!-- Журнал. Место ему во взрослом меню: ребёнку он не нужен, а выгружает
+       его тот, кто потом будет передавать файл. -->
+  <section id="logs" class="sheet screen" hidden>
+    <h2>Журнал событий</h2>
+    <div class="card">
+      <p class="lead" id="logStat">Считаю…</p>
+      <p class="lead dim" id="logLimits"></p>
+    </div>
+    <div class="row">
+      <button id="logSave">Выгрузить файлом</button>
+      <button id="logClear" class="ghost">Очистить</button>
+      <button id="logsBack" class="ghost">Назад</button>
+    </div>
+    <p class="lead dim" id="logMsg"></p>
   </section>
 
   <div id="status"></div>

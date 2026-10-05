@@ -151,6 +151,26 @@ await group('настройки', async () => {
   check('перебор вариантов замкнут', settings.get('speed') === before);
 });
 
+// ───────────────────────────── журнал ─────────────────────────────
+
+await group('журнал', async () => {
+  const { LIMITS } = await import('./js/log.js');
+
+  check('потолок объёма — 25 МБ', LIMITS.bytes === 25 * 1024 * 1024,
+    `сейчас ${LIMITS.bytes} байт`);
+  check('потолок — 20 сессий', LIMITS.sessions === 20, `сейчас ${LIMITS.sessions}`);
+  check('сброс на диск чаще, чем раз в 5 секунд', LIMITS.flushMs <= 5000,
+    'иначе теряются записи прямо перед падением — ровно те, ради которых всё это');
+
+  // Папка для журналов лежит в репозитории, а сами журналы — нет: репозиторий
+  // публичный, а это записи о ребёнке.
+  check('папка logs/ существует', existsSync(join(ROOT, 'logs')));
+  check('в logs/ есть README', existsSync(join(ROOT, 'logs/README.md')));
+  const ignore = read('.gitignore');
+  check('журналы не попадают в репозиторий', /^logs\/\*$/m.test(ignore));
+  check('README журналов остаётся в репозитории', /^!logs\/README\.md$/m.test(ignore));
+});
+
 // ───────────────────────────── итог ─────────────────────────────
 
 if (failed) {

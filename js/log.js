@@ -1,0 +1,277 @@
+// Журнал событий. Пишется на телефон, выгружается файлом, разбирается потом.
+//
+// Зачем вообще: телефон стоит на штативе, консоли у него нет, и необработанное
+// исключение выглядит снаружи просто как «игра зависла». А главные числа
+// проекта — время реакции ребёнка и здоровье конвейера — снимаются во время
+// забега, когда смотреть на экран некому.
+//
+// Почему IndexedDB, а не localStorage: у localStorage около пяти мегабайт и
+// синхронный доступ, то есть каждая запись подвешивает кадр — ровно то, что мы
+// и собираемся измерять. IndexedDB асинхронный.
+//
+// Почему сброс на диск раз в две секунды, а не в конце забега: самые ценные
+// записи — те, после которых приложение умерло. Их в памяти не остаётся.
+
+const DB = 'run-game-log';
+const VERSION = 1;
+
+export const LIMITS = {
+  bytes: 25 * 1024 * 1024, // 25 МБ
+  sessions: 20,            // сессий приложения
+  flushMs: 2000,
+};
+
+// ─────────────────────────── доступ к базе ───────────────────────────
+
+let dbPromise = null;
+
+function open() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB, VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('sessions')) {
+        db.createObjectStore('sessions', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('events')) {
+        db.createObjectStore('events', { keyPath: 'k', autoIncrement: true })
+          .createIndex('session', 'session');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+const done = (tx) => new Promise((resolve, reject) => {
+  tx.oncomplete = () => resolve();
+  tx.onerror = tx.onabort = () => reject(tx.error);
+});
+
+const ask = (req) => new Promise((resolve, reject) => {
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+
+// ───────────────────────────── сессия ─────────────────────────────
+
+// Сессия — один запуск приложения, а не один забег: падение приложения тем и
+// примечательно, что забег после него не закончился, и привязывать записи к
+// забегу значило бы терять ровно интересные случаи.
+const sessionId = Date.now();
+const startedAt = new Date().toISOString();
+const t0 = performance.now();
+
+let queue = [];
+let queuedBytes = 0;
+let timer = 0;
+let broken = false; // база недоступна — приватный режим, переполнение диска
+
+const encoder = new TextEncoder();
+
+/** Ставит событие в очередь. Никогда не бросает: логирование не должно ронять игру. */
+export function event(type, data) {
+  if (broken) return;
+  const e = { t: Math.round(performance.now() - t0), type, ...data };
+  queue.push(e);
+  try { queuedBytes += encoder.encode(JSON.stringify(e)).length; } catch {}
+  if (!timer) timer = setTimeout(flush, LIMITS.flushMs);
+}
+
+export async function flush() {
+  clearTimeout(timer);
+  timer = 0;
+  if (broken || !queue.length) return;
+
+  const batch = queue;
+  queue = [];
+  queuedBytes = 0;
+
+  try {
+    const db = await open();
+    const bytes = encoder.encode(JSON.stringify(batch)).length;
+    const tx = db.transaction(['events', 'sessions'], 'readwrite');
+    const events = tx.objectStore('events');
+    for (const e of batch) events.add({ ...e, session: sessionId });
+
+    const sessions = tx.objectStore('sessions');
+    const prev = await ask(sessions.get(sessionId));
+    sessions.put({
+      id: sessionId,
+      startedAt,
+      ua: navigator.userAgent,
+      events: (prev?.events || 0) + batch.length,
+      bytes: (prev?.bytes || 0) + bytes,
+      updatedAt: new Date().toISOString(),
+    });
+    await done(tx);
+    await trim();
+  } catch {
+    // База не открылась — журнал молча выключается. Игра важнее журнала.
+    broken = true;
+  }
+}
+
+// ─────────────────────── потолок и автоочистка ───────────────────────
+
+/* Чистится по двум условиям сразу: больше 20 сессий или больше 25 МБ. Без
+   потолка через месяц телефон ребёнка забит журналами, и обнаружится это в
+   самый неподходящий момент. Удаляются всегда самые старые: свежая запись
+   полезнее, а падение, которое разбирают, случилось только что. */
+export async function trim() {
+  const db = await open();
+  const tx = db.transaction(['sessions', 'events'], 'readwrite');
+  const sessions = tx.objectStore('sessions');
+  const all = (await ask(sessions.getAll())).sort((a, b) => a.id - b.id);
+
+  let total = all.reduce((s, x) => s + (x.bytes || 0), 0);
+  const doomed = [];
+
+  // Текущую сессию не трогаем никогда: иначе журнал съест сам себя на длинном
+  // забеге и останется пустым ровно тогда, когда нужен.
+  const removable = all.filter((s) => s.id !== sessionId);
+
+  for (const s of removable) {
+    if (all.length - doomed.length <= LIMITS.sessions && total <= LIMITS.bytes) break;
+    doomed.push(s);
+    total -= s.bytes || 0;
+  }
+
+  if (doomed.length) {
+    const store = tx.objectStore('events');
+    const index = store.index('session');
+    for (const s of doomed) {
+      sessions.delete(s.id);
+      await dropEvents(store, index, s.id);
+    }
+  }
+  await done(tx);
+  return doomed.length;
+}
+
+// Курсор продвигается в собственном onsuccess: continue() ничего не
+// возвращает, результат приходит в тот же запрос.
+function dropEvents(store, index, session) {
+  return new Promise((resolve, reject) => {
+    const req = index.openKeyCursor(IDBKeyRange.only(session));
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) { resolve(); return; }
+      store.delete(cursor.primaryKey);
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// ───────────────────────────── состояние ─────────────────────────────
+
+export async function status() {
+  if (broken) return { broken: true };
+  try {
+    const db = await open();
+    const all = await ask(db.transaction('sessions').objectStore('sessions').getAll());
+    const bytes = all.reduce((s, x) => s + (x.bytes || 0), 0) + queuedBytes;
+    const events = all.reduce((s, x) => s + (x.events || 0), 0) + queue.length;
+    const dates = all.map((s) => s.startedAt).sort();
+    return {
+      broken: false,
+      sessions: all.length,
+      events,
+      bytes,
+      share: bytes / LIMITS.bytes,
+      from: dates[0] || null,
+      to: dates[dates.length - 1] || null,
+    };
+  } catch {
+    return { broken: true };
+  }
+}
+
+// ───────────────────────────── выгрузка ─────────────────────────────
+
+async function collect() {
+  await flush();
+  const db = await open();
+  const tx = db.transaction(['sessions', 'events']);
+  const sessions = (await ask(tx.objectStore('sessions').getAll())).sort((a, b) => a.id - b.id);
+  const events = await ask(tx.objectStore('events').getAll());
+  const bySession = new Map(sessions.map((s) => [s.id, { ...s, log: [] }]));
+  for (const e of events.sort((a, b) => a.k - b.k)) {
+    const { k, session, ...rest } = e;
+    bySession.get(session)?.log.push(rest);
+  }
+  return {
+    exportedAt: new Date().toISOString(),
+    limits: LIMITS,
+    sessions: [...bySession.values()],
+  };
+}
+
+/** Отдаёт журнал файлом: системным «Поделиться», иначе обычной загрузкой. */
+export async function save() {
+  const data = await collect();
+  const name = `run-game-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+
+  // На телефоне «Поделиться» — единственный удобный способ достать файл из
+  // приложения: загрузка уедет в общие «Загрузки», где её ещё надо найти.
+  const file = new File([blob], name, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Журнал «Беги!»' });
+      return { how: 'share', name, bytes: blob.size };
+    } catch (e) {
+      if (e?.name === 'AbortError') return { how: 'cancelled', name, bytes: blob.size };
+    }
+  }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return { how: 'download', name, bytes: blob.size };
+}
+
+export async function clear() {
+  queue = [];
+  queuedBytes = 0;
+  const db = await open();
+  const tx = db.transaction(['sessions', 'events'], 'readwrite');
+  tx.objectStore('sessions').clear();
+  tx.objectStore('events').clear();
+  await done(tx);
+}
+
+// ─────────────────── что пишется без отдельной просьбы ───────────────────
+
+/* Жизненный цикл и ошибки пишутся всегда. Это и есть те события, ради которых
+   журнал затевался: срыв полного экрана, гашение экрана, исключение — всё то,
+   что на телефоне на штативе выглядит одинаково, как «игра сломалась». */
+export function watchLifecycle() {
+  event('session.start', {
+    startedAt,
+    screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+    installed: matchMedia('(display-mode: fullscreen)').matches
+      || matchMedia('(display-mode: standalone)').matches,
+    lang: navigator.language,
+  });
+
+  addEventListener('error', (e) => event('error', {
+    message: String(e.message), source: e.filename, line: e.lineno, col: e.colno,
+  }));
+  addEventListener('unhandledrejection', (e) => event('error.promise', {
+    reason: String(e.reason?.message || e.reason),
+  }));
+
+  addEventListener('visibilitychange', () => event('visibility', { state: document.visibilityState }));
+  addEventListener('fullscreenchange', () => event('fullscreen', { on: !!document.fullscreenElement }));
+  addEventListener('resize', () => event('resize', { w: innerWidth, h: innerHeight }));
+
+  // Последний шанс записать: после pagehide страницу могут не разбудить.
+  addEventListener('pagehide', flush);
+  addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+}
