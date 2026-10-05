@@ -5,6 +5,7 @@
 
 import { settings } from './settings.js';
 import * as log from './log.js';
+import { count, SESSIONS, EVENTS } from './text.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,10 +48,6 @@ window.visualViewport?.addEventListener('resize', layout);
 
 // ───────────────────── полный экран и бодрый экран ─────────────────────
 
-/* Ребёнок телефон не трогает, поэтому приём комикса «вернуть полный экран
-   первым же касанием» здесь сам по себе не сработает. Пробуем вернуть его на
-   каждом удобном событии (без жеста запрос обычно отклоняется — это ничего не
-   стоит), а касание остаётся запасным путём: его может сделать взрослый. */
 /* Ориентация задаётся поэкранно, а не манифестом. В манифесте стоит "any",
    и это не недосмотр: Chrome запекает манифест в WebAPK при установке, и
    жёсткий landscape сделал бы портрет недоступным вообще — а меню держат в
@@ -66,6 +63,10 @@ async function requestFullscreen() {
   await withTimeout(el.requestFullscreen({ navigationUI: 'hide' }), 3000);
 }
 
+/* Ребёнок телефон не трогает, поэтому приём комикса «вернуть полный экран
+   первым же касанием» здесь сам по себе не сработает. Пробуем вернуть его на
+   каждом удобном событии (без жеста запрос обычно отклоняется — это ничего не
+   стоит), а касание остаётся запасным путём: его может сделать взрослый. */
 function keepFullscreen() {
   if (installedApp) return; // у установленного приложения это режим окна, а не состояние
   for (const ev of ['visibilitychange', 'pageshow', 'resize', 'fullscreenchange']) {
@@ -208,19 +209,9 @@ $('parentBack').onclick = () => show(previous);
 const MB = 1024 * 1024;
 const fmtMB = (b) => (b / MB).toFixed(b < MB ? 2 : 1);
 
-/* Склонение. «1 сессий» на экране — мелочь, но читает его взрослый, и такие
-   мелочи решают, доверяют ли показанным числам. */
-function plural(n, [one, few, many]) {
-  const a = Math.abs(n) % 100;
-  const b = a % 10;
-  if (a > 10 && a < 20) return many;
-  if (b > 1 && b < 5) return few;
-  return b === 1 ? one : many;
-}
-
 async function renderLogs() {
   $('logLimits').textContent = `Потолок — ${log.LIMITS.bytes / MB} МБ и `
-    + `${log.LIMITS.sessions} сессий. При переполнении сами удаляются самые старые.`;
+    + `${count(log.LIMITS.sessions, SESSIONS)}. При переполнении сами удаляются самые старые.`;
   const s = await log.status();
   if (s.broken) {
     $('logStat').textContent = 'Журнал недоступен: база не открылась. '
@@ -230,9 +221,7 @@ async function renderLogs() {
   const when = s.from
     ? `с ${new Date(s.from).toLocaleString('ru')} по ${new Date(s.to).toLocaleString('ru')}`
     : 'записей пока нет';
-  $('logStat').textContent =
-    `${s.sessions} ${plural(s.sessions, ['сессия', 'сессии', 'сессий'])}, `
-    + `${s.events} ${plural(s.events, ['событие', 'события', 'событий'])}, `
+  $('logStat').textContent = `${count(s.sessions, SESSIONS)}, ${count(s.events, EVENTS)}, `
     + `${fmtMB(s.bytes)} МБ (${Math.round(s.share * 100)}% потолка). ${when}.`;
 }
 

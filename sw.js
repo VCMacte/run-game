@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v10';
+const CACHE = 'run-v11';
 const ASSETS = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const ASSETS = [
   './js/app.js',
   './js/log.js',
   './js/settings.js',
+  './js/text.js',
 ];
 
 self.addEventListener('install', (e) => {

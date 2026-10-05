@@ -12,6 +12,8 @@
 // Почему сброс на диск раз в две секунды, а не в конце забега: самые ценные
 // записи — те, после которых приложение умерло. Их в памяти не остаётся.
 
+import { count, SESSIONS } from './text.js';
+
 const DB = 'run-game-log';
 const VERSION = 1;
 
@@ -249,7 +251,7 @@ export async function save() {
       await navigator.share({
         files: [file],
         title: 'Журнал «Беги!»',
-        text: `Журнал событий, ${data.sessions.length} сессий`,
+        text: `Журнал событий «Беги!», ${count(data.sessions.length, SESSIONS)}`,
       });
       shared = 'shared';
     } catch (e) {
