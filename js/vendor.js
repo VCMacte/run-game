@@ -14,11 +14,25 @@ import { VENDOR } from './config.js';
 import { isDev } from './util.js';
 
 /**
- * Проверяет наличие и размер каждого файла в офлайн-кэше.
+ * Проверяет, что каждый файл MediaPipe лежит в офлайн-кэше.
  *
- * Размер берётся из заголовка закэшированного ответа, а не чтением тела:
- * читать ради проверки 17.5 МБ — значит каждый раз тратить то, что мы и
- * пытаемся сберечь.
+ * Проверяется ровно наличие, и это не упрощение.
+ *
+ * Сначала здесь сверялся ещё и размер — из заголовка `content-length`
+ * закэшированного ответа. Проверка была сломана по построению и не могла
+ * пройти ни разу: GitHub Pages отдаёт сжатыми все файлы, включая wasm и
+ * модель, то есть `content-length` — это размер в сжатом виде, а сравнивался
+ * он с размером на диске. На установленном приложении это давало «нужен
+ * интернет один раз» при каждом запуске тренировки, хотя скачано было всё.
+ *
+ * Сверять настоящий размер можно только прочитав тело, то есть распаковав
+ * 17 МБ при каждом старте — ровно ту работу, которую офлайн-кэш и экономит.
+ * А смысла в этом мало: `cache.addAll()` атомарен, частично закэшированного
+ * комплекта из неудачной загрузки не бывает. Что бывает — выселение отдельных
+ * записей браузером, и его ловит именно проверка наличия.
+ *
+ * Размеры в `VENDOR.files` остаются: по ним `tests-shell.mjs` сверяет файлы на
+ * диске с объявленными, и там сжатие ни при чём.
  */
 export async function checkVendor() {
   // На localhost service worker не регистрируется вовсе, файлы берутся с
@@ -32,19 +46,11 @@ export async function checkVendor() {
 
   const cache = await caches.open(name);
   const missing = [];
-  const wrongSize = [];
-
-  for (const [path, bytes] of Object.entries(VENDOR.files)) {
-    const hit = await cache.match(path);
-    if (!hit) { missing.push(path); continue; }
-    const len = Number(hit.headers.get('content-length'));
-    // Заголовка может не быть — тогда сверять нечем, и это не повод кричать.
-    if (Number.isFinite(len) && len > 0 && len !== bytes) {
-      wrongSize.push({ path, want: bytes, got: len });
-    }
+  for (const path of Object.keys(VENDOR.files)) {
+    if (!await cache.match(path)) missing.push(path);
   }
 
-  return { ok: !missing.length && !wrongSize.length, cache: name, missing, wrongSize };
+  return { ok: !missing.length, cache: name, missing };
 }
 
 /**

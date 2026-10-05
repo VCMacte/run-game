@@ -337,13 +337,15 @@ async function startTraining() {
     const { checkVendor } = await import('./vendor.js');
     const v = await checkVendor();
     log.event('offline.check', {
-      ok: v.ok, skipped: v.skipped || null,
-      missing: v.missing?.length || 0, wrong: v.wrongSize?.length || 0,
+      ok: v.ok, skipped: v.skipped || null, cache: v.cache || null,
+      missing: v.missing || [],
     });
     if (!v.ok) {
+      // Перечисляем, чего именно не хватает: «что-то не скачалось» — ответ,
+      // с которым нельзя ничего сделать, а имена файлов попадут и в журнал.
       showSoon('Нужен интернет один раз',
-        'Распознавание движений скачалось не полностью, поэтому тренировка пока не запустится. '
-        + 'Подключитесь к сети, откройте приложение один раз и дождитесь загрузки — '
+        'Не хватает файлов распознавания движений: ' + v.missing.join(', ')
+        + '. Подключитесь к сети, откройте приложение один раз и дождитесь загрузки — '
         + 'дальше оно работает без сети.');
       return;
     }
