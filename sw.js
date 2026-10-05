@@ -3,7 +3,7 @@
 //
 // Список ASSETS не ведётся руками — его пересобирает tools/make-sw.mjs.
 // Номер кэша поднимается тем же запуском.
-const CACHE = 'run-v50';
+const CACHE = 'run-v51';
 const ASSETS = [
   './',
   './index.html',
@@ -41,8 +41,24 @@ const ASSETS = [
   './vendor/models/pose_landmarker_lite.task',
 ];
 
+/* Установка качает файлы в обход обычного кэша браузера, и это не
+   перестраховка, а исправление настоящей поломки.
+
+   GitHub Pages отдаёт всё с max-age=600. Обычный addAll берёт файлы через
+   кэш браузера, поэтому свежепоставленный service worker складывал в новый
+   кэш СТАРЫЕ файлы — и дальше отдавал их офлайн уже навсегда. Снаружи это
+   выглядело так: версия в sw.js поднялась, приложение обновилось, а ведёт
+   себя по-прежнему, и починить это нечем.
+
+   `cache: 'no-cache'` заставляет сходить на сервер с условным запросом:
+   неизменившиеся файлы вернутся как 304, то есть семнадцать мегабайт
+   MediaPipe заново не поедут, а изменившиеся придут настоящими. */
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'no-cache' })));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
