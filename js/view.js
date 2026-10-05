@@ -236,8 +236,8 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
        на весь экран — проверено, экран заливает целиком. Логика
        столкновения при этом продолжает работать: она живёт отдельно и
        смотрит на время, а не на пиксели. */
-    if (zRaw + O.thickness < NEAR) continue;
-    const z = Math.max(zRaw, NEAR);
+    if (zRaw + O.thickness < O.drawNearM) continue;
+    const z = Math.max(zRaw, O.drawNearM);
 
     // Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
     // дальнем плане сжатие уничтожает первым.
@@ -262,7 +262,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
     }
 
     if (dt > O.visibleS) continue;
-    const zBack = Math.max(zRaw + O.thickness, NEAR + 0.02);
+    const zBack = Math.max(zRaw + O.thickness, O.drawNearM + 0.02);
 
     // Проём заливается ярким: ребёнку надо показать, куда идти, а не только
     // куда нельзя.
@@ -308,8 +308,8 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
     // Линия по полу, которая дойдёт вместе с препятствием.
     if (dt <= O.railS && dt > 0 && zRaw > NEAR) {
       quad(
-        project(-HALF, 0.03, Math.max(z - 0.12, NEAR), cam), project(HALF, 0.03, Math.max(z - 0.12, NEAR), cam),
-        project(HALF, 0.03, z, cam), project(-HALF, 0.03, z, cam),
+        project(-HALF, 0.03, Math.max(zRaw - 0.12, NEAR), cam), project(HALF, 0.03, Math.max(zRaw - 0.12, NEAR), cam),
+        project(HALF, 0.03, Math.max(zRaw, NEAR), cam), project(-HALF, 0.03, Math.max(zRaw, NEAR), cam),
         COLORS.rail,
       );
     }
