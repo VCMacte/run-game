@@ -219,6 +219,16 @@ function renderRunHud(h = {}) {
 
      Полоска поля дешевле окошка по вниманию и отвечает на главный вопрос
      «я ещё в кадре?», поэтому у неё отдельный, средний вариант. */
+  /* Блок результата прячется здесь, до разбора стадий, а не после.
+
+     Раньше он прятался в конце функции — то есть никогда, если стадия уходила
+     в ранний возврат. После «Ещё раз» на экране установки штатива оставались
+     висеть прошлые «4 звезды собрано» и, что хуже, живая кнопка «Хватит»,
+     которая сносила только что начатый забег. */
+  const onResult = stage === 'result';
+  $('runResult').hidden = !onResult;
+  $('runResultRow').hidden = !onResult;
+
   const want = settings.get('preview');
   const inGame = stage === 'free';
   // На установке и калибровке окошко нужно всегда, в игре — по настройке, а
@@ -273,8 +283,6 @@ function renderRunHud(h = {}) {
     overlay.hidden = false;
     numbers.hidden = true;
     $('runNext').hidden = true;
-    $('runResult').hidden = false;
-    $('runResultRow').hidden = false;
     title.textContent = result?.praise || 'Добежал!';
     text.textContent = restSuggested
       ? 'Три забега подряд — самое время передохнуть'
@@ -287,9 +295,6 @@ function renderRunHud(h = {}) {
     ].join('');
     return;
   }
-  $('runResult').hidden = true;
-  $('runResultRow').hidden = true;
-
   const stopped = run === 'paused' || run === 'countdown';
   overlay.hidden = !stopped;
   numbers.hidden = true;
