@@ -174,9 +174,21 @@ export function createView(canvas, { backdrop = null } = {}) {
         drawFinish(ctx, cam, Math.max(finishIn, 0) * VIEW.speed, { project, quad, pulse });
       }
 
-      // ── препятствия и телеграф ──
-      // Рисуются до звёзд: звезда перед препятствием должна быть видна
-      // поверх него, иначе она теряется ровно там, где важна.
+      /* ── кольца и препятствия: порядок маляра ──
+
+         Кольца рисуются двумя проходами, а препятствие — между ними. Замысел
+         прежний: кольцо ПЕРЕД препятствием обязано быть видно поверх него,
+         иначе оно теряется ровно там, где важнее всего. Но условия «перед» в
+         коде не было вовсе: кольца шли одним проходом после препятствий, а
+         плита видна с 10 м при кольцах до 30 м — то есть за плитой почти
+         всегда есть кольцо, и оно просвечивало сквозь неё. Заметил заказчик.
+
+         Разрез — глубина самого близкого нарисованного препятствия. Линия по
+         полу и последний зов остаются в конце: они у самого глаза и ниже
+         колец (starY 0.55), спорить им не с чем. */
+      const zCut = nearestObstacleDepth(obstacles, elapsed, far);
+      drawStars(stars, zCut, far);
+
       /* «Стоит на месте» нужно бадникам: они икают, пока ребёнок не двигается.
 
          Считается по СКОРОСТИ, а не по положению. Через положение было
@@ -187,13 +199,26 @@ export function createView(canvas, { backdrop = null } = {}) {
       const still = Math.abs(speed) < S.driftSpeedMax;
       drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse, still, mscale });
 
-      // ── кольца ──
-      // Кольцо вместо звезды: ромб золота с тёмной серединой. Середина именно
-      // заливкой, а не вырезом: тонкая рамка после сжатия исчезает, а тёмный
-      // ромб внутри светлого читается как дырка и переживает Miracast.
-      for (const s of stars) {
+      // Кольца ближе препятствия — поверх него, как и было задумано.
+      drawStars(stars, 0, zCut);
+
+      /**
+       * Кольца в полосе глубин [zFrom, zTo).
+       *
+       * Кольцо вместо звезды: ромб золота с тёмной серединой. Середина именно
+       * заливкой, а не вырезом: тонкая рамка после сжатия исчезает, а тёмный
+       * ромб внутри светлого читается как дырка и переживает Miracast.
+       *
+       * Полоса видимости (NEAR..far) проверяется здесь и только здесь, а
+       * границы прохода — отдельной строкой: кольцо ровно на разрезе уходит в
+       * ДАЛЬНИЙ проход, то есть при равной глубине прячется за плитой, а не
+       * просвечивает сквозь неё.
+       */
+      function drawStars(list, zFrom, zTo) {
+      for (const s of list) {
         const z = s.z - travel;
         if (z < NEAR || z > far) continue;
+        if (z < zFrom || z >= zTo) continue;
         const p = project(s.x, VIEW.starY, z, cam);
         const r = Math.max(3, p.scale * 0.16);
 
@@ -222,6 +247,7 @@ export function createView(canvas, { backdrop = null } = {}) {
         };
         ring(w, r, COLORS.star);
         if (w > 2.5) ring(w * 0.42, r * 0.42, COLORS.starDim);
+      }
       }
 
       // Затемнение на паузе. Сплошной прямоугольник поверх — дешевле любого
@@ -501,18 +527,15 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
 function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse, still, mscale }) {
   const edge = obstacleEdge();
   for (const ob of obstacles) {
-    if (ob.passed) continue;
+    /* Глубина берётся из obstacleDepth, а не считается здесь: по ней же
+       режется проход по кольцам, и две копии разошлись бы — кольцо снова
+       начало бы просвечивать сквозь плиту. Отсечения («прошли», «дальше
+       телеграфа», «уехало за спину») живут там же. */
+    const depth = obstacleDepth(ob, elapsed, far);
+    if (depth == null) continue;
     const dt = ob.at - elapsed;          // секунд до прихода
-    if (dt > O.signalS) continue;
     const zRaw = dt * VIEW.speed;
-
-    /* Отсечение по ближней плоскости. Без него препятствие, уехавшее за
-       спину, проецируется с зажатой отрицательной глубиной и растягивается
-       на весь экран — проверено, экран заливает целиком. Логика
-       столкновения при этом продолжает работать: она живёт отдельно и
-       смотрит на время, а не на пиксели. */
-    if (zRaw + O.thickness < O.drawNearM) continue;
-    const z = Math.max(zRaw, O.drawNearM);
+    const z = depth;
 
     /* Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
        дальнем плане сжатие уничтожает первым.
@@ -526,8 +549,8 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
 
        Фаза своя у каждого препятствия: две метки подряд не должны мигать в
        унисон, иначе мерцание читается как общая рябь кадра, а не как метка. */
-    if (dt <= O.signalS && dt > O.visibleS) {
-      const zf = far * 0.92;
+    if (dt > O.visibleS) {
+      const zf = depth;
       const h = 0.9;
       const hot = warnBlink(elapsed, ob.at * 2, mscale) > 0.5;
       const fill = hot ? COLORS.warn : COLORS.warnDim;
@@ -546,9 +569,11 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
           fill,
         );
       }
+      // Метка и плита — взаимоисключающие стадии одного препятствия: пока
+      // идёт телеграф, самой плиты ещё не видно.
+      continue;
     }
 
-    if (dt > O.visibleS) continue;
     const zBack = Math.max(zRaw + O.thickness, O.drawNearM + 0.02);
 
     // Проём заливается ярким: ребёнку надо показать, куда идти, а не только
@@ -882,6 +907,44 @@ export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
 
 /** Где кончается препятствие и начинается проём. Связано с ходом камеры. */
 export const obstacleEdge = () => Math.abs(camera(1, 0).x) * O.blockFrac;
+
+/**
+ * Глубина, на которой препятствие будет нарисовано, или `null` — не рисуется.
+ *
+ * Существует по той же причине, что `obstacleEdge`: число нужно в двух местах
+ * сразу — отрисовке препятствия и разрезу прохода по кольцам, — и две копии
+ * разошлись бы. Разошлись бы не абстрактно: кольцо начало бы просвечивать
+ * сквозь плиту, то есть вернулся бы ровно тот дефект, из-за которого функция
+ * и появилась.
+ *
+ * Заслоняющих поверхностей у препятствия две, и они взаимоисключающие по
+ * времени: пока идёт телеграф (dt между visibleS и signalS) — метка у самой
+ * дымки, дальше — лицо плиты. Линия по полу и последний зов сюда не входят:
+ * они у самого глаза и ниже колец.
+ *
+ * Отсечение по ближней плоскости — не перестраховка: препятствие, уехавшее за
+ * спину, проецируется с зажатой отрицательной глубиной и растягивается на
+ * весь экран. Логика столкновения при этом продолжает работать, она смотрит
+ * на время, а не на пиксели.
+ */
+export function obstacleDepth(ob, elapsed, far = VIEW.fogDistance) {
+  if (!ob || ob.passed) return null;
+  const dt = ob.at - elapsed;
+  if (dt > O.signalS) return null;
+  const zRaw = dt * VIEW.speed;
+  if (zRaw + O.thickness < O.drawNearM) return null;
+  return dt > O.visibleS ? far * 0.92 : Math.max(zRaw, O.drawNearM);
+}
+
+/** Глубина самого близкого нарисованного препятствия; Infinity — ни одного. */
+export function nearestObstacleDepth(obstacles = [], elapsed = 0, far = VIEW.fogDistance) {
+  let cut = Infinity;
+  for (const ob of obstacles) {
+    const d = obstacleDepth(ob, elapsed, far);
+    if (d != null && d < cut) cut = d;
+  }
+  return cut;
+}
 
 /**
  * Где находятся глаза при таком смещении тела.

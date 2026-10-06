@@ -7,14 +7,15 @@
 // ощущение; проверить им таблицу истинности приседа невозможно.
 
 import { makeTracker, makeOneEuro, geometry, makeFollower } from './js/signals.js';
-import { makeCalibration, STAGES, CLAMP, isStale } from './js/calibrate.js';
+import { makeCalibration, STAGES, CLAMP, isStale, panSpanOf } from './js/calibrate.js';
 import { SIGNALS as S, VIEW } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition } from './js/preview.js';
 import { makeLevel, telegraph, isSafe } from './js/level.js';
-import { obstacleEdge } from './js/view.js';
-import { OBSTACLES as O, FINISH } from './js/config.js';
+import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
+import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
+import { framing } from './js/camera.js';
 import { describe, motifFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
@@ -837,7 +838,7 @@ function feedUntilEvent(cal, opts, clock, maxMs = 20000) {
   while (clock.t < stop) {
     const r = cal.push(pose(opts), clock.t);
     clock.t += 50;
-    if (r.done || r.advanced || r.retry || r.gaveUp) return r;
+    if (r.done || r.advanced || r.retry || r.failed) return r;
   }
   return { timeout: true };
 }
@@ -851,7 +852,11 @@ group('калибровка', () => {
   check('после нейтрали просит шагнуть влево', cal.stage.id === 'left', `сейчас ${cal.stage?.id}`);
 
   feedUntilEvent(cal, { x: 0.5 + 0.09 }, clock); // влево у ребёнка = вправо в кадре
-  check('после левой стадии просит вправо', cal.stage.id === 'right', `сейчас ${cal.stage?.id}`);
+  check('после левой стадии просит вернуться в середину', cal.stage.id === 'center',
+    `сейчас ${cal.stage?.id}`);
+
+  feedUntilEvent(cal, { x: 0.5 }, clock);
+  check('после середины просит вправо', cal.stage.id === 'right', `сейчас ${cal.stage?.id}`);
 
   feedUntilEvent(cal, { x: 0.5 - 0.09 }, clock);
   check('после правой просит присесть', cal.stage.id === 'crouch', `сейчас ${cal.stage?.id}`);
@@ -874,6 +879,7 @@ group('калибровка', () => {
   const c2 = { t: 0 };
   feedUntilEvent(wild, { x: 0.5 }, c2);
   feedUntilEvent(wild, { x: 0.5 + 0.30 }, c2);
+  feedUntilEvent(wild, { x: 0.5 }, c2);
   feedUntilEvent(wild, { x: 0.5 - 0.30 }, c2);
   const wildDone = feedUntilEvent(wild, { crouch: 1.5 }, c2);
   check('огромный размах зажимается сверху',
@@ -889,8 +895,272 @@ group('калибровка', () => {
   feedUntilEvent(lazy, { x: 0.5 }, c3);
   const gaveUp = feedUntilEvent(lazy, { x: 0.5 }, c3);
   check('после трёх попыток идёт дальше, а не запирает',
-    gaveUp.gaveUp === true || lazy.stage?.id !== 'left',
+    gaveUp.failed?.id === 'left' && lazy.stage?.id !== 'left',
     'застрять на экране, с которого нет выхода, хуже, чем неидеальный порог');
+});
+
+/* ───────────────── калибровка сдаётся ─────────────────
+
+   Эта группа — регрессия на падение у ребёнка 6 октября. Ветка «три попытки и
+   идём дальше» двигала стадию, но не отдавала ни `done`, ни `result`: на
+   последней стадии следующий кадр получал { done: true, result: null },
+   train.js читал `uEnter` у null и падал — 1478 раз подряд, 133 секунды
+   замершего экрана, забег брошен. Поэтому здесь проверяется не наличие поля, а
+   что калибровка ВСЕГДА заканчивается годными числами. */
+group('калибровка сдаётся', () => {
+  // Довести до приседа и не приседать: три попытки — и это конец калибровки.
+  const cal = makeCalibration();
+  const clock = { t: 0 };
+  feedUntilEvent(cal, { x: 0.5 }, clock);
+  feedUntilEvent(cal, { x: 0.5 + 0.09 }, clock);
+  feedUntilEvent(cal, { x: 0.5 }, clock);
+  feedUntilEvent(cal, { x: 0.5 - 0.09 }, clock);
+  check('дошли до приседа', cal.stage?.id === 'crouch', `сейчас ${cal.stage?.id}`);
+
+  let last = null;
+  for (let i = 0; i < 3; i++) last = feedUntilEvent(cal, { crouch: 0 }, clock);
+
+  check('сдавшийся присед завершает калибровку', last.done === true, JSON.stringify(last));
+  check('и отдаёт РЕЗУЛЬТАТ, а не null', !!last.result,
+    'именно отсутствие result роняло приложение каждый кадр');
+  check('провал назван по провалившейся стадии', last.failed?.id === 'crouch',
+    `failed = ${last.failed?.id}`);
+  const got = last.result || {};
+  for (const k of ['uEnter', 'uExit', 'vEnter', 'vExit', 'S0', 'panSpan']) {
+    check(`${k} — годное число`, Number.isFinite(got[k]) && got[k] > 0, `${k} = ${got[k]}`);
+  }
+  check('повторный push после конца не ломается и отдаёт тот же результат',
+    cal.push(pose({}), clock.t + 50).result === last.result);
+
+  // Сдалась стадия ПОСЕРЕДИНЕ — следующая обязана получить свои три попытки.
+  const mid = makeCalibration();
+  const c4 = { t: 0 };
+  feedUntilEvent(mid, { x: 0.5 }, c4);
+  let step = null;
+  for (let i = 0; i < 3; i++) step = feedUntilEvent(mid, { x: 0.5 }, c4); // не шагает
+  check('провал середины сообщает о переходе', step.advanced === true, JSON.stringify(step));
+  check('и называет следующую стадию', step.stage?.id === 'center', `stage = ${step.stage?.id}`);
+  check('у следующей стадии снова три попытки, а не одна', mid.tries === 0,
+    'без сброса tries следующая стадия сдавалась с первого раза — так в журнале и вышло');
+  const after = feedUntilEvent(mid, { x: 0.95 }, c4); // в середину не возвращается
+  check('следующая стадия действительно просит повторить, а не сдаётся сразу',
+    after.retry === true, JSON.stringify(after));
+});
+
+/* ───────────────── калибровка объясняет себя ─────────────────
+
+   Цель в окошке камеры появилась потому, что калибровка не говорила, чего
+   хочет: ни расстояния, ни того, куда шагнуть, ни насколько присесть.
+   Семилетке это и не сказать словами — он смотрит на телевизор через комнату.
+   Здесь проверяется арифметика цели, а не её вид. */
+group('калибровка объясняет себя', () => {
+  const NEED_U = 0.25;   // MIN_EXCURSION.u, см. js/calibrate.js
+  const NEED_V = 0.20;
+
+  /* ЕДИНИЦЫ КАДРА. Цель отдаётся в долях ШИРИНЫ, а считается из величин в
+     долях ВЫСОТЫ. Проверяется на трёх формах кадра: ровно на этой подмене игра
+     уже стояла однажды — отношение плеч к торсу считалось 0.48 вместо 0.86. */
+  for (const aspect of [1, 16 / 9, 20 / 9]) {
+    const a = aspect.toFixed(2);
+    const cal = makeCalibration({ aspect });
+    const clock = { t: 0 };
+    feedUntilEvent(cal, { x: 0.5, scale: 0.2 }, clock);
+    const r = cal.push(pose({ x: 0.5, scale: 0.2 }), clock.t);
+    const t = r.target;
+    check(`кадр ${a}: цель бокового шага есть`, t?.kind === 'side' && t.side === -1,
+      JSON.stringify(t));
+    // Обратный пересчёт: цель, переведённая назад в единицы высоты, обязана
+    // стоять ровно на пороге размаха. Пропущенное деление на aspect здесь и
+    // ловится — иначе требование растёт вместе с формой кадра.
+    const u = S.mirrorX * (t.x * aspect - 0.5 * aspect) / 0.2;
+    check(`кадр ${a}: цель стоит ровно на пороге размаха`,
+      Math.abs(Math.abs(u) - NEED_U) < 1e-6, `получилось ${u}`);
+    check(`кадр ${a}: цель влево после зеркала уходит влево`, (1 - t.x) < 0.5,
+      `зеркальная цель ${(1 - t.x).toFixed(3)}`);
+
+    // Ребёнок, вставший в зону, порог берёт; на полпути — не берёт.
+    const d = t.x - 0.5;
+    const inside = cal.push(pose({ x: 0.5 + d * 1.1, scale: 0.2 }), clock.t + 50);
+    const halfway = makeCalibration({ aspect });
+    const c5 = { t: 0 };
+    feedUntilEvent(halfway, { x: 0.5, scale: 0.2 }, c5);
+    const short = halfway.push(pose({ x: 0.5 + d * 0.5, scale: 0.2 }), c5.t);
+    check(`кадр ${a}: в зоне порог взят`, inside.target.reached === true);
+    check(`кадр ${a}: на полпути не взят`, short.target.reached === false);
+  }
+
+  // Цель приходит на КАЖДОМ кадре, включая кадры без позы: иначе зона мигает.
+  const cal = makeCalibration({ aspect: 16 / 9 });
+  const clock = { t: 0 };
+  check('без позы цель всё равно есть', !!cal.push(null, 0).target,
+    'иначе зона исчезает ровно тогда, когда ребёнок вышел её искать');
+  feedUntilEvent(cal, { x: 0.5 }, clock);
+  const early = cal.push(pose({ x: 0.5 }), clock.t);
+  const later = cal.push(pose({ x: 0.5 }), clock.t + 1000);
+  check('заливка цели растёт по мере выдержки', later.target.fill > early.target.fill,
+    `${early.target.fill} → ${later.target.fill}`);
+
+  // Присед: цель — линия ниже плеч, и уйти под неё означает взять порог.
+  const low = makeCalibration({ aspect: 16 / 9 });
+  const c3 = { t: 0 };
+  feedUntilEvent(low, { x: 0.5 }, c3);
+  feedUntilEvent(low, { x: 0.5 + 0.09 }, c3);
+  feedUntilEvent(low, { x: 0.5 }, c3);
+  feedUntilEvent(low, { x: 0.5 - 0.09 }, c3);
+  const standing = low.push(pose({ x: 0.5 }), c3.t);
+  check('цель приседа — линия по высоте', standing.target?.kind === 'crouch',
+    JSON.stringify(standing.target));
+  check('линия ниже плеч стоящего', standing.target.y > 0.45,
+    `линия ${standing.target.y}, плечи стоящего 0.45`);
+  check('линия ровно на пороге приседа',
+    Math.abs((standing.target.y - 0.45) / 0.2 - NEED_V) < 1e-6, `${standing.target.y}`);
+  check('стоя порог не взят', standing.target.reached === false);
+  const squat = low.push(pose({ x: 0.5, crouch: 0.3 }), c3.t + 50);
+  check('присев — взят', squat.target.reached === true);
+
+  // Воротца «вернись в середину»: зона вокруг нейтрали, и порог обратный.
+  const gate = makeCalibration({ aspect: 16 / 9 });
+  const c6 = { t: 0 };
+  feedUntilEvent(gate, { x: 0.5 }, c6);
+  feedUntilEvent(gate, { x: 0.5 + 0.09 }, c6);
+  const center = gate.push(pose({ x: 0.5 }), c6.t);
+  check('цель середины — зона вокруг нейтрали',
+    center.target?.side === 0 && center.target.half > 0, JSON.stringify(center.target));
+  // Допуск 1e-6, а не ноль: точки приходят Float32Array — и от камеры тоже.
+  check('середина центрирована на нейтрали', Math.abs(center.target.x - 0.5) < 1e-6,
+    `середина оказалась на ${center.target.x}`);
+  check('стоя в середине порог взят', center.target.reached === true);
+  const away = makeCalibration({ aspect: 16 / 9 });
+  const c7 = { t: 0 };
+  feedUntilEvent(away, { x: 0.5 }, c7);
+  feedUntilEvent(away, { x: 0.5 + 0.09 }, c7);
+  check('стоя в стороне — не взят',
+    away.push(pose({ x: 0.5 + 0.09 }), c7.t).target.reached === false,
+    'иначе воротца пропускают того, кто остался сбоку, — и правый замер снова врёт');
+
+  // Рамка «куда встать» судит расстояние той же функцией, что экран штатива.
+  check('далёкого ребёнка рамка браковала бы',
+    makeCalibration({ aspect: 16 / 9 }).push(pose({ scale: 0.1 }), 0).target.fit === false);
+  check('стоящего как надо — принимает',
+    makeCalibration({ aspect: 16 / 9 }).push(pose({ scale: 0.3 }), 0).target.fit === true);
+});
+
+/* ───────────────── ширина игрового поля ─────────────────
+
+   Поле измеряется в размахе ИГРОКА, а не в длинах торса. По журналу первого
+   забега ребёнка шаг взрослого даёт ≈0.48 единицы u, шаг ребёнка ≈0.34, и
+   ребёнку нужно вдвое больше шагов на то же решение: уйти от препятствия за
+   2 шага вместо 1, из края в край за 4–5 вместо 2–3. */
+group('ширина поля', () => {
+  check('без калибровки поле прежней ширины', panSpanOf(null) === 1,
+    'иначе синтетика и первый запуск поедут иначе, чем проверено');
+  check('размах взрослого поле не меняет',
+    Math.abs(panSpanOf({ excursion: { left: 0.98, right: 1.00 } }) - 0.98) < 1e-9,
+    'замерено 0.98 и 1.00 — сегодняшнее поведение обязано сохраниться точно');
+  check('узкий размах усиливает не больше чем вдвое',
+    panSpanOf({ excursion: { left: 0.40, right: 1.58 } }) === 0.5,
+    'замер ребёнка 0.40; при большем усилении он жил бы у края поля');
+  check('размах напоказ поле не расширяет',
+    panSpanOf({ excursion: { left: 2.0, right: 2.5 } }) === 1.2);
+  check('берётся слабая сторона, а не сильная',
+    panSpanOf({ excursion: { left: 0.6, right: 1.5 } }) === 0.6,
+    'иначе один удачный шаг решает за обе стороны');
+  check('готовый panSpan берётся как есть', panSpanOf({ panSpan: 0.75 }) === 0.75);
+  check('НЕизмеренный размах поле не трогает',
+    panSpanOf({ excursion: { left: 0.02, right: 1.0 } }) === 1,
+    'размах ниже порога — это сдавшаяся стадия, а не узкий размах: усиливать нечего');
+  check('испорченная запись не становится делителем',
+    panSpanOf({ panSpan: 0 }) === 1 && panSpanOf({ panSpan: NaN }) === 1,
+    'ноль или NaN в делителе увёл бы панораму в Infinity навсегда и молча');
+});
+
+/* ───────────────── порядок маляра ─────────────────
+
+   Кольцо просвечивало сквозь препятствие: кольца рисовались одним проходом
+   после препятствий, а плита видна с 10 м при кольцах до 30 м. Заметил
+   заказчик. Здесь проверяется и арифметика глубины, и настоящий порядок
+   заливок — через поддельный контекст, потому что порядок и есть дефект. */
+group('порядок маляра', () => {
+  const ob = (at, extra = {}) => ({ at, kind: 'side', side: 1, ...extra });
+
+  check('далёкое препятствие не рисуется', obstacleDepth(ob(10), 10 - O.signalS - 0.1) === null);
+  check('пройденное не рисуется', obstacleDepth(ob(10, { passed: true }), 9) === null);
+  check('уехавшее за спину не рисуется', obstacleDepth(ob(10), 10.5) === null,
+    'у него отрицательная глубина, и проекция залила бы экран целиком');
+  check('в окне телеграфа глубина — у самой дымки',
+    Math.abs(obstacleDepth(ob(10), 10 - (O.signalS + O.visibleS) / 2) - VIEW.fogDistance * 0.92) < 1e-9);
+  const close = obstacleDepth(ob(10), 10 - 1.5);
+  check('ближе окна телеграфа глубина — это сама плита',
+    Math.abs(close - 1.5 * VIEW.speed) < 1e-9, `глубина ${close}`);
+
+  let prev = Infinity;
+  let mono = true;
+  for (let dt = O.visibleS; dt > 0.5; dt -= 0.1) {
+    const d = obstacleDepth(ob(10), 10 - dt);
+    if (d != null) { if (d > prev) mono = false; prev = d; }
+  }
+  check('глубина убывает по мере приближения', mono);
+
+  check('разрез — по самому близкому', nearestObstacleDepth([ob(16), ob(10)], 9) === 2);
+  check('без препятствий разреза нет', nearestObstacleDepth([], 9) === Infinity);
+
+  // Настоящий порядок заливок. Контекст поддельный: нужен не рисунок, а
+  // последовательность, в которой он кладётся.
+  function recorder() {
+    const fills = [];
+    let style = null;
+    const ctx = {
+      get fillStyle() { return style; },
+      set fillStyle(v) { style = v; },
+      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
+      fill() { fills.push(style); },
+      fillRect() { fills.push(style); },
+    };
+    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
+  }
+
+  const order = (starZ) => {
+    const { canvas, fills } = recorder();
+    const view = createView(canvas);
+    view.render({
+      u: 0, v: 0, travel: 0, elapsed: 0,
+      obstacles: [ob(1.5)],            // плита на 3 м
+      stars: [{ x: 0, z: starZ }],
+    });
+    return { ring: fills.indexOf(THEME.greenHill.star), plate: fills.indexOf(THEME.greenHill.block) };
+  };
+
+  const far = order(12);
+  check('кольцо и плита вообще нарисованы', far.ring >= 0 && far.plate >= 0, JSON.stringify(far));
+  check('кольцо ЗА плитой уходит под неё', far.ring < far.plate,
+    `кольцо ${far.ring}, плита ${far.plate} — ровно этот дефект заметил заказчик`);
+
+  const near = order(1.2);
+  check('кольцо ПЕРЕД плитой остаётся поверх', near.ring > near.plate,
+    `кольцо ${near.ring}, плита ${near.plate} — иначе кольцо теряется там, где важнее всего`);
+});
+
+/* ───────────────── наводка штатива ───────────────── */
+group('наводка', () => {
+  const at = (torso) => framing(null, { S: torso });
+
+  check('подсказка зовёт ПОДОЙТИ, когда ребёнка в кадре мало', /ближе/.test(at(0.10).hint),
+    'было наоборот, и заказчик с ребёнком подходили ближе, а телефон гнал их дальше');
+  check('и зовёт ОТОЙТИ, когда он занял кадр целиком', /отойдите/i.test(at(0.80).hint));
+  check('заполнение не зажато единицей', at(0.80).fill > 1,
+    'зажим делал ветку «слишком близко» недостижимой вовсе');
+
+  // Полоса привязана к тем же порогам, которыми игра судит присутствие.
+  check('низ полосы выше порога потери', CAMERA.fillMin >= S.scaleMin * 3,
+    `${CAMERA.fillMin} против ${S.scaleMin * 3}`);
+  check('верх полосы ниже абсолютного потолка', CAMERA.fillMax <= S.scaleMax * 3,
+    `${CAMERA.fillMax} против ${S.scaleMax * 3}`);
+  check('наводка ребёнка из журнала проходит', at(0.37).ok === true, 'торс 0.37 — игра работала');
+  check('наводка взрослого из журнала проходит', at(0.53).ok === true, 'торс 0.53 — игра работала');
+  check('а на пороге потери — не проходит', at(S.scaleMin).ok === false,
+    'иначе наводка зовёт туда, где игра теряет ребёнка');
+  check('без позы судить нечего', framing(null, null).ok === false);
 });
 
 group('сдвиг штатива', () => {

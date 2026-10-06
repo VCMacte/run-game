@@ -12,13 +12,33 @@
 import { SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
 import { geometry } from './signals.js';
+import { framing } from './camera.js';
 import { players } from './players.js';
 
+/* Стадии. У каждой два текста, и адресаты у них разные.
+
+   `say` — ребёнку, крупным заголовком: короткая команда, которую слышно через
+   комнату. `adult` — взрослому, строкой под ней: что сейчас происходит и что
+   делать, если не выходит. Один экран обслуживает обоих, и путать регистры
+   нельзя: ребёнок не прочитает инструкцию, а взрослый не поймёт из «Присядь
+   как лягушка!», что от него-то ждут показать пример.
+
+   Стадия «вернись в середину» — не измерение, а воротца. В журнале первого
+   забега ребёнка размах вышел перекошенным вчетверо (left 0.40, right 1.58),
+   и `right` требовал трёх попыток в ОБОИХ сеансах. Причина не в ребёнке:
+   смещение считается от нейтрали, и тот, кто остался стоять слева, на команду
+   «шагни вправо» не набирает ничего — он уже в минусе. */
 export const STAGES = [
-  { id: 'neutral', say: 'Встань в рамку и постой', ms: 5000 },
-  { id: 'left', say: 'Шагни влево!', ms: 4000 },
-  { id: 'right', say: 'Шагни вправо!', ms: 4000 },
-  { id: 'crouch', say: 'Присядь как лягушка!', ms: 4000 },
+  { id: 'neutral', say: 'Встань в рамку и постой', ms: 5000,
+    adult: 'Ребёнок стоит лицом к телевизору и помещается в рамку целиком.' },
+  { id: 'left', say: 'Шагни влево!', ms: 4000,
+    adult: 'Ребёнок уходит в подсвеченную зону и стоит там. Не выходит — шагните рядом и покажите.' },
+  { id: 'center', say: 'Вернись в середину', ms: 2000,
+    adult: 'Передышка: игра запоминает, где середина. Ребёнок возвращается в подсвеченную зону.' },
+  { id: 'right', say: 'Шагни вправо!', ms: 4000,
+    adult: 'То же в другую сторону. Размах нужен такой, какой ребёнок повторит в игре, а не напоказ.' },
+  { id: 'crouch', say: 'Присядь как лягушка!', ms: 4000,
+    adult: 'Плечи должны уйти ниже подсвеченной линии. Не выходит — присядьте рядом и покажите.' },
 ];
 
 // Границы, за которые порог не пускаем ни при каком размахе. Снизу — чтобы
@@ -35,6 +55,58 @@ export const CLAMP = {
 /* Меньший размах считается «не пошевелился» и просит повторить: порог,
    выведенный из дрожания, был бы не порогом, а случайным числом. */
 const MIN_EXCURSION = { u: 0.25, v: 0.20 };
+
+/* Насколько близко к нейтрали надо вернуться на стадии «вернись в середину».
+
+   Меньше MIN_EXCURSION.u намеренно и обязательно: иначе «я в середине» и «я
+   шагнул» были бы верны одновременно, и воротца пропускали бы ребёнка,
+   стоящего в боковом положении. Связь проверяется тестом. */
+const CENTER_TOL = 0.20;
+
+/* Размах, на который нормируется ход камеры (ширина игрового поля).
+
+   Зачем вообще: `u` считается в длинах торса, а ход камеры был привязан к нему
+   жёстко — то есть поле одной ширины в длинах торса для всех. По журналу
+   первого забега ребёнка это и оказалось главной физической жалобой: шаг
+   взрослого даёт ≈0.48 единицы u, шаг ребёнка ≈0.34, и ребёнку нужно вдвое
+   больше шагов на то же решение — уйти от препятствия за 2 шага вместо 1, из
+   края в край за 4–5 вместо 2–3. Подойти ближе к телефону это не лечит:
+   расстояние в u сокращается по построению.
+
+   Поэтому поле измеряется в размахе ИГРОКА: `panSpan` — тот размах, при
+   котором взгляд уходит на полный ход. У взрослого он замерен 0.98 и 1.00,
+   то есть прежнее поведение сохраняется точно.
+
+   Потолок усиления — ровно двое (нижняя граница 0.5), и это решение
+   заказчика, а не оценка: вдвое — то, о чём он попросил, посмотрев на
+   ребёнка. Больше нельзя — в том же журнале медиана |u| за забег 0.55, и при
+   большем усилении ребёнок жил бы у края поля. Верхняя граница 1.2 не пускает
+   поле расширяться у того, кто на калибровке показал размах напоказ. */
+const PAN_SPAN = [0.50, 1.20];
+
+/* Размах, НЕ дотянувший до порога, — это не узкий размах, а не измеренный:
+   стадия сдалась. Нормировать по нему нельзя — получилось бы максимальное
+   усиление поля у того, чьего размаха мы не знаем вовсе. В этом случае поле
+   остаётся прежней ширины, и это честнее догадки. */
+const panSpanFrom = (span) => (
+  Number.isFinite(span) && span >= MIN_EXCURSION.u ? clamp(span, ...PAN_SPAN) : 1
+);
+
+/**
+ * Размах, на который нормируется поле: из калибровки, с зажимом.
+ *
+ * Значение зажимается и на пути из хранилища тоже. Оно идёт ДЕЛИТЕЛЕМ в
+ * js/train.js, и ноль или NaN из чужой записи превратили бы `u` в Infinity
+ * навсегда: коридор замер бы без единой ошибки в журнале.
+ */
+export function panSpanOf(cal) {
+  if (!cal) return 1; // без калибровки — как было до нормировки
+  if (cal.panSpan != null) return panSpanFrom(cal.panSpan);
+  // Запись от прошлой версии: размах там есть, поля panSpan ещё нет.
+  const e = cal.excursion;
+  if (!e) return 1;
+  return panSpanFrom(Math.min(e.left, e.right));
+}
 
 /* Калибровка принадлежит игроку, а не телефону.
 
@@ -99,7 +171,9 @@ export function makeCalibration({ aspect = 1 } = {}) {
   let since = null;
   let tries = 0;
   const neutral = { x: 0, shoulderY: 0, hipY: 0, S: 0, n: 0 };
-  let best = { left: 0, right: 0, crouch: 0 };
+  // `center` — ближайшее к нейтрали, что ребёнок показал на воротцах, поэтому
+  // он копится минимумом, а размахи — максимумом.
+  let best = { left: 0, right: 0, crouch: 0, center: Infinity };
   let result = null;
 
   const mean = () => ({
@@ -124,7 +198,8 @@ export function makeCalibration({ aspect = 1 } = {}) {
 
   function finish() {
     const base = mean();
-    const uEnter = clamp(Math.min(best.left, best.right) * FRACTION, ...CLAMP.u);
+    const span = Math.min(best.left, best.right);
+    const uEnter = clamp(span * FRACTION, ...CLAMP.u);
     const vEnter = clamp(best.crouch * FRACTION, ...CLAMP.v);
     result = {
       ...base,
@@ -132,10 +207,85 @@ export function makeCalibration({ aspect = 1 } = {}) {
       uExit: uEnter * (S.uExit / S.uEnter), // та же пропорция, что в умолчаниях
       vEnter,
       vExit: vEnter * (S.vExit / S.vEnter),
-      excursion: { ...best },
+      // Ширина игрового поля в размахе этого игрока, а не в длинах торса.
+      // Сдавшаяся боковая стадия даёт размах ниже порога — тогда поле
+      // остаётся прежним, см. panSpanFrom.
+      panSpan: panSpanFrom(span),
+      // Только три размаха: `center` — не размах, а воротца, и Infinity в
+      // JSON превращается в null, то есть попал бы в хранилище мусором.
+      excursion: { left: best.left, right: best.right, crouch: best.crouch },
       at: new Date().toISOString(),
     };
     return result;
+  }
+
+  /** Выполнено ли то, о чём просила стадия. */
+  function reached(st) {
+    if (st.id === 'neutral') return neutral.n >= 20;
+    if (st.id === 'crouch') return best.crouch >= MIN_EXCURSION.v;
+    // Воротца — единственное место, где сравнение обратное: надо подойти
+    // ближе порога, а не уйти дальше.
+    if (st.id === 'center') return best.center <= CENTER_TOL;
+    return (st.id === 'left' ? best.left : best.right) >= MIN_EXCURSION.u;
+  }
+
+  /** Переход к следующей стадии — один выход и для успеха, и для провала. */
+  function advance(extra = {}) {
+    stage++;
+    since = null;
+    tries = 0;
+    if (stage >= STAGES.length) return { ...extra, done: true, result: finish() };
+    const next = STAGES[stage];
+    return {
+      ...extra, stage: next, say: next.say, adult: next.adult,
+      hold: 0, advanced: true, target: targetFor(next, null, 0),
+    };
+  }
+
+  /**
+   * Куда ребёнку надо попасть — числами, в долях кадра.
+   *
+   * Чистое описание цели, без рисования: рисует её preview.js, тем же
+   * зеркалом, которым зеркалит скелет. Отдаётся на КАЖДОМ кадре стадии, а не
+   * только на переходах, иначе зона мигала бы.
+   *
+   * `fill` — насколько набрана выдержка: зона заливается по мере стояния, и
+   * это единственный указатель прогресса, который ребёнок может увидеть, не
+   * умея читать.
+   */
+  function targetFor(st, g, fill) {
+    const grown = clamp(fill, 0, 1);
+    if (st.id === 'neutral') {
+      // Расстояние судит та же функция, что и экран штатива: двух мнений о
+      // том, «влезает ли ребёнок в кадр», быть не должно.
+      return { kind: 'stand', fill: grown, fit: !!g && framing(null, g).ok, reached: reached(st) };
+    }
+    const base = mean();
+    if (st.id === 'crouch') {
+      return {
+        kind: 'crouch', fill: grown,
+        // y уже в долях высоты кадра — приводить не надо.
+        y: base.neutralShoulderY + MIN_EXCURSION.v * base.S0,
+        reached: reached(st),
+      };
+    }
+
+    /* ЕДИНИЦЫ. `neutralX` и `cxh` — в долях ВЫСОТЫ кадра (x умножен на
+       отношение сторон, см. geometry()), а рисовать надо в долях ШИРИНЫ.
+       Поэтому обратное деление на aspect — и оно обязано быть одно на проект:
+       ровно на этой подмене уже стояла игра, когда отношение плеч к торсу
+       считалось 0.48 вместо 0.86. Проверяется на трёх формах кадра. */
+    const side = st.id === 'left' ? -1 : st.id === 'right' ? 1 : 0;
+    const need = side === 0 ? CENTER_TOL : MIN_EXCURSION.u;
+    const cxh = base.neutralX + side * need * base.S0 * S.mirrorX;
+    return {
+      kind: 'side', fill: grown, side,
+      x: cxh / aspect,
+      // Полуширина нужна только воротцам: у боковой зоны второй край — край
+      // кадра, потому что просят «уйди в эту сторону», а не «встань на черту».
+      half: (need * base.S0) / aspect,
+      reached: reached(st),
+    };
   }
 
   return {
@@ -148,10 +298,14 @@ export function makeCalibration({ aspect = 1 } = {}) {
       const st = STAGES[stage];
       if (!st) return { done: true, result };
 
-      if (!lm) return { stage: st, say: 'Тебя не видно — встань в рамку', hold: 0, waiting: true };
+      if (!lm) {
+        return { stage: st, adult: st.adult, say: 'Тебя не видно — встань в рамку',
+          hold: 0, waiting: true, target: targetFor(st, null, 0) };
+      }
       const g = geometry(lm, aspect);
       if (g.vis < S.visMin) {
-        return { stage: st, say: 'Тебя плохо видно', hold: 0, waiting: true };
+        return { stage: st, adult: st.adult, say: 'Тебя плохо видно',
+          hold: 0, waiting: true, target: targetFor(st, g, 0) };
       }
 
       if (since === null) since = t;
@@ -168,35 +322,40 @@ export function makeCalibration({ aspect = 1 } = {}) {
           const u = S.mirrorX * (g.cxh - base.neutralX) / g.S;
           if (st.id === 'left' && u < 0) best.left = Math.max(best.left, -u);
           if (st.id === 'right' && u > 0) best.right = Math.max(best.right, u);
+          // Воротца: копится самое близкое к нейтрали, а не самое далёкое.
+          if (st.id === 'center') best.center = Math.min(best.center, Math.abs(u));
         }
       }
 
       if (hold < st.ms) {
-        return { stage: st, say: st.say, hold, progress: hold / st.ms };
+        return { stage: st, adult: st.adult, say: st.say, hold,
+          progress: hold / st.ms, target: targetFor(st, g, hold / st.ms) };
       }
 
       // Стадия вышла по времени — принимаем или просим повторить.
-      const got = st.id === 'neutral' ? neutral.n
-        : st.id === 'crouch' ? best.crouch
-          : st.id === 'left' ? best.left : best.right;
-      const need = st.id === 'neutral' ? 20
-        : st.id === 'crouch' ? MIN_EXCURSION.v : MIN_EXCURSION.u;
-
-      if (got < need) {
+      if (!reached(st)) {
         tries++;
         since = null;
-        // Три попытки — и идём дальше с умолчанием: застрять на калибровке
-        // хуже, чем играть с неидеальным порогом. Ребёнок не должен упереться
-        // в экран, с которого нет выхода.
-        if (tries >= 3) { stage++; return { stage: st, retry: false, gaveUp: true }; }
-        return { stage: st, retry: true, say: st.id === 'crouch' ? 'Ещё ниже!' : 'Ещё дальше!', tries };
+        /* Три попытки — и идём дальше с умолчанием: застрять на калибровке
+           хуже, чем играть с неидеальным порогом. Ребёнок не должен упереться
+           в экран, с которого нет выхода.
+
+           Здесь была ровно та дыра, которая этот экран и создавала: ветка
+           двигала стадию, но не отдавала ни `done`, ни `result`, ни
+           `advanced`. На последней стадии (присед) следующий же кадр получал
+           `{ done: true, result: null }`, train.js читал `uEnter` у null и
+           падал — каждый кадр, навсегда. В журнале 6 октября это 1478 ошибок
+           подряд и 133 секунды замершего экрана у ребёнка. Попутно не
+           сбрасывалось `tries`, и следующая стадия получала одну попытку
+           вместо трёх, а без `advanced` на экране оставалась команда прошлой
+           стадии: ребёнку говорили «шагни вправо», пока игра мерила присед. */
+        if (tries >= 3) return advance({ failed: st });
+        return { stage: st, adult: st.adult, retry: true, tries,
+          say: st.id === 'crouch' ? 'Ещё ниже!' : st.id === 'center' ? 'Ещё ближе к середине!' : 'Ещё дальше!',
+          target: targetFor(st, g, 0) };
       }
 
-      stage++;
-      since = null;
-      tries = 0;
-      if (stage >= STAGES.length) return { done: true, result: finish() };
-      return { stage: STAGES[stage], say: STAGES[stage].say, hold: 0, advanced: true };
+      return advance();
     },
   };
 }

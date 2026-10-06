@@ -24,6 +24,10 @@ const COLORS = {
   ok: '#39d98a',
   lost: '#ffb02e',
   joint: '#f2f5ff',
+  // Зона-цель на калибровке: куда надо попасть. Два состояния, и различаются
+  // они светлотой, а не только тоном: цветность Miracast режет сильнее.
+  zone: '#2d4f8a',
+  zoneHit: '#7ce0ff',
 };
 
 /**
@@ -51,11 +55,14 @@ export function fieldPosition(cx, margin = S.edgeMargin) {
  * жёлтый — что-то не так, и тогда понятно, что пауза будет не «ни с того ни
  * с сего».
  */
-export function drawSkeleton(canvas, lm, ok) {
+export function drawSkeleton(canvas, lm, ok, target = null) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
+  // Цель — под скелетом: ребёнок ищет на экране себя, и фигурка обязана
+  // остаться сверху.
+  if (target) drawTarget(ctx, w, h, target);
   if (!lm) return;
 
   const X = (i) => (1 - lm[i * 4]) * w; // то же зеркало, что и у видео
@@ -86,6 +93,74 @@ export function drawSkeleton(canvas, lm, ok) {
     ctx.arc(X(i), Y(i), r, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+/**
+ * Зона-цель калибровки: куда ребёнку надо переместиться.
+ *
+ * Существует потому, что калибровка себя не объясняла. По журналу 6 октября
+ * ребёнок не прошёл её с первого раза, и причина не в нём: на каком
+ * расстоянии встать, насколько шагнуть и насколько присесть — на экране не
+ * было сказано нигде, а у стадии «шагни вправо» заголовок вообще оставался от
+ * прошлой стадии. Словами семилетке этого и не сказать: он смотрит на
+ * телевизор через комнату. Поэтому цель — зона, а не текст.
+ *
+ * Зеркало то же, что у скелета (`1 - x`): без него шаг влево уезжал бы на
+ * окошке вправо. Зеркало складывается с `mirrorX` калибровки, и именно
+ * поэтому зона, посчитанная для «шага влево», оказывается на экране слева —
+ * двойное отрицание проверяется тестом, а не на глаз.
+ *
+ * Форма — крупная плоская заливка со светлым краем: тонкую рамку и пунктир
+ * сжатие уничтожает первыми. Заливка растёт по мере выдержки — это
+ * единственный указатель прогресса, который работает у того, кто не читает.
+ */
+function drawTarget(ctx, w, h, t) {
+  // Рамка «куда встать» — это DOM-силуэт, канвасу здесь делать нечего.
+  if (t.kind === 'stand') return;
+
+  let x0; let x1; let y0; let y1;
+  if (t.kind === 'crouch') {
+    if (!Number.isFinite(t.y)) return;
+    [x0, x1, y0, y1] = [0, w, t.y * h, h];
+  } else {
+    if (!Number.isFinite(t.x)) return;
+    const mx = (1 - t.x) * w; // то же зеркало, что у скелета
+    if (t.side === 0) {
+      const half = (t.half || 0) * w;
+      [x0, x1] = [mx - half, mx + half];
+    } else {
+      // Боковая зона тянется до края кадра: просят уйти в сторону, а не
+      // встать на черту.
+      [x0, x1] = t.side < 0 ? [0, mx] : [mx, w];
+    }
+    [y0, y1] = [0, h];
+  }
+
+  const fill = Math.max(0, Math.min(1, t.fill || 0));
+  const color = t.reached ? COLORS.zoneHit : COLORS.zone;
+  ctx.globalAlpha = t.reached ? 0.55 : 0.35;
+  ctx.fillStyle = color;
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  // Выдержка: заливка поднимается снизу вверх, то есть «постой, пока
+  // наполнится».
+  ctx.globalAlpha = t.reached ? 0.9 : 0.6;
+  ctx.fillRect(x0, y1 - (y1 - y0) * fill, x1 - x0, (y1 - y0) * fill);
+  ctx.globalAlpha = 1;
+
+  // Край зоны — та самая линия, до которой надо дойти.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(2, w * 0.02);
+  ctx.beginPath();
+  if (t.kind === 'crouch') {
+    ctx.moveTo(x0, y0); ctx.lineTo(x1, y0);
+  } else if (t.side === 0) {
+    ctx.moveTo(x0, y0); ctx.lineTo(x0, y1);
+    ctx.moveTo(x1, y0); ctx.lineTo(x1, y1);
+  } else {
+    const edge = t.side < 0 ? x1 : x0;
+    ctx.moveTo(edge, y0); ctx.lineTo(edge, y1);
+  }
+  ctx.stroke();
 }
 
 /** Двигает отметку на полосе поля и подсвечивает приближение к краю. */

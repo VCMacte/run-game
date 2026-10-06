@@ -12,7 +12,9 @@ import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './confi
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, makeDecor, canReach } from './view.js';
 import { MOTION } from './theme.js';
-import { makeCalibration, load as loadCalibration, save as saveCalibration, isStale } from './calibrate.js';
+import {
+  makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
+} from './calibrate.js';
 import { framing } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
 import { makeLevel, isSafe, telegraph } from './level.js';
@@ -78,6 +80,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let lastOk = false;
   let lastCx = null;
   let lastGeom = null;
+  // Цель калибровки для окошка камеры: куда ребёнку надо попасть. Живёт здесь,
+  // потому что кадр отрисовки и кадр позы — разные, и рисовать надо последнюю
+  // известную цель, а не ту, что совпала с кадром.
+  let lastTarget = null;
   /* Отношение сторон кадра. Без него x и y меряются в разных единицах, и
      ширина плеч выходит вдвое меньше настоящей — ребёнок, стоящий лицом,
      читается как повёрнутый боком. Берём у источника, а не угадываем. */
@@ -209,6 +215,19 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     lastOk = !!g && g.vis >= S.visMin;
     lastCx = g ? g.cx : null;
     const r = calibrator.push(sample.lm, now);
+
+    /* Повтор и провал пишутся ДО разбора `done`, а не после.
+
+       Иначе теряется ровно тот случай, ради которого всё это: сдавшаяся
+       последняя стадия (присед) приходит с `done` и `failed` одновременно, и
+       запись о провале оставалась за `return`. В журнале это выглядело бы как
+       благополучная `calib.done` с порогом приседа по нижнему зажиму и без
+       объяснения, откуда он взялся. */
+    if (r.retry) log.event('calib.retry', { stage: r.stage?.id, tries: r.tries });
+    // Провал называется по ПРОВАЛИВШЕЙСЯ стадии: в `stage` к этому моменту
+    // уже следующая, и журнал врал бы именем.
+    if (r.failed) log.event('calib.fail', { stage: r.failed.id });
+
     if (r.done) {
       calibration = r.result;
       saveCalibration(calibration);
@@ -224,9 +243,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       goStage('free');
       return;
     }
-    if (r.retry) log.event('calib.retry', { stage: r.stage?.id, tries: r.tries });
-    if (r.gaveUp) log.event('calib.fail', { stage: r.stage?.id });
     if (r.advanced) log.event('calib.stage', { stage: r.stage?.id });
+    lastTarget = r.target ?? null;
     hud({ calib: r });
   }
 
@@ -239,7 +257,17 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       health.ok++;
       health.vis += rec.vis;
       health.S += rec.S;
-      last = { u: rec.u, v: rec.v, t: now };
+      /* Боковое смещение приводится к РАЗМАХУ ЭТОГО ИГРОКА, а не остаётся в
+         длинах торса. Отсюда и дальше (панорама, дотягивание до кольца,
+         уклонение) всё живёт в долях игрового поля, и приведение обязано быть
+         ровно здесь, в одном месте: ниже `u` расходится на три дороги, и две
+         копии нормировки означали бы, что ребёнок бьётся о то, чего не видит.
+
+         Зачем вообще — журнал первого забега ребёнка: шаг взрослого даёт
+         ≈0.48 единицы u, шаг ребёнка ≈0.34, и ребёнку нужно вдвое больше
+         шагов на то же решение. Подробности и потолок усиления — у PAN_SPAN
+         в js/calibrate.js. */
+      last = { u: rec.u / panSpanOf(calibration), v: rec.v, t: now };
       if (run === RUN.paused && !manual) beginCountdown(now);
       if (rec.laneChanged) {
         log.event('gesture', {
@@ -252,9 +280,17 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       }
     } else if (run === RUN.running && rec.lostMs > S.lostMs) {
       pause(rec);
-    } else if (run === RUN.countdown) {
-      // Пропал во время отсчёта — отсчёт отменяется, иначе игра поедет без
-      // ребёнка.
+    } else if (run === RUN.countdown && rec.lostMs > S.lostMs) {
+      /* Пропал во время отсчёта — отсчёт отменяется, иначе игра поедет без
+         ребёнка. Но судить это надо ТЕМ ЖЕ порогом, что и вход в паузу.
+
+         Без `lostMs` ветка срывала отсчёт от единственного плохого отсчёта
+         позы, а вернуться в отсчёт можно с первой же хорошей — и у порога
+         присутствия получалось автоколебание с периодом в один-два отсчёта.
+         `countdownUntil` при каждом обороте ставился заново, то есть отсчёт не
+         доходил до конца, пока дребезг не кончится. В журнале 6 октября это
+         185.5 → 193.5 с: ребёнок смотрел «3-2-1» дважды, 8 секунд, а всего
+         паузы съели 28.5 с из 332. */
       pause(rec);
     }
   }
@@ -358,7 +394,9 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       dim: Math.min(1, dim + flash),
     });
     health.draw.push(performance.now() - drawStart);
-    if (skeleton && !skeleton.parentElement?.hidden) drawSkeleton(skeleton, lastLm, lastOk);
+    if (skeleton && !skeleton.parentElement?.hidden) {
+      drawSkeleton(skeleton, lastLm, lastOk, stage === 'calibrate' ? lastTarget : null);
+    }
     if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
     if (now - health.since > 1000) {
       flushHealth(now);
@@ -495,6 +533,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       draw95: draw.length ? Math.round(quantile(draw, 0.95)) : 0,
       u: round(last.u),
       v: round(last.v),
+      /* Чем поделено `u`. С этим полем журнал объясняет сам себя: здесь `u` в
+         долях ИГРОВОГО ПОЛЯ, а в событии `gesture` — в длинах торса. Перепутать
+         их легко, а разбор забега строится ровно на сравнении этих чисел между
+         ребёнком и взрослым. Нет поля — журнал от сборки до нормировки поля. */
+      panSpan: round(panSpanOf(calibration)),
     });
     health.frames = 0; health.poses = 0; health.ok = 0; health.dropped = 0;
     health.vis = 0; health.S = 0; health.infer = []; health.draw = [];

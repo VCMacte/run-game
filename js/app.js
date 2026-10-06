@@ -287,7 +287,6 @@ function renderRunHud(h = {}) {
   const showField = inGame && want !== 'off';
 
   $('runPreview').hidden = !showPreview;
-  $('runPreview').classList.toggle('corner', stage === 'calibrate');
   $('runPreview').classList.toggle('watch', inGame);
   $('runField').hidden = !showField;
   $('runSilhouette').hidden = inGame;
@@ -320,13 +319,27 @@ function renderRunHud(h = {}) {
   }
 
   if (stage === 'calibrate') {
+    /* Два адресата на одном экране, и регистры путать нельзя. Заголовок —
+       ребёнку: короткая команда, которую видно через комнату. Строка под ним —
+       взрослому: что происходит и что делать, если не выходит. Ребёнок
+       инструкцию не прочитает, а взрослый из «Присядь как лягушка!» не
+       поймёт, что от него-то ждут показать пример.
+
+       Прогресс ушёл из текста в картинку: зона-цель в окошке наполняется по
+       мере выдержки. Точки '●' сообщали то же самое, но тому, кто и так читает
+       текст, — то есть не ребёнку. */
     overlay.hidden = false;
     numbers.hidden = true;
     $('runNext').hidden = true;
     title.textContent = calib?.say || calib?.stage?.say || 'Приготовься';
     text.textContent = calib?.waiting ? 'Встань так, чтобы тебя было видно'
-      : calib?.retry ? 'Попробуем ещё раз'
-        : calib?.progress ? '●'.repeat(Math.ceil(calib.progress * 5)) : '';
+      : calib?.retry ? `Не вышло, пробуем ещё раз. ${calib?.adult || ''}`.trim()
+        : calib?.adult || '';
+    // Силуэт нужен только там, где просят ВСТАТЬ: на остальных стадиях рамка
+    // в середине спорила бы с зоной, которая зовёт в сторону.
+    const stand = calib?.target?.kind === 'stand';
+    $('runSilhouette').hidden = !stand;
+    $('runSilhouette').classList.toggle('bad', stand && !calib.target.fit);
     return;
   }
 
