@@ -26,6 +26,7 @@ Chrome для Android, горизонтально, задняя камера н�
 node serve.js                    # http://localhost:8099 + POST /save
 node tests-shell.mjs             # оболочка: манифест, разметка, кэш, настройки
 node tests-control.mjs           # математика: сигналы, вид, уровень, звук
+node tools/log-report.mjs <файл>  # числа забега из журнала с телефона
 node tools/make-sw.mjs           # пересобрать список кэша и поднять версию
 node tools/make-icons.mjs        # перерисовать иконки
 node tools/ed-generate.mjs ...   # картинка от Easy Diffusion (нужен его сервер)
@@ -452,6 +453,8 @@ Miracast сжимает картинку: крупные плоские форм
 | `tools/frame.html` | один кадр по заказу; init-картинки и перегон в WebP |
 | `tools/ed-generate.mjs` | клиент к Easy Diffusion; перенесён из комикса |
 | `assets/sky.webp` | фон неба; необязателен, без него рисуются полосы |
+| `tools/log-report.mjs` | журнал с телефона → числа забега; разбор проверяется тестом |
+| `.claude/skills/take-measurements/` | ритуал снятия замеров: откуда журнал, что значат числа, куда ведут |
 | `tools/make-sw.mjs`, `tools/make-icons.mjs` | детерминированные генераторы |
 | `js/version.js` | **генерируется**; номер сборки для строки состояния |
 | `tests-shell.mjs` | манифест, связность разметки и кода, полнота кэша |
