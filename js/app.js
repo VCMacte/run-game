@@ -336,9 +336,11 @@ function renderRunHud(h = {}) {
     numbers.hidden = true;
     $('runNext').hidden = true;
     title.textContent = result?.praise || 'Добежал!';
-    text.textContent = restSuggested
-      ? 'Три забега подряд — самое время передохнуть'
-      : 'Финиш!';
+    text.textContent = recordError
+      ? 'Не получилось записать результат — на телефоне нет места'
+      : restSuggested
+        ? 'Три забега подряд — самое время передохнуть'
+        : 'Финиш!';
     const st = result?.stars ?? 0;
     const ht = result?.hits ?? 0;
     const total = result?.starsTotal ?? 0;
@@ -415,6 +417,7 @@ async function startTraining() {
   // Новый забег — новый результат: прошлая запись в таблицу не должна
   // блокировать запись следующей.
   recorded = false;
+  recordError = false;
   const { wantedSource } = await import('./pose.js');
   const want = wantedSource();
 
@@ -599,6 +602,10 @@ $('parentBack').onclick = () => show(previous);
    запись — дело оболочки, а игра про таблицу рекордов не знает вовсе. */
 let recorded = false;
 
+/* И не отказало ли хранилище на последней попытке. Отдельным флагом, потому
+   что молчаливый отказ здесь дороже всего: забег уже не повторить. */
+let recordError = false;
+
 /** Длина забега словами. Берётся из тех же вариантов, что в настройках. */
 function runLengthLabel(seconds) {
   const s = Math.round(seconds || 0);
@@ -625,7 +632,14 @@ function renderPlayers() {
   const list = players.all();
   const me = players.current()?.id;
   $('playerList').innerHTML = list.map((p) => {
-    const note = p.hasCalib ? count(p.runs, RUNS) : 'без калибровки';
+    /* Два независимых факта, и показывать надо оба. Пока «есть калибровка»
+       служило признаком «играл», профиль, заведённый кнопкой «Другое имя» на
+       финише, навсегда читался как «без калибровки» — а у него есть рекорды и
+       нет калибровки по построению, её ему никто не предлагал. */
+    const note = [
+      p.runs ? count(p.runs, RUNS) : null,
+      p.hasCalib ? null : 'без калибровки',
+    ].filter(Boolean).join(' · ') || 'ещё не играл';
     return `<button data-pick="${p.id}" class="${p.id === me ? '' : 'ghost'}">`
       + `${safeText(p.name)}<small>${note}</small></button>`;
   }).join('');
@@ -720,6 +734,32 @@ function recLengths() {
   return [...set].sort((a, b) => a - b);
 }
 
+/* Сколько строк показываем. Хранится до RECORDS_MAX на игрока на длину, но
+   таблица рекордов — это верхушка, а не журнал.
+
+   Число не косметическое: в приложении нет прокрутки нигде (`html, body`
+   стоят с `overflow: hidden`, и это осознанно — экран держат в руке и тычут
+   пальцем, случайный свайп не должен уводить содержимое). Экран `.sheet`
+   центрирует колонку по вертикали, поэтому длинный список вылезает за ОБА
+   края: за экран уходят и заголовок, и переключатель длины, и кнопка
+   «Назад», и вернуться становится нечем. Порог наступает примерно на двадцати
+   записях — то есть внутри того запаса, который потолок в 50 как раз и копит.
+
+   Своя строка всегда дописывается снизу, даже если не попала в десятку: иначе
+   ребёнок, собравший меньше всех, не видит себя в таблице вовсе. */
+const RECORDS_SHOWN = 10;
+
+function recRow(r, place, me) {
+  const total = r.starsTotal ? ` из ${r.starsTotal}` : '';
+  const when = new Date(r.at).toLocaleDateString('ru', { day: 'numeric', month: 'short' });
+  return `<div class="rec${r.playerId === me ? ' me' : ''}">`
+    + `<span class="place">${place}</span>`
+    + `<span class="who">${safeText(r.name)}</span>`
+    + `<span class="num">${r.stars}${total}</span>`
+    + `<span class="when">задел ${r.hits} · ${when}</span>`
+    + '</div>';
+}
+
 function renderRecords() {
   const lengths = recLengths();
   if (!lengths.includes(recLen)) recLen = lengths[0];
@@ -731,16 +771,13 @@ function renderRecords() {
       + 'В таблицу попадает забег, доведённый до финиша.</p>';
     return;
   }
-  $('recList').innerHTML = rows.map((r, i) => {
-    const total = r.starsTotal ? ` из ${r.starsTotal}` : '';
-    const when = new Date(r.at).toLocaleDateString('ru', { day: 'numeric', month: 'short' });
-    return `<div class="rec${r.playerId === me ? ' me' : ''}">`
-      + `<span class="place">${i + 1}</span>`
-      + `<span class="who">${safeText(r.name)}</span>`
-      + `<span class="num">${r.stars}${total}</span>`
-      + `<span class="when">задел ${r.hits} · ${when}</span>`
-      + '</div>';
-  }).join('');
+  const top = rows.slice(0, RECORDS_SHOWN);
+  const html = top.map((r, i) => recRow(r, i + 1, me));
+  const mineAt = rows.findIndex((r) => r.playerId === me);
+  if (mineAt >= RECORDS_SHOWN) {
+    html.push('<div class="rec more">…</div>', recRow(rows[mineAt], mineAt + 1, me));
+  }
+  $('recList').innerHTML = html.join('');
 }
 
 /* Откуда пришли в таблицу. С финиша «Назад» обязано вернуть на экран
@@ -767,10 +804,23 @@ function saveRecord(playerId) {
   if (!r || recorded) { renderRecords(); show('records'); return; }
   // playerId приходит с экрана имени и означает «подписать этим», а не
   // «переключиться на него»; без него пишем текущему игроку.
-  players.addRecord({
+  const written = players.addRecord({
     playerId,
     durationS: r.durationS, stars: r.stars, starsTotal: r.starsTotal, hits: r.hits,
   });
+  /* Записалось ли на самом деле. players.addRecord отдаёт null, если запись
+     не приняли, а сохранение в localStorage молчит при любом отказе — игра
+     важнее журнала. Без этой проверки кнопка говорила бы «Записано ✓» и
+     уводила на таблицу, в которой забега нет: тихая потеря ровно того, ради
+     чего экран существует. */
+  if (!written) {
+    recordError = true;
+    log.event('record.fail', { durationS: Math.round(r.durationS) });
+    refreshHud();
+    show('run');
+    return;
+  }
+  recordError = false;
   recorded = true;
   recordsFrom = 'run';
   log.event('record.save', { stars: r.stars, hits: r.hits, durationS: Math.round(r.durationS) });

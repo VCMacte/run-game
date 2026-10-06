@@ -148,7 +148,7 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
   /* Длина торса из ПРОЙДЕННОЙ калибровки, если она была. Отдельно от cal.S0,
      потому что cal.S0 ниже заполняется догадкой с первого кадра: см.
      scaleBand(). */
-  const measuredS0 = Number(calibration?.S0) > 0 ? Number(calibration.S0) : null;
+  const measuredS0 = Number(calibration?.S0) >= S.scaleMin ? Number(calibration.S0) : null;
 
   const fu = makeOneEuro(S.oneEuro);
   const fv = makeOneEuro(S.oneEuro);
@@ -188,6 +188,15 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
      паузу за шаг вперёд. Поэтому догадка годится для scaleGuard (там важна
      только РАЗНИЦА) и не годится здесь.
 
+     И только ПРАВДОПОДОБНАЯ S0, не меньше нижней абсолютной границы. Стадия
+     нейтрали сдаётся после трёх попыток и всё равно доходит до finish(),
+     приняв сколько успела, — так в хранилище попадает крошечная S0. Домножать
+     её на 1.8 нельзя: потолок оказался бы ниже пола, presence возвращал бы
+     'scale' на любой позе, и забег встал бы навсегда с «ты слишком близко к
+     телефону», пока ребёнок на самом деле слишком далеко. Снять это можно
+     было бы только сбросом калибровки во взрослом меню. Такая S0 — не
+     измерение, а мусор, и на мусоре мы возвращаемся к абсолютным границам.
+
      Нижнюю границу относительной намеренно НЕ делаем. Она ловит бессмыслицу
      («в кадре вообще не человек»), срабатывать ей не положено ни разу, а
      длина торса на калибровке систематически больше, чем в забеге — 0.53
@@ -197,8 +206,7 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
      («отойди немного назад» посреди забега) уже заканчивался прогон 5
      октября, второй раз этого делать не надо. */
   function scaleBand() {
-    const hi = measuredS0 ? Math.min(S.scaleMax, measuredS0 * S.scaleRelMax) : S.scaleMax;
-    return [S.scaleMin, hi];
+    return [S.scaleMin, measuredS0 ? Math.min(S.scaleMax, measuredS0 * S.scaleRelMax) : S.scaleMax];
   }
 
   function presence(g, t) {

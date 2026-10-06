@@ -45,7 +45,6 @@ export const THEME = {
     block: '#c2415a',
     blockDark: '#8e2d40',
     rail: '#ffffff',
-    signal: '#ffb02e',
     // Далёкое предупреждение. Два цвета, потому что мерцание сделано
     // переключением между ними: прозрачность в отрисовке стоит дорого, и
     // единственный rgba() в тракте — затемнение паузы.
@@ -86,7 +85,7 @@ export const THEME = {
 
 /** Цвета, которые сообщают решение. Проверка светлоты их не ограничивает. */
 export const DECISION_KEYS = [
-  'gap', 'block', 'blockDark', 'rail', 'signal', 'warn', 'warnDim',
+  'gap', 'block', 'blockDark', 'rail', 'warn', 'warnDim',
   'star', 'starDim', 'finish', 'finishDark',
 ];
 
