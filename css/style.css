@@ -178,6 +178,55 @@ button.big small {
 }
 .card.warn { box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--warn); }
 
+/* Единственное текстовое поле в приложении — имя игрока.
+
+   Образца для него не было: до сих пор весь ввод делался кнопкой, которая
+   перебирает конечный список вариантов. Поэтому размеры взяты у кнопки, а не
+   у браузерного умолчания: поле на телефоне трогают пальцем, и мелкое
+   системное поле на этих экранах выглядело бы случайной деталью с другого
+   приложения.
+
+   font-size не ниже 16 px по требованию Safari и Chrome для Android: при
+   меньшем размере браузер при фокусе зумит страницу целиком, и верстка
+   экрана уезжает вместе с клавиатурой. var(--u) * 4 на телефоне заметно
+   больше, так что это запас, а не ограничение. */
+.field {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: max(16px, calc(var(--u) * 4));
+  color: var(--fg);
+  background: var(--bg);
+  border: 0;
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--dim);
+  border-radius: calc(var(--u) * 2.2);
+  padding: calc(var(--u) * 2.4) calc(var(--u) * 3);
+  text-align: center;
+}
+.field:focus { outline: 0; box-shadow: inset 0 0 0 calc(var(--u) * 0.7) var(--accent); }
+.field::placeholder { color: var(--dim); }
+
+/* Строка таблицы рекордов. Своей заливкой, а не рамкой и не полосатым фоном:
+   рамка после сжатия Miracast исчезает первой. Текущий игрок выделен — это
+   единственное, что в таблице надо найти глазами сразу. */
+.rec {
+  display: flex;
+  gap: calc(var(--u) * 2);
+  align-items: baseline;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 2);
+  border-radius: calc(var(--u) * 1.6);
+}
+.rec + .rec { margin-top: calc(var(--u) * 1.2); }
+/* Это --accent (#5aa9ff) с прозрачностью 0.16. Числом, а не переменной:
+   подмешать альфу к hex-переменной в CSS нечем, кроме color-mix, а он здесь
+   один на весь файл и ради одной строки не стоит нового приёма. Менять
+   вместе с --accent. */
+.rec.me { background: rgba(90, 169, 255, 0.16); }
+.rec .place { color: var(--dim); min-width: calc(var(--u) * 5); }
+.rec .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec .num { color: var(--accent); }
+.rec .when { color: var(--dim); font-size: calc(var(--u) * 2.6); }
+
 /* Полоса состояния для взрослого: установлено ли приложение, держится ли
    экран. Ребёнку она не нужна, поэтому мелкая и в углу. */
 #status {

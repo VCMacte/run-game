@@ -9,9 +9,10 @@
 // Автомат без DOM: стадии и числа здесь, показ — в train.js. Поэтому всё
 // проверяется обычным скриптом node.
 
-import { SIGNALS as S, STORAGE } from './config.js';
+import { SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
 import { geometry } from './signals.js';
+import { players } from './players.js';
 
 export const STAGES = [
   { id: 'neutral', say: 'Встань в рамку и постой', ms: 5000 },
@@ -35,35 +36,56 @@ export const CLAMP = {
    выведенный из дрожания, был бы не порогом, а случайным числом. */
 const MIN_EXCURSION = { u: 0.25, v: 0.20 };
 
+/* Калибровка принадлежит игроку, а не телефону.
+
+   Раньше она лежала одной записью на устройство, и взрослый с ребёнком
+   затирали её друг другу: тот, кто играл вторым, проходил двадцать секунд
+   калибровки заново при каждом забеге. Угадать по длине торса, кто перед
+   камерой, нельзя — у неё систематический разброс (0.53 на калибровке против
+   0.40 в забеге по журналу), и любой порог либо пропускает чужого, либо
+   отвергает своего. Поэтому хранилище спрашивает игрока: js/players.js.
+
+   Три функции остались на месте, потому что их зовут train.js и app.js, и им
+   незачем знать, где именно она лежит. */
+
 export function load() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE.calibration) || 'null');
-    return raw && raw.neutralX != null ? raw : null;
-  } catch {
-    return null;
-  }
+  return players.loadCalibration();
 }
 
 export function save(cal) {
-  try { localStorage.setItem(STORAGE.calibration, JSON.stringify(cal)); } catch {}
+  players.saveCalibration(cal);
 }
 
 export function clear() {
-  try { localStorage.removeItem(STORAGE.calibration); } catch {}
+  players.clearCalibration();
 }
 
+/* Два допуска, и они про разное — поэтому и названы по отдельности, а не
+   выведены один из другого множителем, как было.
+
+   scale: допуск по длине торса. Прежние 25% не проходили ни разу — в журнале
+   это видно прямо: calib.reuse reuse:false had:true stale:true. На калибровке
+   торс 0.53, в забеге 0.35–0.48, расхождение 26–46%, и причина не в шуме:
+   игрок возится у телефона, пока идёт установка, и отходит только к забегу.
+   Кто перед камерой, теперь определяет выбранный профиль, а не размер тела,
+   поэтому допуск можно сделать честно широким.
+
+   neutral: допуск по смещению нейтрали, в долях торса. Его как раз ослаблять
+   нельзя — это и есть сдвинутый штатив, ради которого проверка существует. */
+export const STALE = { scale: 0.45, neutral: 0.5 };
+
 /**
- * Сдвинулся ли штатив с прошлого раза.
+ * Сдвинулся ли штатив с прошлого раза — или перед камерой другая сцена.
  *
- * Если нейтраль или длина торса уехали заметно — калибровка описывает уже не
+ * Если нейтраль или длина торса уехали заметно, калибровка описывает уже не
  * ту сцену, и лучше попросить пройти её заново, чем молча играть с чужими
  * порогами.
  */
-export function isStale(cal, g, tolerance = 0.25) {
+export function isStale(cal, g, limit = STALE) {
   if (!cal || !g) return false;
   const dS = Math.abs(g.S - cal.S0) / cal.S0;
   const dX = Math.abs(g.cxh - cal.neutralX) / g.S;
-  return dS > tolerance || dX > tolerance * 2;
+  return dS > limit.scale || dX > limit.neutral;
 }
 
 /**

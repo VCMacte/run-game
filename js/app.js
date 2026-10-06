@@ -3,14 +3,26 @@
 // соседи), а этот файл отвечает за то, чтобы приложение вообще жило на
 // телефоне, стоящем на штативе, и доезжало до телевизора в приличном виде.
 
-import { settings } from './settings.js';
+import { settings, OPTIONS } from './settings.js';
+import { players } from './players.js';
+import { clear as clearCalibration } from './calibrate.js';
 import * as log from './log.js';
-import { count, plural, SESSIONS, EVENTS, STARS, TIMES } from './text.js';
+import { count, plural, SESSIONS, EVENTS, STARS, TIMES, RUNS } from './text.js';
 import { withTimeout, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 
 const $ = (id) => document.getElementById(id);
+
+/* Имя игрока попадает в разметку через innerHTML — значит его надо обезвредить.
+
+   Имя вводит взрослый на своём телефоне, так что злого умысла здесь не бывает;
+   опасен не умысел, а случай. Ребёнок, тыкающий в клавиатуру, однажды наберёт
+   угловую скобку, и вся таблица рекордов перестанет рисоваться — без ошибки,
+   просто пустой экран, потому что разметка окажется сломанной. */
+const safeText = (s) => String(s).replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+));
 
 // ─────────────────────────── общие приёмы ───────────────────────────
 
@@ -131,7 +143,7 @@ addEventListener('fullscreenchange', updateStatus);
 
 // ─────────────────────────────── экраны ───────────────────────────────
 
-const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs'];
+const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name'];
 
 /* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
    телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
@@ -140,10 +152,17 @@ const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs'];
 const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
+  players: 'portrait', records: 'portrait', name: 'portrait',
   run: 'landscape',
 };
 
-const ADULT = new Set(['parent', 'logs']); // экраны, в которые не «возвращаются»
+/* Экраны, в которые не «возвращаются»: previous на них не переписывается.
+
+   Три новых здесь по той же причине, что настройки и журнал: из каждого есть
+   свой выход, и он знает, куда именно. Экран имени вызывается и из меню
+   игроков, и прямо с финиша — поэтому цель возврата у него своя переменная, а
+   не общий previous, который к моменту возврата успел бы стать другим. */
+const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name']);
 let previous = 'menu';
 
 function show(name) {
@@ -322,10 +341,33 @@ function renderRunHud(h = {}) {
       : 'Финиш!';
     const st = result?.stars ?? 0;
     const ht = result?.hits ?? 0;
+    const total = result?.starsTotal ?? 0;
     $('runResult').innerHTML = [
-      `<div class="stars"><b>${st}</b>${plural(st, STARS)} собрано</div>`,
-      `<div><b>${ht}</b>${plural(ht, TIMES)} задел</div>`,
+      /* Когда известно, сколько колец было, существительное уходит совсем:
+         «3 из 3 звезды собрано» — не по-русски (после «из N» нужен родительный
+         падеж, и он не совпадает с падежом при самом числе), а разводить ещё
+         одну таблицу форм ради одной строки дороже, чем её не писать. */
+      total
+        ? `<div class="stars">Собрано <b>${st}</b> из ${total}</div>`
+        : `<div class="stars"><b>${st}</b> ${plural(st, STARS)} собрано</div>`,
+      `<div><b>${ht}</b> ${plural(ht, TIMES)} задел</div>`,
+      // Длина забега была в result с самого начала и не показывалась. А без
+      // неё результат не прочитать: пять минут и одна минута дают разные
+      // числа колец, и сравнивать их глазами бессмысленно.
+      `<div class="when">${runLengthLabel(result?.durationS)}</div>`,
     ].join('');
+    /* Записать результат можно один раз, и только пока есть что записывать.
+
+       Две кнопки, а не одна: обычный случай — одно нажатие, имя уже выбрано
+       перед забегом. «Другое имя» нужно, когда за телефон встал кто-то ещё, и
+       без него пришлось бы возвращаться в меню, теряя результат.
+
+       Имя через двоеточие, а не «записать за Богданом»: падеж введённого имени
+       нам неизвестен, а «за Богдан 1» хуже, чем отсутствие предлога. */
+    $('runSave').hidden = !result;
+    $('runSave').disabled = recorded;
+    $('runSave').textContent = recorded ? 'Записано ✓' : `Записать: ${players.name()}`;
+    $('runSaveAs').hidden = !result || recorded;
     return;
   }
   const stopped = run === 'paused' || run === 'countdown';
@@ -370,6 +412,9 @@ $('runCamSwitch').onclick = async () => {
    копии разошлись бы, и повторный забег однажды поехал бы с другими
    настройками, чем первый. */
 async function startTraining() {
+  // Новый забег — новый результат: прошлая запись в таблицу не должна
+  // блокировать запись следующей.
+  recorded = false;
   const { wantedSource } = await import('./pose.js');
   const want = wantedSource();
 
@@ -507,8 +552,11 @@ for (const [btn, out, name] of PARENT_ROWS) {
 }
 
 $('recal').onclick = () => {
-  localStorage.removeItem('run-game.calibration');
-  $('recal').textContent = 'Калибровка сброшена';
+  // Через calibrate.js, а не строкой-литералом в localStorage: калибровка
+  // теперь лежит у игрока, и прямое удаление ключа чистило бы не то место —
+  // кнопка «сбросить» молча перестала бы работать.
+  clearCalibration();
+  $('recal').textContent = `Калибровка сброшена (${players.name()})`;
   setTimeout(() => { $('recal').textContent = 'Сбросить калибровку'; }, 2000);
 };
 
@@ -535,6 +583,204 @@ $('saveLogs').onclick = async () => {
 };
 
 $('parentBack').onclick = () => show(previous);
+
+// ───────────────── игроки, имена и таблица рекордов ─────────────────
+
+/* Три экрана и одна связь между ними.
+
+   Калибровка и рекорды принадлежат игроку, а не телефону. Пока запись была
+   одна, взрослый и ребёнок затирали её друг другу: тот, кто играл вторым,
+   проходил двадцать секунд калибровки заново при каждом забеге, хотя код
+   переиспользования написан и работает — в журнале это видно строкой
+   calib.reuse reuse:false had:true stale:true. Оттуда же берётся имя для
+   таблицы: на финише его не надо набирать, оно уже выбрано перед забегом. */
+
+/* Записан ли ТЕКУЩИЙ показанный результат. Флаг живёт здесь, а не в train.js:
+   запись — дело оболочки, а игра про таблицу рекордов не знает вовсе. */
+let recorded = false;
+
+/** Длина забега словами. Берётся из тех же вариантов, что в настройках. */
+function runLengthLabel(seconds) {
+  const s = Math.round(seconds || 0);
+  const known = OPTIONS.runLength.find((o) => o.value === s);
+  return known ? known.label : `${s} с`;
+}
+
+function renderWho() {
+  $('whoV').textContent = players.name();
+}
+
+// ── экран «кто играет» ──
+
+const DROP_LABEL = 'Удалить этого';
+
+function renderPlayers() {
+  /* Взведённое удаление сбрасывается при каждой перерисовке — то есть при
+     входе на экран и при смене игрока. Иначе оно пережило бы уход в меню и
+     возврат, и следующее нажатие снесло бы игрока вместе с калибровкой и
+     рекордами с первого раза, без второго подтверждения. */
+  delete $('playerDrop').dataset.armed;
+  $('playerDrop').textContent = DROP_LABEL;
+
+  const list = players.all();
+  const me = players.current()?.id;
+  $('playerList').innerHTML = list.map((p) => {
+    const note = p.hasCalib ? count(p.runs, RUNS) : 'без калибровки';
+    return `<button data-pick="${p.id}" class="${p.id === me ? '' : 'ghost'}">`
+      + `${safeText(p.name)}<small>${note}</small></button>`;
+  }).join('');
+  for (const b of $('playerList').querySelectorAll('[data-pick]')) {
+    b.onclick = () => {
+      players.select(b.dataset.pick);
+      renderPlayers();
+      renderWho();
+      $('playersMsg').textContent = `Играет ${players.name()}. Калибровка у каждого своя.`;
+    };
+  }
+  $('playerDrop').disabled = list.length <= 1;
+}
+
+$('goPlayers').onclick = () => { $('playersMsg').textContent = ''; renderPlayers(); show('players'); };
+$('playersBack').onclick = () => { renderWho(); show('menu'); };
+$('playerAdd').onclick = () => askName('new');
+
+/* Удаление уносит и калибровку, и рекорды этого игрока — поэтому в два
+   нажатия. Диалога подтверждения нет намеренно: confirm() на Android выводит
+   приложение из полноэкранного режима, а забег после этого открывается
+   горизонтальной вёрсткой внутри вертикального экрана. */
+$('playerDrop').onclick = () => {
+  const me = players.current();
+  if (!me) return;
+  if ($('playerDrop').dataset.armed !== me.id) {
+    $('playerDrop').dataset.armed = me.id;
+    $('playerDrop').textContent = `Удалить ${me.name}? Нажмите ещё раз`;
+    return;
+  }
+  players.remove(me.id);
+  renderPlayers();        // здесь же снимается взвод
+  renderWho();
+  $('playersMsg').textContent = `${me.name} удалён вместе с калибровкой и рекордами.`;
+};
+
+// ── ввод имени ──
+
+/* Что сделать с введённым именем и куда вернуться. Своя переменная, а не
+   общий previous: экран имени вызывается и из меню игроков, и прямо с финиша,
+   а previous к моменту возврата успел бы стать другим. */
+let nameMode = 'new';
+
+const NAME_HINT = 'До 12 букв — длиннее не прочитать на телевизоре.';
+
+function askName(mode) {
+  nameMode = mode;
+  $('nameTitle').textContent = mode === 'record' ? 'Чей это результат?' : 'Как тебя зовут?';
+  $('nameHint').textContent = NAME_HINT;
+  $('nameInput').value = '';
+  show('name');
+  // Фокус после показа: скрытому полю клавиатуру не поднять.
+  setTimeout(() => $('nameInput').focus(), 50);
+}
+
+$('nameSave').onclick = () => {
+  /* В режиме записи игрок НЕ переключается: экран спрашивает «чей это
+     результат», то есть подпись, а не «кто играет дальше». Иначе гость,
+     которому приписали забег, становится текущим, и у ребёнка следующий
+     забег начинается с двадцати секунд калибровки по пустому профилю. */
+  const forRecord = nameMode === 'record';
+  const added = players.add($('nameInput').value, { select: !forRecord });
+  if (!added) { $('nameHint').textContent = 'Нужна хотя бы одна буква.'; return; }
+  $('nameHint').textContent = NAME_HINT;
+  if (forRecord) { saveRecord(added.id); return; }
+  renderWho();
+  renderPlayers();
+  show('players');
+};
+
+$('nameCancel').onclick = () => {
+  $('nameHint').textContent = NAME_HINT;
+  if (nameMode === 'record') { refreshHud(); show('run'); return; }
+  renderPlayers();
+  show('players');
+};
+
+// Enter на телефонной клавиатуре — то же, что «Готово».
+$('nameInput').onkeydown = (e) => { if (e.key === 'Enter') $('nameSave').onclick(); };
+
+// ── таблица рекордов ──
+
+/* Какая длина забега сейчас показана. Отдельная таблица на каждую: сырые
+   кольца за пять минут и за одну несравнимы, и складывать их в один список
+   значит выдавать длинный забег за мастерство. */
+let recLen = settings.get('runLength') || 300;
+
+/** Длины, по которым есть смысл показывать таблицу: настроенные плюс сыгранные. */
+function recLengths() {
+  const set = new Set(OPTIONS.runLength.map((o) => o.value));
+  for (const s of players.lengths()) set.add(s);
+  return [...set].sort((a, b) => a - b);
+}
+
+function renderRecords() {
+  const lengths = recLengths();
+  if (!lengths.includes(recLen)) recLen = lengths[0];
+  $('recLenV').textContent = runLengthLabel(recLen);
+  const rows = players.records(recLen);
+  const me = players.current()?.id;
+  if (rows.length === 0) {
+    $('recList').innerHTML = '<p class="lead dim">Здесь пока пусто. '
+      + 'В таблицу попадает забег, доведённый до финиша.</p>';
+    return;
+  }
+  $('recList').innerHTML = rows.map((r, i) => {
+    const total = r.starsTotal ? ` из ${r.starsTotal}` : '';
+    const when = new Date(r.at).toLocaleDateString('ru', { day: 'numeric', month: 'short' });
+    return `<div class="rec${r.playerId === me ? ' me' : ''}">`
+      + `<span class="place">${i + 1}</span>`
+      + `<span class="who">${safeText(r.name)}</span>`
+      + `<span class="num">${r.stars}${total}</span>`
+      + `<span class="when">задел ${r.hits} · ${when}</span>`
+      + '</div>';
+  }).join('');
+}
+
+/* Откуда пришли в таблицу. С финиша «Назад» обязано вернуть на экран
+   результата, а не в меню: там ещё живые «Ещё раз» и «Вернуться в меню», и
+   уводить забег в небытие молча — значит потерять его. */
+let recordsFrom = 'menu';
+
+$('goRecords').onclick = () => { recordsFrom = 'menu'; renderRecords(); show('records'); };
+$('recordsBack').onclick = () => {
+  if (recordsFrom === 'run' && training) { refreshHud(); show('run'); return; }
+  show('menu');
+};
+$('recLen').onclick = () => {
+  const lengths = recLengths();
+  recLen = lengths[(lengths.indexOf(recLen) + 1) % lengths.length];
+  renderRecords();
+};
+
+/* Запись результата. Зовётся только с экрана финиша: выход через паузу этот
+   путь не проходит вовсе, и это не фильтр, а отсутствие вызова — забег,
+   прерванный на середине, результатом не является. */
+function saveRecord(playerId) {
+  const r = training?.result;
+  if (!r || recorded) { renderRecords(); show('records'); return; }
+  // playerId приходит с экрана имени и означает «подписать этим», а не
+  // «переключиться на него»; без него пишем текущему игроку.
+  players.addRecord({
+    playerId,
+    durationS: r.durationS, stars: r.stars, starsTotal: r.starsTotal, hits: r.hits,
+  });
+  recorded = true;
+  recordsFrom = 'run';
+  log.event('record.save', { stars: r.stars, hits: r.hits, durationS: Math.round(r.durationS) });
+  recLen = Math.round(r.durationS);
+  renderRecords();
+  show('records');
+}
+
+$('runSave').onclick = () => saveRecord();
+$('runSaveAs').onclick = () => askName('record');
 
 // ────────────────────────── журнал событий ──────────────────────────
 
@@ -632,5 +878,6 @@ if (!offlineWanted) {
 }
 
 log.watchLifecycle();
+renderWho();
 show('gate');
 updateStatus();

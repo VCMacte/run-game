@@ -88,7 +88,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
   // Сводка здоровья копится секунду и уходит одним событием: писать каждую
   // позу — 24 МБ за сессию при потолке 25.
-  const health = { frames: 0, poses: 0, ok: 0, infer: [], dropped: 0, since: 0, vis: 0, S: 0 };
+  const health = { frames: 0, poses: 0, ok: 0, infer: [], draw: [], dropped: 0, since: 0, vis: 0, S: 0 };
 
   /* Запись сырых точек скелета — для фикстур.
      По умолчанию выключена и включается через ?record=1: на 20 Гц это около
@@ -115,9 +115,19 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     }
   }
 
+  /* Полезная нагрузка HUD.
+
+     `result` подмешивается ВСЕГДА, а не только из finish(). Пока он уходил
+     одним вызовом, экран результата обнулялся сам собой: любой следующий
+     hud() — с автопаузы, с отсчёта, со смены камеры, с возврата из
+     родительского меню — приходил без этого поля, и app.js рисовал
+     `result?.stars ?? 0`, то есть «0 колец собрано / 0 раз задел». В журнале
+     это видно прямо: `run.finish stars:102` и через 3.8 секунды
+     `pause why:"scale"`. Выглядело как сброс данных по таймеру, а было
+     потерей поля. */
   function hud(extra = {}) {
     onHud?.({
-      stage, run, why: pauseWhy, score, setupOk, manual,
+      stage, run, why: pauseWhy, score, setupOk, manual, result,
       source: source?.kind || null,
       progress: durationS ? Math.min(1, elapsed / durationS) : 0,
       ...extra,
@@ -136,9 +146,15 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         || (settings.get('debug') === 'fast' ? 30 : 0)
         || settings.get('runLength')
         || 300;
-      stars = makeStars({ durationS });
-      decor = makeDecor({ durationS });
+      /* Препятствия ПЕРВЫМИ: кольца расставляются уже зная о них.
+
+         Раньше оба расписания строились независимо, и в журнале первого
+         полного забега одиннадцать колец оказались ближе 0.35 с к
+         препятствию. Поменять эти две строки местами — значит вернуть кольца,
+         которые нельзя собрать, не ударившись. */
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
+      stars = makeStars({ durationS, obstacles });
+      decor = makeDecor({ durationS });
       travel = 0;
       elapsed = 0;
       score = 0;
@@ -163,6 +179,12 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     lastLm = sample.lm;
     if (stage === 'setup') return onSetup(sample, now);
     if (stage === 'calibrate') return onCalibrate(sample, now);
+    /* На экране результата присутствие не судим.
+
+       Забег кончился, ребёнок отходит от камеры — и onFree честно объявлял
+       автопаузу поверх цифр результата: «Отойди немного назад» на экране, где
+       отходить ровно и надо. Судить тут нечего: игры больше нет. */
+    if (stage === 'result') return undefined;
     return onFree(sample, now);
   }
 
@@ -317,6 +339,15 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     }
 
     flash = Math.max(0, flash - dt * 2.2);
+    /* Время одной отрисовки идёт в журнал.
+
+       Нужно, чтобы не чинить вслепую. В журнале 6 октября частота поз осела
+       до 11 Гц при цели 20, а медиана инференса выросла с 62 до 93 мс — ровно
+       после того, как у первого уровня появился арт. Правдоподобных объяснений
+       два: отрисовка отнимает GPU у распознавания, либо дело вообще не в ней.
+       Различить их может только замер, а не рассуждение, поэтому следующий
+       журнал будет содержать оба числа рядом. */
+    const drawStart = performance.now();
     view.render({
       decor,
       speed: lastSpeed,
@@ -326,6 +357,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       pulse: (now / 220) % 2 < 1 ? 1 : 0,
       dim: Math.min(1, dim + flash),
     });
+    health.draw.push(performance.now() - drawStart);
     if (skeleton && !skeleton.parentElement?.hidden) drawSkeleton(skeleton, lastLm, lastOk);
     if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
     if (now - health.since > 1000) {
@@ -415,22 +447,31 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
      обещана полоса прогресса, и она должна дойти до конца ровно тогда, когда
      показывает. */
   function finish() {
-    const stars = score;
+    const collected = score;
     result = {
-      stars,
+      stars: collected,
+      // Сколько колец вообще было. Без этого числа рекорд несравним даже
+      // внутри одной длины: уровень сеян случайно, и колец в нём то 99, то
+      // 103. «102 из 130» говорит то, чего «102» не говорит.
+      starsTotal: stars.length,
       hits,
       durationS,
       // Похвала всегда положительная и всегда разная по степени, но никогда
       // не отрицательная: проигрыша в этой игре нет, и экран результата не
       // место, где он появится.
       praise: hits === 0 ? 'Ни разу не задел!'
-        : stars >= hits * 4 ? 'Отличный забег!'
+        : collected >= hits * 4 ? 'Отличный забег!'
           : 'Добежал!',
     };
     stage = 'result';
-    log.event('run.finish', { stars, hits, durationS: Math.round(durationS) });
+    log.event('run.finish', {
+      stars: collected, starsTotal: stars.length, hits, durationS: Math.round(durationS),
+    });
     audio.play('finish');
-    hud({ result });
+    // Без аргумента намеренно: result теперь уходит из hud() всегда, и
+    // передавать его здесь ещё раз значило бы намекать, что это единственный
+    // путь — именно так и возник обнуляющийся экран результата.
+    hud();
   }
 
   function flushHealth(now) {
@@ -438,6 +479,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     health.since = now;
     if (!span || !health.frames) return;
     const infer = health.infer;
+    const draw = health.draw;
     log.event('health', {
       stage,
       fps: Math.round(health.frames / span),
@@ -448,11 +490,14 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       S: round(health.ok ? health.S / health.ok : 0),
       p50: infer.length ? Math.round(quantile(infer, 0.5)) : 0,
       p95: infer.length ? Math.round(quantile(infer, 0.95)) : 0,
+      // Отрисовка рядом с инференсом: по этой паре видно, кто кого ждёт.
+      draw50: draw.length ? Math.round(quantile(draw, 0.5)) : 0,
+      draw95: draw.length ? Math.round(quantile(draw, 0.95)) : 0,
       u: round(last.u),
       v: round(last.v),
     });
     health.frames = 0; health.poses = 0; health.ok = 0; health.dropped = 0;
-    health.vis = 0; health.S = 0; health.infer = [];
+    health.vis = 0; health.S = 0; health.infer = []; health.draw = [];
   }
 
   return {

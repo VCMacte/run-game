@@ -25,6 +25,26 @@ const EYE = 1.2;          // высота глаз ребёнка, условн�
 const WALL = 2.6;         // высота стен
 const HALF = VIEW.corridorWidth / 2;
 const NEAR = 0.7;
+
+/* Откуда начинается та геометрия, которая обязана доходить до края кадра.
+
+   Пол и обрывы — плоскости при постоянном x, и панорама их не растягивает, а
+   двигает: точка схода стоит на месте (yawPx = 0), едет мир. Поэтому ближний
+   угол правого обрыва при полном смещении вправо уезжает ВНУТРЬ кадра, и
+   справа от него не нарисовано ничего — остаётся небо, которым залит буфер
+   перед всем остальным.
+
+   Посчитано: при NEAR = 0.7 угол доходит до края кадра только пока
+   cam.x < 0.663 м, а полный ход — 0.72 м. На максимуме справа оставалась
+   полоса 68 px, пятая часть сотни, сплошного skyLow ниже горизонта. Выглядит
+   как дырка в мире; пожаловался заказчик.
+
+   Лечится не рамкой и не запасом по ширине, а тем, что плоскость начинается у
+   глаза: тогда её ближний угол проецируется в тысячи пикселей за кадр при
+   любом сдвиге. Между глазом и NEAR всё равно ничего не рисуется, так что
+   лишней работы это не добавляет — те же четыре точки. */
+const NEAR_DRAW = 0.08;
+
 const FOV = 75 * Math.PI / 180;
 
 /* Палитра переехала в js/theme.js: там она проверяется по светлоте, и там же
@@ -292,8 +312,11 @@ function drawFloor(ctx, cam, travel, { project, quad, far }) {
   const cw = (HALF * 2) / NX;
 
   // Основа одним четырёхугольником: половину клеток рисовать не надо.
+  // От NEAR_DRAW, а не от NEAR: при полном смещении камеры край пола иначе
+  // уезжает внутрь кадра и сбоку остаётся небо. Шахматка поверх может
+  // начинаться где угодно — под ней уже закрашено.
   quad(
-    project(-HALF, 0, NEAR, cam), project(HALF, 0, NEAR, cam),
+    project(-HALF, 0, NEAR_DRAW, cam), project(HALF, 0, NEAR_DRAW, cam),
     project(HALF, 0, far, cam), project(-HALF, 0, far, cam),
     COLORS.floorB,
   );
@@ -326,27 +349,29 @@ function drawFloor(ctx, cam, travel, { project, quad, far }) {
    размыт. Поверх — полоса травы по кромке и тёмная полоса глубже: именно они
    делают из стены обрыв. */
 function drawCliffs(cam, { project, quad, far }) {
+  // Все четыре полосы — от NEAR_DRAW, а не от NEAR: обрыв обязан доходить до
+  // края кадра при любом смещении камеры, иначе сбоку видно небо.
   const cliff = (x, earth) => {
     quad(
-      project(x, 0, NEAR, cam), project(x, WALL, NEAR, cam),
+      project(x, 0, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
       project(x, WALL, far, cam), project(x, 0, far, cam),
       earth,
     );
     // Тёмная полоса у основания: глубина обрыва.
     quad(
-      project(x, 0, NEAR, cam), project(x, 0.5, NEAR, cam),
+      project(x, 0, NEAR_DRAW, cam), project(x, 0.5, NEAR_DRAW, cam),
       project(x, 0.5, far, cam), project(x, 0, far, cam),
       COLORS.earthDeep,
     );
     // Кромка травы. Две полосы — светлая сверху, тёмная под ней: один тон
     // после сжатия сливается с землёй.
     quad(
-      project(x, WALL - 0.34, NEAR, cam), project(x, WALL, NEAR, cam),
+      project(x, WALL - 0.34, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
       project(x, WALL, far, cam), project(x, WALL - 0.34, far, cam),
       COLORS.grassDark,
     );
     quad(
-      project(x, WALL - 0.14, NEAR, cam), project(x, WALL, NEAR, cam),
+      project(x, WALL - 0.14, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
       project(x, WALL, far, cam), project(x, WALL - 0.14, far, cam),
       COLORS.grass,
     );
@@ -489,24 +514,36 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
     if (zRaw + O.thickness < O.drawNearM) continue;
     const z = Math.max(zRaw, O.drawNearM);
 
-    // Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
-    // дальнем плане сжатие уничтожает первым.
+    /* Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
+       дальнем плане сжатие уничтожает первым.
+
+       Красная и мерцающая, а не оранжевая и ровная. Заказчик пожаловался, что
+       предупреждение о будущем препятствии плохо видно, и причин было три
+       сразу: оранжевый сидел между цветом финиша и цветом звезды, метка
+       занимала половину высоты обрыва, а жила ровно секунду. Теперь цвет
+       свой, высота полная, окно две секунды (signalS 5.0 против visibleS 3.0),
+       и медленное мерцание 1 Гц отличает «это будет» от «это уже здесь».
+
+       Фаза своя у каждого препятствия: две метки подряд не должны мигать в
+       унисон, иначе мерцание читается как общая рябь кадра, а не как метка. */
     if (dt <= O.signalS && dt > O.visibleS) {
       const zf = far * 0.92;
       const h = 0.9;
+      const hot = warnBlink(elapsed, ob.at * 2, mscale) > 0.5;
+      const fill = hot ? COLORS.warn : COLORS.warnDim;
       if (ob.kind === 'duck') {
         quad(
           project(-HALF, WALL, zf, cam), project(HALF, WALL, zf, cam),
-          project(HALF, WALL - h, zf, cam), project(-HALF, WALL - h, zf, cam),
-          COLORS.signal,
+          project(HALF, WALL - h * 1.6, zf, cam), project(-HALF, WALL - h * 1.6, zf, cam),
+          fill,
         );
       } else {
         const x0 = ob.side > 0 ? edge : -HALF;
         const x1 = ob.side > 0 ? HALF : -edge;
         quad(
           project(x0, 0, zf, cam), project(x1, 0, zf, cam),
-          project(x1, WALL * 0.5, zf, cam), project(x0, WALL * 0.5, zf, cam),
-          COLORS.signal,
+          project(x1, WALL, zf, cam), project(x0, WALL, zf, cam),
+          fill,
         );
       }
     }
@@ -786,6 +823,19 @@ export function palmSway(t, phase = 0, scale = 1) {
 }
 
 /**
+ * Мерцание далёкого предупреждения: 1 — ярко, 0 — приглушённо.
+ *
+ * Потолок, а не пол, в отличие от ringSquash: при «меньше движения» значение
+ * прижимается к ЕДИНИЦЕ, то есть метка остаётся ровно яркой. Это не
+ * украшение, а сообщение о решении — системная настройка не имеет права его
+ * погасить, и погасить её не может по построению, а не по аккуратности.
+ */
+export function warnBlink(t, phase = 0, scale = 1) {
+  const wave = 0.5 * (1 + Math.sin(2 * Math.PI * MOTION.warnBlinkHz * t + phase));
+  return 1 - scale * wave;
+}
+
+/**
  * Декорации по сторонам коридора.
  *
  * Стоят ЗА кромкой обрыва и выше неё. Иначе никак: стены рисуются сплошными
@@ -843,6 +893,17 @@ export const obstacleEdge = () => Math.abs(camera(1, 0).x) * O.blockFrac;
 export const cameraX = (u) => camera(u, 0).x;
 
 /**
+ * Экранный x ближайшего нарисованного угла обрыва при таком смещении тела.
+ *
+ * Существует ради одной проверки: при любом смещении левый обрыв обязан
+ * доходить до x ≤ 0, правый — до x ≥ width. Иначе сбоку остаётся небо, и
+ * выглядит это дыркой в мире. Числом это ловится, глазами — только на
+ * телевизоре и только в крайнем положении, то есть почти никогда.
+ */
+export const wallNearEdgeX = (u, side = 1) =>
+  project(side * HALF, 0, NEAR_DRAW, camera(u, 0)).sx;
+
+/**
  * Дотянется ли ребёнок до звезды при таком смещении.
  *
  * Отдельной функцией, потому что это игровое правило, а не деталь
@@ -850,6 +911,45 @@ export const cameraX = (u) => camera(u, 0).x;
  * Проверяется в node.
  */
 export const canReach = (starX, u) => Math.abs(starX - cameraX(u)) < VIEW.starReach;
+
+/* Запас при сдвиге кольца за край запретного окна.
+
+   Пятьдесят миллисекунд физического смысла не несут. Они нужны потому, что
+   сложение секунд в double не даёт точного равенства: сдвиг на ровно
+   starGuardS давал 1.5999999999999996 вместо 1.6, кольцо попадало ровно в
+   точку, которую сдвиг и должен был покинуть, и правило нарушалось — тихо и
+   на каждом уровне. Поймано тестом на сотне сеяных уровней. */
+const STAR_SHIFT_EPS = 0.05;
+
+/**
+ * Можно ли поставить кольцо в секунду `t` на сторону `side`.
+ *
+ * Правило появилось после первого полного забега: расписания колец и
+ * препятствий строились независимо, и одиннадцать колец оказались ближе
+ * 0.35 с к препятствию, пять — ближе 0.1 с. Худший случай из журнала —
+ * кольцо на u = −0.89 в 0.07 с от приседа: присед и боковой наклон
+ * одновременно физически невозможны, то есть кольцо было не трудным, а
+ * недостижимым. Ребёнок при таком выборе либо теряет кольцо, либо бьётся.
+ *
+ * Внутри запретного окна:
+ *   duck — нельзя ничего. Под верхнее препятствие уходят приседом, а присед
+ *          не совмещается ни с наклоном, ни с возвратом в центр;
+ *   side — можно только кольцо на ОТКРЫТОЙ стороне. Там уклонение и сбор
+ *          совпадают, и кольцо становится наградой за правильный уход, а не
+ *          вторым, противоречащим заданием. Центральное тоже нельзя: в
+ *          уклонении до него не дотянуться (это и есть смысл starReach).
+ *
+ * `isSafe` в js/level.js говорит, что side > 0 закрывает +x — значит открыта
+ * сторона −ob.side, и именно её мы и разрешаем.
+ */
+export function starAllowed(t, side, obstacles) {
+  for (const ob of obstacles) {
+    if (Math.abs(t - ob.at) > VIEW.starGuardS) continue;
+    if (ob.kind === 'duck') return false;
+    if (side !== -ob.side) return false;
+  }
+  return true;
+}
 
 /**
  * Раскладка звёзд.
@@ -864,8 +964,12 @@ export const canReach = (starX, u) => Math.abs(starX - cameraX(u)) < VIEW.starRe
  *
  * Три подряд на одной стороне не ставим: смысл игры в том, что ребёнок
  * двигается, а не стоит, подобрав удобное положение.
+ *
+ * `obstacles` обязателен для настоящего уровня: без него кольца снова встанут
+ * вплотную к препятствиям. Умолчание — пустой список — существует для тестов
+ * и для сравнения «сколько колец было бы без развязки».
  */
-export function makeStars({ durationS = 300, rng = Math.random } = {}) {
+export function makeStars({ durationS = 300, obstacles = [], rng = Math.random } = {}) {
   // Сначала стороны, потом расстановка: промежуток перед звездой зависит от
   // того, придётся ли к ней переходить, то есть от следующей стороны.
   const sides = [];
@@ -881,6 +985,22 @@ export function makeStars({ durationS = 300, rng = Math.random } = {}) {
   const stars = [];
   let t = VIEW.starFirstS;
   for (let i = 0; i < sides.length && t < durationS; i++) {
+    /* Конфликт с препятствием — СДВИГ, а не выброс: ряд колец не должен
+       редеть там, где и без того напряжённо.
+
+       Одного сдвига достаточно всегда, и это не удача: препятствия идут не
+       чаще minGapS (5.5 с), а окно двустороннее и шириной 2 × starGuardS
+       (3.2 с), так что за концом одного окна следующее ещё не начинается.
+       Связь minGapS > 2 × starGuardS проверяется тестом — развязать эти числа
+       значит получить бесконечный сдвиг и пустой ряд колец. */
+    if (!starAllowed(t, sides[i], obstacles)) {
+      // За конец самого позднего из мешающих окон: с одним их и не бывает,
+      // но брать максимум дешевле, чем полагаться на инвариант молча.
+      t = obstacles
+        .filter((ob) => Math.abs(t - ob.at) <= VIEW.starGuardS)
+        .reduce((max, ob) => Math.max(max, ob.at + VIEW.starGuardS + STAR_SHIFT_EPS), t);
+      if (t >= durationS) break;
+    }
     stars.push({
       x: sides[i] * HALF * VIEW.starX,
       z: t * VIEW.speed,

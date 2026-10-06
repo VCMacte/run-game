@@ -41,6 +41,13 @@
       <button id="goPlay" class="big ghost">Игра<small id="playSub">забег до финиша</small></button>
     </div>
     <p class="lead" id="menuHint">Сначала тренировка: на ней игра научится узнавать именно тебя.</p>
+    <!-- Кто играет. Это не родительская настройка, а первый вопрос перед
+         забегом: от выбранного игрока зависит и калибровка, и то, в чью
+         таблицу попадёт результат. Поэтому кнопка здесь, а не в настройках. -->
+    <div class="row center">
+      <button id="goPlayers" class="ghost">Кто играет: <span id="whoV">—</span></button>
+      <button id="goRecords" class="ghost">Рекорды</button>
+    </div>
     <!-- Настройки отдельной кнопкой: прежде они открывались долгим удержанием
          невидимого угла, то есть не открывались никак — найти это, не зная
          заранее, невозможно. Кнопка нарочно мелкая и внизу: ребёнку она не
@@ -84,6 +91,10 @@
       <div id="runResult" hidden></div>
       <div class="row center" id="runResultRow" hidden>
         <button id="runAgain">Ещё раз</button>
+        <!-- Запись в таблицу — только с финиша и только нажатием. Выход через
+             паузу не пишет ничего: половина забега без начала не результат. -->
+        <button id="runSave" class="secondary">Записать</button>
+        <button id="runSaveAs" class="secondary">Другое имя</button>
         <button id="runDone" class="secondary">Вернуться в меню</button>
       </div>
       <div class="row center" id="runPauseRow" hidden>
@@ -159,6 +170,54 @@
       <button id="logsBack" class="ghost">Назад</button>
     </div>
     <p class="lead dim" id="logMsg"></p>
+  </section>
+
+  <!-- Кто играет. Своя калибровка у каждого: взрослый 173 см и ребёнок
+       100–130 см затирали её друг другу, и второй проходил двадцать секунд
+       калибровки заново при каждом забеге. -->
+  <section id="players" class="sheet screen" hidden>
+    <h2>Кто играет</h2>
+    <div class="card">
+      <div class="row" id="playerList"></div>
+    </div>
+    <div class="row">
+      <button id="playerAdd">Новый игрок</button>
+      <button id="playerDrop" class="ghost">Удалить этого</button>
+      <button id="playersBack" class="ghost">Назад</button>
+    </div>
+    <p class="lead dim" id="playersMsg"></p>
+  </section>
+
+  <!-- Таблица рекордов. Отдельная на каждую длину забега: сырые кольца за
+       пять минут и за одну несравнимы, и складывать их в один список значит
+       выдавать длинный забег за мастерство. -->
+  <section id="records" class="sheet screen" hidden>
+    <h2>Рекорды</h2>
+    <div class="row">
+      <button id="recLen" class="ghost">Забег: <span id="recLenV"></span></button>
+    </div>
+    <div class="card">
+      <div id="recList"></div>
+    </div>
+    <div class="row">
+      <button id="recordsBack" class="ghost">Назад</button>
+    </div>
+  </section>
+
+  <!-- Ввод имени. Единственное текстовое поле в приложении, и оно вертикальное:
+       набирают его на телефоне в руке, а не читают с дивана. -->
+  <section id="name" class="sheet screen" hidden>
+    <h2 id="nameTitle">Как тебя зовут?</h2>
+    <div class="card">
+      <input id="nameInput" class="field" type="text" maxlength="12"
+             autocomplete="off" autocapitalize="words" spellcheck="false"
+             placeholder="Имя" />
+      <p class="lead dim" id="nameHint">До 12 букв — длиннее не прочитать на телевизоре.</p>
+    </div>
+    <div class="row">
+      <button id="nameSave">Готово</button>
+      <button id="nameCancel" class="ghost">Отмена</button>
+    </div>
   </section>
 
   <div id="status"></div>

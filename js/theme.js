@@ -46,6 +46,11 @@ export const THEME = {
     blockDark: '#8e2d40',
     rail: '#ffffff',
     signal: '#ffb02e',
+    // Далёкое предупреждение. Два цвета, потому что мерцание сделано
+    // переключением между ними: прозрачность в отрисовке стоит дорого, и
+    // единственный rgba() в тракте — затемнение паузы.
+    warn: '#ff2b3d',
+    warnDim: '#8c121f',
     star: '#ffd34d',
     starDim: '#8a7430',
     finish: '#ffd34d',
@@ -81,7 +86,7 @@ export const THEME = {
 
 /** Цвета, которые сообщают решение. Проверка светлоты их не ограничивает. */
 export const DECISION_KEYS = [
-  'gap', 'block', 'blockDark', 'rail', 'signal',
+  'gap', 'block', 'blockDark', 'rail', 'signal', 'warn', 'warnDim',
   'star', 'starDim', 'finish', 'finishDark',
 ];
 
@@ -149,6 +154,10 @@ export const MOTION = {
   badnikHiccupS: 3.0,
   flowerTurnM: 0.18,
   signSpinHz: 2.6,
+  /* Мерцание далёкого предупреждения. Медленное намеренно: 1 Гц на окне в две
+     секунды — два полных цикла, их видно как мерцание. Быстрее — и метка
+     читается просто как рябь, а она сообщает решение. */
+  warnBlinkHz: 1.0,
   flashPeak: 0.28,
 };
 
