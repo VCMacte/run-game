@@ -97,22 +97,83 @@ function keepFullscreen() {
 
 /* Блокировка снимается при каждом скрытии страницы, поэтому её мало взять
    один раз — её надо брать заново каждый раз, когда страница снова видна.
-   Без этого экран гаснет посреди забега, и это самая вероятная из помех. */
+   Без этого экран гаснет посреди забега, и это самая вероятная из помех.
+
+   А в самом забеге она может быть и не нужна — см. настройку `screenRun`.
+   Смотреть на экран телефона в забеге некому, а стоит он по журналу 8 fps.
+   Поэтому у блокировки есть политика: `wantAwake` говорит, нужна ли она прямо
+   сейчас, и её обязан уважать обработчик `visibilitychange` — иначе возврат из
+   скрытия посреди забега молча вернул бы блокировку и испортил замер. */
 let wakeLock = null;
+let wantAwake = true;
+// Начальное состояние — именно 'awake', а не null: иначе первый же show()
+// увидит «политика сменилась» и запросит блокировку второй раз поверх взятой.
+let screenPolicy = 'awake';
+
+async function acquireWake(why) {
+  if (!navigator.wakeLock || !wantAwake) return;
+  if (document.visibilityState !== 'visible') return;
+  // Уже держим — второй запрос осиротил бы первую блокировку: releaseWake
+  // отпустил бы только новую, экран остался бы горящим, и настройка
+  // «может гаснуть» молча не делала бы ничего.
+  if (wakeLock) return;
+  try {
+    const held = await navigator.wakeLock.request('screen');
+    // Политика могла перевернуться, пока обещание летело. Тогда отпускаем
+    // сразу: иначе блокировка висела бы против политики, и отпустить её было
+    // бы нечем — releaseWake увидел бы null и вышел.
+    if (!wantAwake) {
+      try { await held.release(); } catch { /* уже отпущена */ }
+      return;
+    }
+    /* Систему никто не обязывал держать её вечно: при скрытии страницы она
+       отпускает блокировку сама. Без этого слушателя `wakeLock` остался бы
+       ненулевым, проверка «уже держим» выше запретила бы взять заново — и
+       экран погас бы в меню, то есть ровно там, где он нужен. */
+    held.addEventListener?.('release', () => {
+      if (wakeLock === held) { wakeLock = null; updateStatus(); }
+    });
+    wakeLock = held;
+    log.event('wakelock', { got: true, why });
+  } catch (e) {
+    log.event('wakelock', { got: false, why: String(e?.name || e) });
+  }
+  updateStatus();
+}
+
+async function releaseWake(why) {
+  if (!wakeLock) return;
+  const held = wakeLock;
+  // Обнуляем ДО await: иначе второй вызов успеет пройти проверку и отпустить
+  // уже отпущенное.
+  wakeLock = null;
+  try { await held.release(); } catch { /* уже отпущена системой — не беда */ }
+  log.event('wakelock', { got: false, released: true, why });
+  updateStatus();
+}
+
+/* Применить политику экрана. Вызывается на каждой смене стадии и экрана, то
+   есть часто, поэтому действует только на переходах: запрашивать блокировку по
+   нескольку раз в секунду — верный способ получить отказ от браузера.
+
+   Смотрит и на стадию, и на показанный экран. Одной стадии мало: настройка
+   переключается из родительского меню, то есть ровно тогда, когда взрослый
+   держит телефон в руках, — а `lastHud` в этот момент всё ещё говорит «забег».
+   По одной стадии экран погас бы у него под пальцами. */
+function applyScreenPolicy(inRun) {
+  const onRunScreen = currentScreen === 'run';
+  const want = inRun && onRunScreen && settings.get('screenRun') === 'sleep'
+    ? 'sleep' : 'awake';
+  if (want === screenPolicy) return;
+  screenPolicy = want;
+  wantAwake = want === 'awake';
+  if (wantAwake) acquireWake('policy'); else releaseWake('run');
+}
+
 async function keepScreenAwake() {
   if (!navigator.wakeLock) return;
-  const acquire = async () => {
-    if (document.visibilityState !== 'visible') return;
-    try {
-      wakeLock = await navigator.wakeLock.request('screen');
-      log.event('wakelock', { got: true });
-    } catch (e) {
-      log.event('wakelock', { got: false, why: String(e?.name || e) });
-    }
-    updateStatus();
-  };
-  await acquire();
-  addEventListener('visibilitychange', acquire);
+  await acquireWake('start');
+  addEventListener('visibilitychange', () => acquireWake('visible'));
 }
 
 // ─────────────────────────── полоса состояния ───────────────────────────
@@ -165,7 +226,10 @@ const ORIENTATION = {
 const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name']);
 let previous = 'menu';
 
+let currentScreen = null;
+
 function show(name) {
+  currentScreen = name;
   for (const id of SCREENS) $(id).hidden = id !== name;
   if (!ADULT.has(name)) previous = name;
   /* Полный экран запрашивается перед блокировкой ориентации, а не параллельно:
@@ -177,6 +241,8 @@ function show(name) {
   log.event('screen', { name });
   // Возврат в игру из родительского меню: показать то, что настроили.
   if (name === 'run') refreshHud();
+  // Ушли с экрана забега — экран телефона снова нужен: меню держат в руке.
+  if (name !== 'run') applyScreenPolicy(false);
 }
 
 /* Заглушка с честным текстом. Экран существует, содержимого пока нет — и так
@@ -243,6 +309,15 @@ function renderRunHud(h = {}) {
   const title = $('runOverlayTitle');
   const text = $('runOverlayText');
   const numbers = $('runNumbers');
+
+  /* Политика экрана — здесь, потому что это единственное место, которое видит
+     КАЖДУЮ смену стадии: hud() зовётся и с паузы, и с отсчёта, и с возврата из
+     родительского меню. */
+  /* Гаснуть разрешено только пока забег ИДЁТ. На паузе — нет: игра ждёт, пока
+     ребёнок вернётся в кадр, и если погасшая панель уведёт страницу в hidden,
+     цикл кадров встанет, а пауза уже не разрешится сама — снимать её придётся
+     руками с телефона. Отсчёт по той же причине считается забегом не идущим. */
+  applyScreenPolicy(stage === 'free' && run === 'running');
 
   $('runScore').textContent = score;
   $('runHud').hidden = stage !== 'free';
@@ -547,6 +622,7 @@ const PARENT_ROWS = [
   ['setCrouch', 'crouchV', 'crouch'],
   ['setSound', 'soundV', 'sound'],
   ['setPreview', 'previewV', 'preview'],
+  ['setScreenRun', 'screenRunV', 'screenRun'],
   ['setDebug', 'debugV', 'debug'],
   ['setCache', 'cacheV', 'cache'],
 ];

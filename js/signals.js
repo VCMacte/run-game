@@ -34,6 +34,9 @@ export function makeOneEuro({ minCutoff, beta, dCutoff }) {
   return {
     reset() { xPrev = null; dxPrev = 0; },
     get velocity() { return dxPrev; },
+    /* Последнее отданное значение, без шага фильтра. Нужно, когда кадр
+       приходит, а обновлять по нему нечего: см. заморозку бокового в приседе. */
+    get value() { return xPrev; },
     push(x, dt) {
       if (!(dt > 0)) dt = 1 / 60;
       if (xPrev === null) { xPrev = x; return x; }
@@ -268,8 +271,22 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
       lostSince = null;
       if (okSince === null) okSince = t;
 
-      // Первая достоверная поза задаёт нейтраль, если калибровки ещё нет.
+      const [lo] = scaleBand();
+
+      /* Первая достоверная поза задаёт нейтраль, если калибровки ещё нет.
+
+         Со СЛОЖЕННЫМ торсом её брать нельзя. Раньше такой кадр отбрасывался
+         нижней границей и нейтралью стать не мог; теперь он проходит, и
+         взрослый, нагнувшийся к штативу, или ребёнок, подбирающий что-то с
+         пола, задали бы согнутую нейтраль — после чего `v` уже не дотянулся бы
+         до `vEnter`, и присед перестал бы распознаваться до самой калибровки.
+         Мерить от такой позы нечего, поэтому кадр честно считается непригодным. */
       if (cal.neutralX === null) {
+        if (g.S < lo) {
+          if (lostSince === null) lostSince = t;
+          okSince = null;
+          return { t, ok: false, why: 'scale', lostMs: t - lostSince, ...g, lane, crouch };
+        }
         cal.neutralX = g.cxh;
         cal.neutralShoulderY = g.shoulderY;
         cal.neutralHipY = g.hipY;
@@ -303,15 +320,37 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
          Знак инвертируется: задняя камера смотрит на ребёнка, повёрнутого к
          ней лицом, и «влево» в кадре противоположно «влево» у ребёнка. Это та
          ошибка, которая делает игру неиграбельной. */
-      const unit = Math.max(g.S, scaleBand()[0]);
+      const unit = Math.max(g.S, lo);
       const uRaw = S.mirrorX * (g.cxh - cal.neutralX) / unit;
       const vRaw = (g.shoulderY - cal.neutralShoulderY) / unit;
       const vHip = (g.hipY - cal.neutralHipY) / unit;
 
-      const u = fu.push(uRaw, dt);
+      /* БОКОВОЕ ПОЛОЖЕНИЕ В ПРИСЕДЕ НЕ ОБНОВЛЯЕТСЯ.
+
+         Зажима делителя мало. При сложенном торсе остаток в 0.07 длины торса —
+         пятая часть порога жеста — раздувается до 0.4, проходит по пути
+         «начало движения» (onsetU) и защёлкивает дорожку: панорама уезжает к
+         краю, и это фантомный шаг вбок на каждом приседе, та самая тряска, от
+         которой ребёнка укачивало. Замеров тут не нужно — арифметика прямая, и
+         проверяется она на трёх формах кадра.
+
+         Поэтому пока торс сложен или присед защёлкнут, боковое держится
+         последним достоверным значением. Присед и боковой наклон одновременно
+         физически невозможны — на этом же стоит правило запретного окна
+         `starGuardS`; присед держится минимум `crouchMinHoldMs` 600 мс, а
+         препятствия разнесены на `minGapS` 5.5 с, так что заморозка не может
+         накрыть два препятствия. Шаг, сделанный ДО приседа, при этом остаётся:
+         замораживается обновление, а не значение.
+
+         Вертикальное, наоборот, идёт как обычно: присед — это ровно оно, и
+         ради него всё и затевалось. `crouch` здесь — состояние прошлого кадра,
+         и это правильно: голоса этого кадра обновят его ниже. */
+      const lateralHeld = g.S < lo || crouch;
+
+      const u = lateralHeld ? (fu.value ?? uRaw) : fu.push(uRaw, dt);
       const v = fv.push(vRaw, dt);
 
-      const speed = fu.velocity;
+      const speed = lateralHeld ? 0 : fu.velocity;
 
       // ── дрейф ──
       // Нейтраль подтягивается медленно, пока ребёнок не делает ничего
@@ -320,7 +359,10 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
       // медленного ухода больше, чем любая разумная мёртвая зона, и такие
       // ворота захлопнулись бы ровно там, где впитывать и надо.
       let driftApplied = false;
-      if (lane === 0 && Math.abs(speed) < S.driftSpeedMax && Math.abs(u) < cal.uEnter) {
+      // Согнутую позу нейтраль впитывать не должна: иначе присед уедет в
+      // нейтраль, `v` перестанет дотягиваться до порога, и присед растворится.
+      if (!lateralHeld && lane === 0
+          && Math.abs(speed) < S.driftSpeedMax && Math.abs(u) < cal.uEnter) {
         if (centeredSince === null) centeredSince = t;
         if (t - centeredSince > S.driftRequiresCenteredMs) {
           const k = 1 - Math.exp(-(dt * 1000) / S.driftTauMs);
@@ -334,10 +376,12 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
       }
 
       // ── дорожка: гистерезис плюс срабатывание по началу движения ──
-      const canChange = t - lastLaneChange > S.laneDebounceMs;
+      const canChange = t - lastLaneChange > S.laneDebounceMs && !lateralHeld;
       let laneNext = lane;
 
-      if (lane === 0) {
+      if (lateralHeld) {
+        // Решать по замороженному значению нечего: оставляем как есть.
+      } else if (lane === 0) {
         const dir = Math.sign(u);
         if (Math.abs(u) > cal.uEnter) {
           laneNext = dir;

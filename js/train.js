@@ -203,7 +203,14 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       result = null;
       invulnUntil = 0;
       run = RUN.running;
-      log.event('run.start', { durationS, obstacles: obstacles.length, stars: stars.length });
+      /* Политика экрана телефона едет в журнал вместе с забегом. Без неё два
+         забега одной сессии неразличимы при разборе, а замер ровно в том и
+         состоит, чтобы сравнить их внутри ОДНОЙ сессии: разброс устройства
+         ±8 fps живёт между сессиями и съел бы весь эффект. */
+      log.event('run.start', {
+        durationS, obstacles: obstacles.length, stars: stars.length,
+        screenRun: settings.get('screenRun'),
+      });
     }
     hud();
   }

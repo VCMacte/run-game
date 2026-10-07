@@ -136,9 +136,50 @@ export function report(session) {
   const finished = !!finish;
   if (!finished) notes.push('забег брошен: run.finish в журнале нет');
 
+  /* ── разбивка по забегам сессии ──
+
+     `perf` выше считается по ВСЕЙ сессии, и для одного забега этого хватало. А
+     замер экрана телефона состоит ровно в том, чтобы сравнить два забега
+     внутри одной сессии: разброс устройства ±8 fps живёт между сессиями, и
+     сравнивать журналы между собой бессмысленно. Общая медиана смешала бы обе
+     политики в одно число, то есть ответила бы на вопрос замера средним по
+     вопросу.
+
+     Поэтому каждому `run.start` — своё окно: от него до следующего запуска или
+     до конца журнала. Калибровка и меню, попавшие между забегами, в окно
+     входят, и это честнее, чем вырезать их по стадиям: политика экрана
+     действует на весь забег, а стадии внутри него меняются. */
+  const runs = pick(log, 'run.start').map((st, i, all) => {
+    const to = i + 1 < all.length ? all[i + 1].t : end;
+    const own = windows.filter((w) => w.t >= st.t && w.t <= to);
+    const ownNums = (key) => own.flatMap((w) => (typeof w?.[key] === 'number'
+      ? Array(occurrences(w)).fill(w[key])
+      : []));
+    return {
+      at: st.t,
+      durationS: st.durationS ?? null,
+      screenRun: typeof st.screenRun === 'string' ? st.screenRun : null,
+      windows: own.reduce((a, w) => a + occurrences(w), 0),
+      fps: median(ownNums('fps')),
+      hz: median(ownNums('hz')),
+      infer: median(ownNums('p50')),
+    };
+  });
+
+  /* Запуск, которому принадлежит этот финиш. В сессии их бывает несколько, и
+     замер политики экрана стоит ровно на этом: два забега подряд в одной
+     сессии, и каждому нужен свой `run.start`, а не первый попавшийся. */
+  const start = finish
+    ? (pick(log, 'run.start').filter((s) => s.t <= finish.t).at(-1) ?? null)
+    : null;
+
   const run = finished
     ? {
       durationS: finish.durationS ?? null,
+      /* Политика экрана телефона: 'awake' — блокировка держится, 'sleep' —
+         отпущена на время забега. Нет поля — журнал снят до замера, и врать
+         догадкой здесь нечем. */
+      screenRun: start && typeof start.screenRun === 'string' ? start.screenRun : null,
       // Собранные кольца. С 7 октября это именно они: до правки одно поле
       // значило и кольца, и очки, и при задетом препятствии показывало очки.
       stars: finish.stars ?? 0,
@@ -202,8 +243,7 @@ export function report(session) {
      последнего забега давало долю, которая может перевалить за сто процентов —
      то есть долю неизвестно чего. */
   if (finish) {
-    const starts = pick(log, 'run.start').filter((s) => s.t <= finish.t);
-    const from = starts.length ? starts.at(-1).t : 0;
+    const from = start ? start.t : 0;
     const inRun = spans
       .filter((p) => p.t >= from && p.t <= finish.t)
       .reduce((s, p) => s + (Math.min(p.end, finish.t) - p.t), 0);
@@ -269,6 +309,7 @@ export function report(session) {
     perf,
     panSpan,
     run,
+    runs,
     pauses,
     errors,
     notes,
@@ -324,6 +365,7 @@ export function format(rep) {
       // забег без задетых, и второе число там ничего не добавляет.
       + (rep.run.score !== null && rep.run.score !== rep.run.stars
         ? `, ${rep.run.score} очков на экране` : ''));
+
     // Та же осторожность, что и с долей колец: доли без знаменателя нет.
     if (o.total) {
       L.push(`  препятствия: ${o.total} всего — чисто ${o.clear}, прощено ${o.grace}, `
@@ -331,6 +373,23 @@ export function format(rep) {
     } else {
       L.push(`  препятствий в журнале нет (задето по run.finish: ${rep.run.hits})`);
     }
+  }
+
+  /* Разбивка по забегам. Печатается, когда она что-то добавляет: либо забегов
+     больше одного, либо у забега записана политика экрана. У журналов до замера
+     нет ни того, ни другого, и сводка о нём молчит — печатать «экран: null»
+     значило бы предлагать принять отсутствие записи за наблюдение. */
+  const политики = rep.runs.filter((r) => r.screenRun).length;
+  if (rep.runs.length > 1 || политики) {
+    L.push(`  забегов в сессии: ${rep.runs.length}`);
+    rep.runs.forEach((r, i) => {
+      const экран = r.screenRun
+        ? `, экран ${r.screenRun === 'sleep' ? 'может гаснуть' : 'не гаснет'}`
+        : '';
+      L.push(`    ${i + 1}) ${чис(r.durationS)} с${экран}`
+        + `  —  кадры ${чис(r.fps)} fps, позы ${чис(r.hz)} Гц,`
+        + ` инференс ${мс(r.infer)}  (окон ${r.windows})`);
+    });
   }
 
   if (rep.pauses.episodes) {
