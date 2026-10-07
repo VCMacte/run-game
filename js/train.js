@@ -27,6 +27,43 @@ import * as log from './log.js';
 
 const RUN = { running: 'running', paused: 'paused', countdown: 'countdown' };
 
+/**
+ * Счёт забега: собранные кольца, очки и число задетых препятствий.
+ *
+ * Разведено на три числа намеренно. Один счётчик на кольца и очки уже соврал:
+ * удар вычитал starsLost из того же числа, которым считается собранное, и
+ * экран результата говорил «88 колец из 100» про забег, в котором собрано
+ * было 90 (журнал 7 октября, 90 событий сбора при одном задетом препятствии).
+ * Из ста колец недобранными выглядели двенадцать вместо десяти, а рекорды
+ * разных забегов становились несравнимы ровно по тому полю, ради которого
+ * таблица и ведётся.
+ *
+ * Отнимание кольца за удар при этом остаётся — это обратная связь, счётчик в
+ * HUD уходит вниз, и так решено заказчиком. В HUD идут `score`, в результат и
+ * в рекорд — `collected`.
+ *
+ * Живёт отдельной функцией, чтобы проверяться из node: весь остальной счёт
+ * заперт внутри кадрового цикла, который без браузера не запустить.
+ */
+export function makeTally({ starsLost = 0 } = {}) {
+  let collected = 0;
+  let score = 0;
+  let hits = 0;
+  return {
+    get collected() { return collected; },
+    get score() { return score; },
+    get hits() { return hits; },
+    star() { collected++; score++; },
+    hit() {
+      hits++;
+      // Ниже нуля счётчик в HUD опускаться не должен. Собранное зажимать
+      // нечем и незачем — оно только растёт.
+      score = Math.max(0, score - starsLost);
+    },
+    reset() { collected = 0; score = 0; hits = 0; },
+  };
+}
+
 export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud }) {
   /* Фон неба растром. Грузится без ожидания: пока картинки нет, `drawSky`
      рисует плоские полосы и силуэт холмов, и игра работает полностью. Так и
@@ -52,13 +89,12 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let elapsed = 0;     // секунд забега; по нему живёт весь телеграф
   let stars = [];
   let obstacles = [];
-  let score = 0;
+  const tally = makeTally({ starsLost: O.starsLost });
   let invulnUntil = 0;
   let flash = 0;
   let decor = [];
   let lastSpeed = 0;   // боковая скорость; по ней бадники решают, икать ли
   let durationS = 240;
-  let hits = 0;
   let result = null;
   let lastFrame = 0;
   let pauseWhy = null;
@@ -133,7 +169,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
      потерей поля. */
   function hud(extra = {}) {
     onHud?.({
-      stage, run, why: pauseWhy, score, setupOk, manual, result,
+      stage, run, why: pauseWhy, score: tally.score, setupOk, manual, result,
       source: source?.kind || null,
       progress: durationS ? Math.min(1, elapsed / durationS) : 0,
       ...extra,
@@ -163,8 +199,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       decor = makeDecor({ durationS });
       travel = 0;
       elapsed = 0;
-      score = 0;
-      hits = 0;
+      tally.reset();
       result = null;
       invulnUntil = 0;
       run = RUN.running;
@@ -366,7 +401,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         if (z > 0 && z < 1.2 && canReach(s.x, u)) {
           s.taken = true;
           s.takenAtS = elapsed;
-          score++;
+          tally.star();
           log.event('star', { side: Math.sign(s.x), u: round(u) });
           audio.play('star');
           hud();
@@ -465,8 +500,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         const counted = now > invulnUntil;
         if (counted) {
           ob.hit = true;
-          hits++;
-          score = Math.max(0, score - O.starsLost);
+          tally.hit();
           invulnUntil = now + O.invulnMs;
           flash = MOTION.flashPeak;
           audio.play('hit');
@@ -485,9 +519,17 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
      обещана полоса прогресса, и она должна дойти до конца ровно тогда, когда
      показывает. */
   function finish() {
-    const collected = score;
+    /* В результат идёт СОБРАННОЕ, а не очки.
+
+       Это разные числа: удар вычитает starsLost из очков, и пока результат
+       брал их, «88 колец из 100» означало забег, в котором собрано было 90.
+       Очки едут рядом отдельным полем — без них журнал не может объяснить
+       число, которое ребёнок видел в HUD на финише. */
+    const collected = tally.collected;
+    const hits = tally.hits;
     result = {
       stars: collected,
+      score: tally.score,
       // Сколько колец вообще было. Без этого числа рекорд несравним даже
       // внутри одной длины: уровень сеян случайно, и колец в нём то 99, то
       // 103. «102 из 130» говорит то, чего «102» не говорит.
@@ -503,7 +545,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     };
     stage = 'result';
     log.event('run.finish', {
-      stars: collected, starsTotal: stars.length, hits, durationS: Math.round(durationS),
+      stars: collected, score: tally.score, starsTotal: stars.length, hits,
+      durationS: Math.round(durationS),
     });
     audio.play('finish');
     // Без аргумента намеренно: result теперь уходит из hud() всегда, и
@@ -546,7 +589,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   return {
     get stage() { return stage; },
     get run() { return run; },
-    get score() { return score; },
+    get score() { return tally.score; },
     get why() { return pauseWhy; },
     get result() { return result; },
     get source() { return source; },
@@ -612,7 +655,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     async start({ source: src, script, skipSetup = false }) {
       calibration = loadCalibration();
       tracker = makeTracker(calibration || {}, { aspect });
-      travel = 0; score = 0; dim = 0; lastFrame = 0;
+      travel = 0; tally.reset(); dim = 0; lastFrame = 0;
       health.since = performance.now();
 
       source = await pose.start({ source: src, script, hz: POSE.hz, onSample });

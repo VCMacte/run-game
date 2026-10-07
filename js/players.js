@@ -93,6 +93,38 @@ function migrate() {
   return { v: 1, currentId: first.id, list: [first] };
 }
 
+/* Сколько очков отнимал удар до разделения колец и очков. Намеренно свой
+   константой, а не OBSTACLES.starsLost: это ИСТОРИЯ, а не настройка. Поменяй
+   однажды starsLost — и прошлые записи начнут пересчитываться новым числом,
+   которого при них не было. */
+const STARS_LOST_BEFORE_SPLIT = 2;
+
+/**
+ * Привести запись к виду «кольца и очки — разные поля».
+ *
+ * До правки одно поле `stars` значило очки: собранное минус отнятое за удары.
+ * Число задетых лежит в той же записи, поэтому собранное восстанавливается
+ * точно — `очки + задетые × starsLost`. Проверено на всех трёх дошедших до
+ * финиша забегах в журналах: 102+4 = 106, 84+4 = 88, 88+2 = 90, и каждое
+ * совпало с настоящим числом событий сбора кольца.
+ *
+ * Без этого таблица мешала бы две разные величины через границу правки: забег
+ * ребёнка 7 октября навсегда остался бы «88 из 100», а точно такой же новый
+ * написал бы «90 из 100» и обошёл бы его — ровно та несравнимость, ради
+ * устранения которой всё и делалось.
+ *
+ * Чего восстановить нельзя: очки зажаты нулём снизу, и у забега, где удары
+ * съели весь счёт, собранное было больше, чем говорит формула. Такой записи в
+ * журналах нет, а врать числом здесь не на чем: больше нуля формула точна.
+ */
+export function migrateRecord(r) {
+  // Поле очков есть — запись уже новая, второй раз её трогать нельзя: иначе
+  // кольца накручивались бы при каждом чтении хранилища.
+  if (Number.isFinite(r.score)) return r;
+  const hits = Number(r.hits) || 0;
+  return { ...r, score: r.stars, stars: r.stars + hits * STARS_LOST_BEFORE_SPLIT };
+}
+
 function read() {
   let raw = null;
   try { raw = JSON.parse(localStorage.getItem(STORAGE.players) || 'null'); } catch { /* ниже */ }
@@ -104,7 +136,9 @@ function read() {
       name: normalizeName(p.name) || 'Игрок',
       createdAt: Number(p.createdAt) || Date.now(),
       calib: p.calib && p.calib.neutralX != null ? p.calib : null,
-      records: Array.isArray(p.records) ? p.records.filter((r) => r && Number.isFinite(r.stars)) : [],
+      records: Array.isArray(p.records)
+        ? p.records.filter((r) => r && Number.isFinite(r.stars)).map(migrateRecord)
+        : [],
     }));
   if (list.length === 0) return migrate();
   const currentId = list.some((p) => p.id === raw.currentId) ? raw.currentId : list[0].id;
@@ -216,13 +250,21 @@ export const players = {
 
   /* Записывается только дошедший до финиша забег. Выход через паузу сюда не
      попадает вовсе — не фильтром, а тем, что его путь этого метода не зовёт. */
-  addRecord({ durationS, stars, starsTotal, hits, playerId } = {}) {
+  addRecord({ durationS, stars, score, starsTotal, hits, playerId } = {}) {
     const p = playerId ? state.list.find((x) => x.id === playerId) : me();
     if (!p || !Number.isFinite(stars) || !Number.isFinite(durationS)) return null;
     const rec = {
       at: Date.now(),
       durationS: Math.round(durationS),
+      // Собранные кольца. По ним таблица и сравнивает забеги — см. rankRecords.
       stars: Math.round(stars),
+      /* Очки — то же число минус отнятое за удары, то есть цифра, которую
+         ребёнок видел в HUD на финише. Без неё журнал не может объяснить
+         экран, а до этой правки оба числа были одним полем и «88 из 100»
+         означало забег, в котором собрано было 90. У записей, сделанных до
+         правки, очки и есть то, что лежит в stars: подставляем их, иначе
+         прошлые рекорды выглядели бы забегами без очков вовсе. */
+      score: Math.round(Number.isFinite(score) ? score : stars),
       starsTotal: Math.round(starsTotal ?? 0),
       hits: Math.round(hits ?? 0),
     };

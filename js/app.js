@@ -819,7 +819,8 @@ function saveRecord(playerId) {
   // «переключиться на него»; без него пишем текущему игроку.
   const written = players.addRecord({
     playerId,
-    durationS: r.durationS, stars: r.stars, starsTotal: r.starsTotal, hits: r.hits,
+    durationS: r.durationS, stars: r.stars, score: r.score,
+    starsTotal: r.starsTotal, hits: r.hits,
   });
   /* Записалось ли на самом деле. players.addRecord отдаёт null, если запись
      не приняли, а сохранение в localStorage молчит при любом отказе — игра
@@ -836,7 +837,9 @@ function saveRecord(playerId) {
   recordError = false;
   recorded = true;
   recordsFrom = 'run';
-  log.event('record.save', { stars: r.stars, hits: r.hits, durationS: Math.round(r.durationS) });
+  log.event('record.save', {
+    stars: r.stars, score: r.score, hits: r.hits, durationS: Math.round(r.durationS),
+  });
   recLen = Math.round(r.durationS);
   renderRecords();
   show('records');

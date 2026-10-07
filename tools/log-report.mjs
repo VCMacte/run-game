@@ -14,6 +14,7 @@
 // `tests-control.mjs` гоняет её на синтетических сессиях.
 
 import { readFileSync } from 'node:fs';
+import { count, TIMES } from '../js/text.js';
 
 /* Сколько раз случилось событие. Повторы подряд журнал склеивает в одну
    запись со счётчиком `_n` (см. `js/log.js`), и считать записи вместо разов —
@@ -138,8 +139,15 @@ export function report(session) {
   const run = finished
     ? {
       durationS: finish.durationS ?? null,
+      // Собранные кольца. С 7 октября это именно они: до правки одно поле
+      // значило и кольца, и очки, и при задетом препятствии показывало очки.
       stars: finish.stars ?? 0,
+      /* Очки — кольца минус отнятое за удары, то есть цифра с экрана ребёнка.
+         Нет поля вовсе — журнал снят до разделения, и тогда очков мы не знаем;
+         null, а не копия колец: копия выдала бы догадку за измерение. */
+      score: Number.isFinite(finish.score) ? finish.score : null,
       starsTotal: finish.starsTotal ?? 0,
+      // Доля считается по КОЛЬЦАМ: удар к собираемости отношения не имеет.
       ringPct: finish.starsTotal ? Math.round((finish.stars / finish.starsTotal) * 100) : null,
       // Задетое берётся из `run.finish`: он здесь источник, а вторая копия
       // числа рано или поздно разошлась бы с первой.
@@ -239,6 +247,17 @@ export function report(session) {
   const raw = pick(log, 'samples').length + pick(log, 'skeleton').length;
   if (raw) notes.push(`в журнале есть сырые отсчёты (${raw} записей) — в отчёт они не выносятся`);
 
+  /* Журнал до 7 октября не разделял кольца и очки, и при задетых препятствиях
+     поле `stars` показывало ОЧКИ: собранное минус отнятое за удары. Сводка
+     обязана сказать это вслух, иначе замер назовёт кольцами то, чем они не
+     являются, — а замеры делаются как раз по сводке. При нуле задетых числа
+     совпадают по построению, и предупреждать не о чем. */
+  if (run && run.score === null && run.hits > 0) {
+    notes.push('журнал снят до разделения колец и очков: задел '
+      + `${count(run.hits, TIMES)}, значит «колец» выше — это очки, `
+      + 'собрано было больше');
+  }
+
   return {
     id: session?.id ?? null,
     startedAt: session?.startedAt ?? null,
@@ -300,7 +319,11 @@ export function format(rep) {
     L.push(`  забег ${rep.run.durationS} с: ${rep.run.stars} колец`
       + (rep.run.ringPct === null
         ? '  (сколько было расставлено — не записано)'
-        : ` из ${rep.run.starsTotal} (${rep.run.ringPct}%)`));
+        : ` из ${rep.run.starsTotal} (${rep.run.ringPct}%)`)
+      // Очки печатаются только когда они отличаются: равные числа означают
+      // забег без задетых, и второе число там ничего не добавляет.
+      + (rep.run.score !== null && rep.run.score !== rep.run.stars
+        ? `, ${rep.run.score} очков на экране` : ''));
     // Та же осторожность, что и с долей колец: доли без знаменателя нет.
     if (o.total) {
       L.push(`  препятствия: ${o.total} всего — чисто ${o.clear}, прощено ${o.grace}, `
