@@ -167,6 +167,9 @@ export function isStale(cal, g, limit = STALE) {
  * сколько осталось, и — на последней — готовую калибровку.
  */
 export function makeCalibration({ aspect = 1 } = {}) {
+  /* Живое, а не раз и навсегда: калибровка начинается раньше, чем кадры
+     успевают сказать, какой они формы (js/camera.js, frameAspect). */
+  let frameAspectRatio = aspect;
   let stage = 0;
   let since = null;
   let tries = 0;
@@ -280,10 +283,10 @@ export function makeCalibration({ aspect = 1 } = {}) {
     const cxh = base.neutralX + side * need * base.S0 * S.mirrorX;
     return {
       kind: 'side', fill: grown, side,
-      x: cxh / aspect,
+      x: cxh / frameAspectRatio,
       // Полуширина нужна только воротцам: у боковой зоны второй край — край
       // кадра, потому что просят «уйди в эту сторону», а не «встань на черту».
-      half: (need * base.S0) / aspect,
+      half: (need * base.S0) / frameAspectRatio,
       reached: reached(st),
     };
   }
@@ -291,6 +294,23 @@ export function makeCalibration({ aspect = 1 } = {}) {
   return {
     get stage() { return STAGES[stage]; },
     get index() { return stage; },
+    /* Кадр сказал, какой он на самом деле. Набранное переводится в новые
+       единицы — см. тот же разбор у `setAspect` в js/signals.js.
+
+       Здесь это тише и потому хуже: нейтраль копится суммой `cxh`, а размах
+       меряется от неё. Оставить её в старых единицах — значит получить один
+       бок, насыщенный сразу, и другой, не набираемый никогда; размах `span`
+       схлопывается, и забег уходит с молча испорченным `panSpan`. Присед
+       (`best.crouch`) вертикальный и не трогается. */
+    setAspect(a) {
+      if (!(a > 0) || a === frameAspectRatio) return;
+      const k = a / frameAspectRatio;
+      frameAspectRatio = a;
+      neutral.x *= k;
+      best.left *= k;
+      best.right *= k;
+      if (Number.isFinite(best.center)) best.center *= k;
+    },
     get result() { return result; },
     get tries() { return tries; },
 
@@ -302,7 +322,7 @@ export function makeCalibration({ aspect = 1 } = {}) {
         return { stage: st, adult: st.adult, say: 'Тебя не видно — встань в рамку',
           hold: 0, waiting: true, target: targetFor(st, null, 0) };
       }
-      const g = geometry(lm, aspect);
+      const g = geometry(lm, frameAspectRatio);
       if (g.vis < S.visMin) {
         return { stage: st, adult: st.adult, say: 'Тебя плохо видно',
           hold: 0, waiting: true, target: targetFor(st, g, 0) };

@@ -146,6 +146,10 @@ const DEFAULT_CALIBRATION = {
  * видно, дошёл ли сигнал до порога вообще. В игру они не идут.
  */
 export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
+  /* Отношение сторон живое, а не раз и навсегда. Выясняется оно у первых
+     кадров (js/camera.js, frameAspect), а пересоздать трекер посреди забега
+     значит потерять нейтраль, защёлкнутую дорожку и присед. */
+  let frameAspectRatio = aspect;
   const cal = { ...DEFAULT_CALIBRATION, ...calibration };
 
   /* Длина торса из ПРОЙДЕННОЙ калибровки, если она была. Отдельно от cal.S0,
@@ -243,6 +247,27 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
   return {
     get lane() { return lane; },
     get crouch() { return crouch; },
+    /* Кадр сказал, какой он на самом деле. Состояние при этом сохраняется —
+       но ГОРИЗОНТАЛЬНОЕ приходится перевести, а не просто оставить.
+
+       Нейтраль хранится в `cxh`, то есть x, уже умноженный на отношение
+       сторон. Поменять делитель и не тронуть её — значит вычитать единицы из
+       других единиц: у стоящего в середине `u` уезжает к −0.74 при пороге
+       дорожки 0.34, дорожка защёлкивается и разащёлкнуться уже не может (|u|
+       никогда не падает ниже `uExit`), а дрейф нейтрали её не вылечит — он сам
+       разрешён только при нулевой дорожке. Снаружи это панорама, прижатая к
+       стене до конца забега.
+
+       Перевод точный, а не приближённый: всё горизонтальное линейно по
+       отношению сторон, поэтому достаточно умножить на отношение нового к
+       старому. Вертикальное (`neutralY`, `neutralShoulderY`, `neutralHipY`)
+       от него не зависит вовсе и не трогается. */
+    setAspect(a) {
+      if (!(a > 0) || a === frameAspectRatio) return;
+      const k = a / frameAspectRatio;
+      frameAspectRatio = a;
+      if (cal.neutralX !== null) cal.neutralX *= k;
+    },
     /** Последние отсчёты — уходят в журнал одним событием вокруг происшествия. */
     burst(ms = 2000, now = tPrev) {
       return ring.filter((r) => now - r.t <= ms);
@@ -259,7 +284,7 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
         return { t, ok: false, why: 'none', lostMs: t - lostSince, lane, crouch };
       }
 
-      const g = geometry(lm, aspect);
+      const g = geometry(lm, frameAspectRatio);
       const why = presence(g, t);
       prevCx = g.cx;
 

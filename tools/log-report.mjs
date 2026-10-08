@@ -155,10 +155,21 @@ export function report(session) {
     const ownNums = (key) => own.flatMap((w) => (typeof w?.[key] === 'number'
       ? Array(occurrences(w)).fill(w[key])
       : []));
+    /* Настройка — это ПРОСЬБА, а не наблюдение, и путать их дорого: 8 октября
+       экран гас в обоих забегах, включая тот, где просили не гаснуть, а сводка
+       бодро печатала «экран не гаснет», потому что читала настройку. Поэтому
+       рядом едет то, что случилось с блокировкой на самом деле: сколько раз её
+       не стало втихую и сколько раз её брали заново. */
+    // `e?.type`, как и весь обход в этом файле: на входе — файл с телефона, и
+    // одна битая запись не должна убивать весь разбор.
+    const wake = log.filter((e) => e?.type === 'wakelock' && e.t >= st.t && e.t <= to);
+    const сколько = (f) => wake.filter(f).reduce((a, e) => a + occurrences(e), 0);
     return {
       at: st.t,
       durationS: st.durationS ?? null,
       screenRun: typeof st.screenRun === 'string' ? st.screenRun : null,
+      wakeLost: сколько((e) => e.released === true && e.why === 'system'),
+      wakeRegained: сколько((e) => e.got === true && e.why === 'regain'),
       windows: own.reduce((a, w) => a + occurrences(w), 0),
       fps: median(ownNums('fps')),
       hz: median(ownNums('hz')),
@@ -281,6 +292,22 @@ export function report(session) {
       .map(([message, g]) => ({ message, n: g.n })),
   };
 
+  /* Форма кадра. Расхождение отчёта дорожки с кадром — не мелочь, а тот самый
+     дефект, из-за которого 8 октября второй забег был непроходим: одно чужое
+     число сжимает горизонталь, и ребёнок, стоящий лицом, читается как
+     повёрнутый боком НАВСЕГДА. Поэтому сводка говорит о нём первой строкой, а
+     не предлагает догадываться по словам «он не видел меня». */
+  for (const a of pick(log, 'cam.aspect')) {
+    if (typeof a.said === 'number' && typeof a.aspect === 'number'
+      && Math.abs(a.said - a.aspect) > 0.05) {
+      notes.push(`камера соврала о форме кадра: отчёт ${a.said}, кадр ${a.aspect}`
+        + ' — горизонталь была бы сжата, присутствие читалось бы как поворот боком');
+    }
+    if (typeof a.was === 'number' && Math.abs(a.was - a.aspect) > 0.05) {
+      notes.push(`форма кадра переучена на ходу: было ${a.was}, стало ${a.aspect}`);
+    }
+  }
+
   /* Сырые отсчёты в журнале есть, а в отчёт они не попадают: measurements/
      уезжает в публичный репозиторий, а `samples` и `skeleton` — это записанные
      движения ребёнка. Отчёт говорит только, что они в журнале были. */
@@ -384,9 +411,14 @@ export function format(rep) {
     L.push(`  забегов в сессии: ${rep.runs.length}`);
     rep.runs.forEach((r, i) => {
       const экран = r.screenRun
-        ? `, экран ${r.screenRun === 'sleep' ? 'может гаснуть' : 'не гаснет'}`
+        ? `, просили ${r.screenRun === 'sleep' ? 'гаснуть' : 'не гаснуть'}`
         : '';
-      L.push(`    ${i + 1}) ${чис(r.durationS)} с${экран}`
+      // Печатается только когда блокировку действительно теряли: ноль ни о чём
+      // не говорит, а строка о нём отвлекала бы от того, что говорит.
+      const потери = r.wakeLost || r.wakeRegained
+        ? `, блокировка: потеряна ${r.wakeLost}, взята заново ${r.wakeRegained}`
+        : '';
+      L.push(`    ${i + 1}) ${чис(r.durationS)} с${экран}${потери}`
         + `  —  кадры ${чис(r.fps)} fps, позы ${чис(r.hz)} Гц,`
         + ` инференс ${мс(r.infer)}  (окон ${r.windows})`);
     });

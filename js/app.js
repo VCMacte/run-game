@@ -110,13 +110,36 @@ let wantAwake = true;
 // увидит «политика сменилась» и запросит блокировку второй раз поверх взятой.
 let screenPolicy = 'awake';
 
+/* Отпущенная блокировка — это `wakeLock`, который ещё не null, но уже мёртв.
+
+   Полагаться на одно событие `release` оказалось мало. 8 октября экран гас в
+   ОБОИХ забегах — и в том, где настройка просила не гаснуть, — при том что в
+   журнале стоит `wakelock got:true` и ни одного отпускания. Либо событие не
+   доехало, либо систему не устроило держать блокировку дальше; в обоих случаях
+   приложение считало, что держит её, проверка «уже держим» запрещала взять
+   заново, и экран оставался погасшим до конца сеанса. Поэтому состояние
+   спрашивается у самой блокировки (`released`), а не только у своего флага. */
+const wakeDead = () => !wakeLock || wakeLock.released === true;
+
+/* Запрос летит не мгновенно, и всё это время `wakeLock` ещё null. Без своего
+   флага два вызова подряд — `visibilitychange` и дозор — оба проходят проверку
+   «уже держим», обе блокировки выдаются, и первая остаётся сиротой: её
+   слушатель `release` уже бессилен (`wakeLock !== held`), а releaseWake отпустит
+   только вторую. Экран остаётся горящим, и настройка «может гаснуть» молча не
+   делает ничего — то есть ровно тот замер, ради которого она существует, не
+   получается. */
+let wakeAsking = false;
+
 async function acquireWake(why) {
-  if (!navigator.wakeLock || !wantAwake) return;
+  if (!navigator.wakeLock || !wantAwake || wakeAsking) return;
   if (document.visibilityState !== 'visible') return;
   // Уже держим — второй запрос осиротил бы первую блокировку: releaseWake
   // отпустил бы только новую, экран остался бы горящим, и настройка
   // «может гаснуть» молча не делала бы ничего.
-  if (wakeLock) return;
+  if (!wakeDead()) return;
+  // Мёртвую — забыть, иначе releaseWake потом отпустит отпущенное.
+  wakeLock = null;
+  wakeAsking = true;
   try {
     const held = await navigator.wakeLock.request('screen');
     // Политика могла перевернуться, пока обещание летело. Тогда отпускаем
@@ -131,12 +154,21 @@ async function acquireWake(why) {
        ненулевым, проверка «уже держим» выше запретила бы взять заново — и
        экран погас бы в меню, то есть ровно там, где он нужен. */
     held.addEventListener?.('release', () => {
-      if (wakeLock === held) { wakeLock = null; updateStatus(); }
+      if (wakeLock !== held) return;
+      wakeLock = null;
+      // В журнал: иначе «экран всё равно гаснет» невозможно отличить от
+      // «система отбирает блокировку сразу после выдачи».
+      log.event('wakelock', { got: false, released: true, why: 'system' });
+      updateStatus();
     });
     wakeLock = held;
     log.event('wakelock', { got: true, why });
   } catch (e) {
     log.event('wakelock', { got: false, why: String(e?.name || e) });
+  } finally {
+    // Именно в finally: у ветки «политика перевернулась» свой `return`, и без
+    // этого флаг остался бы поднятым навсегда — блокировку больше не взять.
+    wakeAsking = false;
   }
   updateStatus();
 }
@@ -164,16 +196,42 @@ function applyScreenPolicy(inRun) {
   const onRunScreen = currentScreen === 'run';
   const want = inRun && onRunScreen && settings.get('screenRun') === 'sleep'
     ? 'sleep' : 'awake';
-  if (want === screenPolicy) return;
+  // Политика та же — но блокировки могло уже не быть: см. pokeWake.
+  if (want === screenPolicy) { pokeWake(); return; }
   screenPolicy = want;
   wantAwake = want === 'awake';
   if (wantAwake) acquireWake('policy'); else releaseWake('run');
+}
+
+/* Дозор: вернуть блокировку, если её не стало втихую.
+
+   Зовётся из applyScreenPolicy, то есть на каждом кадре HUD, поэтому сама
+   проверка обязана быть бесплатной — она и есть чтение свойства. А вот запрос
+   редкий: просить блокировку по нескольку раз в секунду — верный способ
+   получить отказ. Повтор раз в `WAKE_RETRY_MS` и даёт журналу ответ: череда
+   `got:true why:"regain"` значит, что систему блокировка не держит, и чинить
+   это надо не кодом, а экономией энергии в самом телефоне. */
+const WAKE_RETRY_MS = 5000;
+let wakeTriedAt = 0;
+
+function pokeWake() {
+  if (!navigator.wakeLock || !wantAwake || !wakeDead()) return;
+  const now = performance.now();
+  if (now - wakeTriedAt < WAKE_RETRY_MS) return;
+  wakeTriedAt = now;
+  acquireWake('regain');
 }
 
 async function keepScreenAwake() {
   if (!navigator.wakeLock) return;
   await acquireWake('start');
   addEventListener('visibilitychange', () => acquireWake('visible'));
+  /* Дозор зовётся из applyScreenPolicy, то есть из кадра HUD, — а на калитке,
+     в меню и в настройках кадров нет вовсе. Потерянная там блокировка иначе не
+     вернулась бы до следующей смены экрана, то есть ровно в том месте, про
+     которое слушатель `release` выше и написан. Касание — честный сигнал: эти
+     экраны держат в руке, и трогают их постоянно. */
+  addEventListener('pointerdown', pokeWake);
 }
 
 // ─────────────────────────── полоса состояния ───────────────────────────
@@ -186,7 +244,7 @@ function updateStatus() {
   $('status').innerHTML = [
     mark(installedApp, 'приложение', 'вкладка браузера'),
     mark(!!document.fullscreenElement || installedApp, 'во весь экран', 'не во весь экран'),
-    mark(!!wakeLock, 'экран не гаснет', 'экран может погаснуть'),
+    mark(!wakeDead(), 'экран не гаснет', 'экран может погаснуть'),
     // Включённую отладку надо видеть, не заходя в меню: иначе однажды ребёнку
     // дадут поиграть с синтетическим источником и будут гадать, почему он не
     // влияет на игру.

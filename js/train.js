@@ -15,7 +15,7 @@ import { MOTION } from './theme.js';
 import {
   makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
 } from './calibrate.js';
-import { framing } from './camera.js';
+import { framing, frameAspect } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
 import { makeLevel, isSafe, telegraph } from './level.js';
 import * as audio from './audio.js';
@@ -217,8 +217,36 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
   // ───────────────────────── поток поз ─────────────────────────
 
+  /* Форма кадра пересверяется на КАЖДОЙ позе, а не берётся один раз при
+     открытии камеры.
+
+     Второй забег 8 октября: камера открылась через 91 мс после поворота
+     экрана, `getSettings()` отдал портрет вместо ландшафта, и это одно число
+     сделало игру непроходимой — ширина плеч к торсу вышла 0.27 при пороге
+     0.45, то есть «повернись к телевизору» навсегда. Разбор и доказательство,
+     что врал отчёт дорожки, а не камера повернулась, — в `frameAspect`.
+
+     Сверка стоит два чтения свойства, а правка уходит в живые трекер и
+     калибровку: пересоздавать их посреди забега значит терять нейтраль,
+     защёлкнутую дорожку и присед. */
+  function syncAspect(sample) {
+    const a = frameAspect({ sample, video: source?.video, settings: source?.settings });
+    if (!(a > 0) || Math.abs(a - aspect) < 0.01) return;
+    log.event('cam.aspect', {
+      aspect: round(a, 2), was: round(aspect, 2),
+      w: sample?.w ?? source?.video?.videoWidth ?? null,
+      h: sample?.h ?? source?.video?.videoHeight ?? null,
+      said: source?.settings?.width && source?.settings?.height
+        ? round(source.settings.width / source.settings.height, 2) : null,
+    });
+    aspect = a;
+    tracker?.setAspect?.(a);
+    calibrator?.setAspect?.(a);
+  }
+
   function onSample(sample) {
     const now = performance.now();
+    syncAspect(sample);
     health.poses++;
     health.dropped += sample.dropped || 0;
     if (sample.inferMs) health.infer.push(sample.inferMs);
@@ -669,9 +697,14 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // Отношение сторон — у камеры настоящее, у синтетики то, под которое
       // нарисован её скелет.
       const st = source?.settings;
-      aspect = st?.width && st?.height ? st.width / st.height : 16 / 9;
+      aspect = frameAspect({ video: source?.video, settings: st });
       tracker = makeTracker(calibration || {}, { aspect });
-      log.event('cam.aspect', { aspect: round(aspect, 2), w: st?.width ?? null, h: st?.height ?? null });
+      log.event('cam.aspect', {
+        aspect: round(aspect, 2),
+        w: source?.video?.videoWidth ?? null, h: source?.video?.videoHeight ?? null,
+        said: st?.width && st?.height ? round(st.width / st.height, 2) : null,
+        saidW: st?.width ?? null, saidH: st?.height ?? null,
+      });
 
       // Предпросмотр: у синтетики камеры нет, и показывать нечего.
       if (video && source.video) {

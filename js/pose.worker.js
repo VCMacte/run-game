@@ -64,6 +64,13 @@ function kick() {
 
   busy = true;
   lastRun = performance.now();
+  /* Размер кадра едет вместе с позой, и это единственное место, где он
+     достоверен: MediaPipe нормирует x по ширине ИМЕННО ЭТОГО кадра, а
+     `getSettings()` дорожки умеет врать — 8 октября он отдал портрет вместо
+     ландшафта, и игра встала на «повернись к телевизору» навсегда.
+     У VideoFrame размер в display*, у ImageBitmap (конвейер bitmap) — обычный. */
+  const fw = frame.displayWidth ?? frame.width ?? null;
+  const fh = frame.displayHeight ?? frame.height ?? null;
   const tCap = frame.timestamp != null ? frame.timestamp / 1000 : now();
   const t0 = performance.now();
   let lm = null;
@@ -84,7 +91,7 @@ function kick() {
 
   post({
     type: 'pose', seq: seq++, tCap, tDone: now(),
-    inferMs: Math.round(performance.now() - t0), dropped, lm,
+    inferMs: Math.round(performance.now() - t0), dropped, lm, w: fw, h: fh,
   }, lm ? [lm.buffer] : []);
   dropped = 0;
 
