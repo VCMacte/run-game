@@ -14,6 +14,7 @@ import { createView, makeStars, makeDecor, canReach } from './view.js';
 import { MOTION } from './theme.js';
 import {
   makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
+  forReuse,
 } from './calibrate.js';
 import { framing, frameAspect } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
@@ -236,10 +237,19 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function syncAspect(sample) {
     const a = frameAspect({ sample, video: source?.video, settings: source?.settings });
     if (!(a > 0) || Math.abs(a - aspect) < 0.01) return;
+    /* Три источника формы кадра едут в журнал РЯДОМ, а не по одному.
+
+       8 октября соврали оба по очереди: утром `getSettings()` отдал портрет
+       при ландшафтных кадрах, вечером кадры повернулись по-настоящему, а
+       отчёт остался ландшафтным. Пока в записи стояло одно число, отличить
+       эти случаи было нечем, а разошедшееся видео против кадра означает ещё и
+       скелет не на своём месте — у окошка `object-fit: cover`. */
     log.event('cam.aspect', {
       aspect: round(a, 2), was: round(aspect, 2),
       w: sample?.w ?? source?.video?.videoWidth ?? null,
       h: sample?.h ?? source?.video?.videoHeight ?? null,
+      videoW: source?.video?.videoWidth ?? null,
+      videoH: source?.video?.videoHeight ?? null,
       said: source?.settings?.width && source?.settings?.height
         ? round(source.settings.width / source.settings.height, 2) : null,
     });
@@ -373,9 +383,19 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     if (run === RUN.paused) return;
     run = RUN.paused;
     pauseWhy = rec.why;
+    /* `ratio` и `shW` — не для полноты. Три журнала подряд `profile` был
+       главной причиной пауз (7, 8 и ещё 8 эпизодов), и ни один из них не мог
+       сказать, ПОЧЕМУ: решение принимается по отношению ширины плеч к торсу, а
+       в журнал уходили только видимость, торс и центр. Разбор упирался в
+       догадки о форме кадра, о расстоянии и о том, повернулся ребёнок или нет.
+       Теперь в записи стоит само число, с которым сравнивали порог, и рядом
+       форма кадра — второй подозреваемый по тем же журналам. */
     log.event('pause', {
       why: rec.why, vis: round(rec.vis ?? 0), S: round(rec.S ?? 0),
       cx: round(rec.cx ?? 0), lostMs: Math.round(rec.lostMs ?? 0),
+      ratio: rec.shoulderRatio != null ? round(rec.shoulderRatio) : null,
+      shW: rec.shoulderWidth != null ? round(rec.shoulderWidth) : null,
+      aspect: round(aspect, 2),
     });
     // Две секунды отсчётов вокруг происшествия — одним событием. Именно по ним
     // потом разбирается жалоба «встало на паузу само».
@@ -469,7 +489,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     });
     health.draw.push(performance.now() - drawStart);
     if (skeleton && !skeleton.parentElement?.hidden) {
-      drawSkeleton(skeleton, lastLm, lastOk, stage === 'calibrate' ? lastTarget : null);
+      drawSkeleton(skeleton, lastLm, lastOk,
+        stage === 'calibrate' ? lastTarget : null, aspect);
     }
     if (field && !field.hidden) updateField(field, fieldMark, lastOk ? lastCx : null);
     if (now - health.since > 1000) {
@@ -704,7 +725,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     async start({ source: src, script, skipSetup = false }) {
       stopped = false;
       calibration = loadCalibration();
-      tracker = makeTracker(calibration || {}, { aspect });
+      /* В трекер — БЕЗ нейтрали (`forReuse`): прошлая снята в прошлой сцене, и
+         от неё отсчитывается присед. Сама `calibration` остаётся целой — её
+         нейтраль нужна `isStale`, чтобы заметить сдвинутый штатив. */
+      tracker = makeTracker(forReuse(calibration) || {}, { aspect });
       travel = 0; tally.reset(); dim = 0; lastFrame = 0;
       health.since = performance.now();
 
@@ -716,7 +740,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // нарисован её скелет.
       const st = source?.settings;
       aspect = frameAspect({ video: source?.video, settings: st });
-      tracker = makeTracker(calibration || {}, { aspect });
+      tracker = makeTracker(forReuse(calibration) || {}, { aspect });
       log.event('cam.aspect', {
         aspect: round(aspect, 2),
         w: source?.video?.videoWidth ?? null, h: source?.video?.videoHeight ?? null,
