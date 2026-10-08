@@ -132,6 +132,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   // позу — 24 МБ за сессию при потолке 25.
   const health = { frames: 0, poses: 0, ok: 0, infer: [], draw: [], dropped: 0, since: 0, vis: 0, S: 0 };
 
+  /* Остановлено ли снаружи. Нужен потому, что `start()` долгий и его можно
+     прервать посередине — см. комментарий у самого `start()`. */
+  let stopped = false;
+
   /* Запись сырых точек скелета — для фикстур.
      По умолчанию выключена и включается через ?record=1: на 20 Гц это около
      полумегабайта за полминуты, а весь потолок журнала — 25 МБ. Пишется
@@ -687,13 +691,27 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       goStage(reuse ? 'free' : 'calibrate');
     },
 
+    /* Запуск долгий: камера открывается почти две секунды, прогрев модели ещё
+       три. Всё это время экран забега уже показан, и уйти с него можно — с
+       появлением кнопки «Назад» это стало обычным делом. Поэтому `stop()`
+       умеет случиться ПОСРЕДИ `start()`, и один флаг здесь важнее, чем
+       выглядит: без него `pose.stop()` не делает ничего (источника ещё нет в
+       `pose.js`), а `start()` после await спокойно доводит дело до конца —
+       включает камеру, вешает цикл кадров и уходит в стадию. Снаружи это
+       «вернулись в меню, а камера горит», и остановить её больше нечем:
+       ссылку на тренировку приложение уже обнулило. Второй запуск добавил бы
+       второй цикл и второй источник поз на тот же канвас. */
     async start({ source: src, script, skipSetup = false }) {
+      stopped = false;
       calibration = loadCalibration();
       tracker = makeTracker(calibration || {}, { aspect });
       travel = 0; tally.reset(); dim = 0; lastFrame = 0;
       health.since = performance.now();
 
       source = await pose.start({ source: src, script, hz: POSE.hz, onSample });
+      // Ушли с экрана, пока открывалась камера. Гасим то, что уже успело
+      // завестись, и дальше не идём: цикл кадров не вешаем вовсе.
+      if (stopped) { await pose.stop(); source = null; return null; }
       // Отношение сторон — у камеры настоящее, у синтетики то, под которое
       // нарисован её скелет.
       const st = source?.settings;
@@ -731,6 +749,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     },
 
     async stop() {
+      stopped = true;
       cancelAnimationFrame(raf);
       raf = 0;
       if (batch.length) { log.event('skeleton', { n: batch.length, rows: batch }); batch = []; }
