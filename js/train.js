@@ -389,12 +389,22 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
        в журнал уходили только видимость, торс и центр. Разбор упирался в
        догадки о форме кадра, о расстоянии и о том, повернулся ребёнок или нет.
        Теперь в записи стоит само число, с которым сравнивали порог, и рядом
-       форма кадра — второй подозреваемый по тем же журналам. */
+       форма кадра — второй подозреваемый по тем же журналам.
+
+       `sLo`/`sHi` — то же самое для причины `scale`, и по тому же журналу:
+       9 октября восемь таких пауз разбирались вручную, доставанием `S0` из
+       другого события и умножением на коэффициент. Теперь это и вовсе не
+       сошлось бы — у потолка появился пол, одним умножением он не выводится.
+       Полоса спрашивается у трекера в момент паузы, а не едет в каждой
+       записи. */
+    const [sLo, sHi] = tracker.scaleBand?.() ?? [null, null];
     log.event('pause', {
       why: rec.why, vis: round(rec.vis ?? 0), S: round(rec.S ?? 0),
       cx: round(rec.cx ?? 0), lostMs: Math.round(rec.lostMs ?? 0),
       ratio: rec.shoulderRatio != null ? round(rec.shoulderRatio) : null,
       shW: rec.shoulderWidth != null ? round(rec.shoulderWidth) : null,
+      sLo: sLo != null ? round(sLo) : null,
+      sHi: sHi != null ? round(sHi) : null,
       aspect: round(aspect, 2),
     });
     // Две секунды отсчётов вокруг происшествия — одним событием. Именно по ним

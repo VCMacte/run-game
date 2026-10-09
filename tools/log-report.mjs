@@ -217,6 +217,7 @@ export function report(session) {
   const pauses = {
     episodes: 0, totalS: 0, inRunS: 0, pctOfRun: null, byWhy: {}, unclosed: 0,
     profileRatio: { lo: null, hi: null },
+    scaleBand: { sLo: null, sHi: null, lo: null, hi: null },
   };
 
   /* Пауза кончается ПЕРВЫМ из: `resume`, следующей паузы, начала или обрыва
@@ -251,6 +252,18 @@ export function report(session) {
         const r = pauses.profileRatio;
         r.lo = r.lo === null ? e.ratio : Math.min(r.lo, e.ratio);
         r.hi = r.hi === null ? e.ratio : Math.max(r.hi, e.ratio);
+      }
+      /* То же для `scale`: длина торса и та полоса, с которой её сравнили.
+         9 октября восемь таких пауз пришлось разбирать вручную — доставать
+         `S0` из `calib.done` и домножать на коэффициент; с полом у потолка так
+         уже не выйдет вовсе. Торс копится полосой, границы — крайними: они за
+         забег не меняются, но у разных забегов сессии разные. */
+      if (why === 'scale' && typeof e.S === 'number') {
+        const b = pauses.scaleBand;
+        b.lo = b.lo === null ? e.S : Math.min(b.lo, e.S);
+        b.hi = b.hi === null ? e.S : Math.max(b.hi, e.S);
+        if (typeof e.sLo === 'number') b.sLo = e.sLo;
+        if (typeof e.sHi === 'number') b.sHi = e.sHi;
       }
     } else if (open && e?.type === 'resume') {
       closeAt(open, e.t, true);
@@ -464,6 +477,17 @@ export function format(rep) {
     if (rr.lo !== null) {
       L.push(`          плечи к торсу у «profile»: ${чис(rr.lo)}–${чис(rr.hi)}`
         + ' при пороге 0.45 и физически верных 0.86');
+    }
+    /* Торс и полоса присутствия у пауз «scale». Без полосы паузу не разобрать:
+       потолок относительный (S0 × scaleRelMax, но не ниже scaleCeilMin), и из
+       одной длины торса не видно, близко игрок подошёл или калибровка намерила
+       его короче, чем он есть. Ровно так и вышло 9 октября. */
+    const sb = rep.pauses.scaleBand;
+    if (sb.lo !== null) {
+      const полоса = sb.sLo !== null && sb.sHi !== null
+        ? ` при полосе ${чис(sb.sLo)}–${чис(sb.sHi)}`
+        : ' (полосы в журнале нет: сборка до sLo/sHi)';
+      L.push(`          торс у «scale»: ${чис(sb.lo)}–${чис(sb.hi)}${полоса}`);
     }
     /* Незакрытая пауза считана до конца журнала, и это НЕ время, проведённое
        в паузе посреди игры: сеанс просто кончился на ней. Без этой оговорки

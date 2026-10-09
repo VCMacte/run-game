@@ -113,9 +113,10 @@ export function panSpanOf(cal) {
    Раньше она лежала одной записью на устройство, и взрослый с ребёнком
    затирали её друг другу: тот, кто играл вторым, проходил двадцать секунд
    калибровки заново при каждом забеге. Угадать по длине торса, кто перед
-   камерой, нельзя — у неё систематический разброс (0.53 на калибровке против
-   0.40 в забеге по журналу), и любой порог либо пропускает чужого, либо
-   отвергает своего. Поэтому хранилище спрашивает игрока: js/players.js.
+   камерой, нельзя — у неё разброс в ЛЮБУЮ сторону (0.53 на калибровке против
+   0.40 в забеге пятого октября, 0.20 против 0.37 девятого), и любой порог либо
+   пропускает чужого, либо отвергает своего. Поэтому хранилище спрашивает
+   игрока: js/players.js.
 
    Три функции остались на месте, потому что их зовут train.js и app.js, и им
    незачем знать, где именно она лежит. */
@@ -137,8 +138,9 @@ export function clear() {
 
    scale: допуск по длине торса. Прежние 25% не проходили ни разу — в журнале
    это видно прямо: calib.reuse reuse:false had:true stale:true. На калибровке
-   торс 0.53, в забеге 0.35–0.48, расхождение 26–46%, и причина не в шуме:
-   игрок возится у телефона, пока идёт установка, и отходит только к забегу.
+   торс 0.53, в забеге 0.35–0.48, расхождение 26–46%, и причина не в шуме: где
+   человек встал на пять секунд нейтрали, то и записалось — 9 октября это дало
+   перекос в другую сторону, 0.20 против 0.37.
    Кто перед камерой, теперь определяет выбранный профиль, а не размер тела,
    поэтому допуск можно сделать честно широким.
 
@@ -199,17 +201,61 @@ export function makeCalibration({ aspect = 1 } = {}) {
   let stage = 0;
   let since = null;
   let tries = 0;
-  const neutral = { x: 0, shoulderY: 0, hipY: 0, S: 0, n: 0 };
+  /* Отсчёты стадии нейтрали целиком, а не суммой.
+
+     Суммой здесь стояло среднее, и оно впитывало ДОРОГУ. Стадия начинается
+     ровно в тот момент, когда игрок отходит от телефона, к которому только что
+     подходил нажать «Дальше»: в журнале 9 октября на стадии штатива торс
+     растёт 0.18 → 0.27 → 0.33 → 0.46 → 0.60, и сразу за этим идёт нейтраль.
+
+     Что этим починено — `neutralX`: он идёт в воротца «вернись в середину»
+     (допуск 0.20 длины торса) и в геометрию цели на экране, и запаса у него
+     нет. Смаз 0.03 при торсе 0.30 — это 0.10 в длинах торса, половина
+     допуска. Отсюда «зоны сместились» и перекос размаха left 2.1 / right 0.68.
+
+     Чего этим НЕ починено — непроходимый забег 9 октября. У потолка
+     присутствия запас почти двукратный (S0 × 1.80), и разницу между средним и
+     медианой он проглатывает; в том журнале выборка была однородной — игрок
+     всю нейтраль стоял дальше, чем потом играл, — и медиана равна среднему.
+     Забег вытащил пол потолка (SIGNALS.scaleCeilMin). Разделение закреплено
+     проверкой в группе «нейтраль мерится стоянием», а не этим комментарием.
+
+     Медиане дорога безразлична, пока игрок простоял больше половины стадии:
+     всё пройденное уезжает в хвост выборки. Порога «идёт / стоит» при этом не
+     появляется, и это намеренно — его пришлось бы подбирать под шум
+     распознавания, а тот, кто своё простоял, рисковал бы остаться вообще без
+     нейтрали. Цена медианы — сотня чисел в массиве за стадию. */
+  const neutral = { x: [], shoulderY: [], hipY: [], S: [] };
   // `center` — ближайшее к нейтрали, что ребёнок показал на воротцах, поэтому
   // он копится минимумом, а размахи — максимумом.
   let best = { left: 0, right: 0, crouch: 0, center: Infinity };
   let result = null;
 
-  const mean = () => ({
-    neutralX: neutral.x / neutral.n,
-    neutralShoulderY: neutral.shoulderY / neutral.n,
-    neutralHipY: neutral.hipY / neutral.n,
-    S0: neutral.S / neutral.n,
+  /* Середина выборки. Пустой её не бывает: единственный путь, на котором
+     standing() вызывается, лежит за накоплением хотя бы одного отсчёта стадии
+     нейтрали — она копит ДО проверки времени и до любого выхода. */
+  const median = (xs) => {
+    const s = [...xs].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  /* Считается один раз на выборку, а не каждый кадр.
+
+     Прежнее среднее было суммой, то есть O(1), и его можно было звать сколько
+     угодно. Медиана сортирует, а зовут её из targetFor() — на КАЖДОМ кадре
+     каждой боковой стадии, по четыре массива в сотни отсчётов. В проекте, где
+     узкое место и есть бюджет кадра, такую замену делать нельзя: кэш здесь не
+     оптимизация, а условие, при котором медиана допустима вообще.
+
+     Выборка меняется ровно в двух местах — накопление на стадии нейтрали и
+     перевод единиц в setAspect, — и оба сбрасывают кэш. */
+  let standingCache = null;
+  const standing = () => (standingCache ||= {
+    neutralX: median(neutral.x),
+    neutralShoulderY: median(neutral.shoulderY),
+    neutralHipY: median(neutral.hipY),
+    S0: median(neutral.S),
   });
 
   /* Какую долю показанного размаха брать за порог.
@@ -226,7 +272,7 @@ export function makeCalibration({ aspect = 1 } = {}) {
   const FRACTION = 0.35;
 
   function finish() {
-    const base = mean();
+    const base = standing();
     const span = Math.min(best.left, best.right);
     const uEnter = clamp(span * FRACTION, ...CLAMP.u);
     const vEnter = clamp(best.crouch * FRACTION, ...CLAMP.v);
@@ -250,7 +296,7 @@ export function makeCalibration({ aspect = 1 } = {}) {
 
   /** Выполнено ли то, о чём просила стадия. */
   function reached(st) {
-    if (st.id === 'neutral') return neutral.n >= 20;
+    if (st.id === 'neutral') return neutral.S.length >= 20;
     if (st.id === 'crouch') return best.crouch >= MIN_EXCURSION.v;
     // Воротца — единственное место, где сравнение обратное: надо подойти
     // ближе порога, а не уйти дальше.
@@ -289,7 +335,7 @@ export function makeCalibration({ aspect = 1 } = {}) {
       // том, «влезает ли ребёнок в кадр», быть не должно.
       return { kind: 'stand', fill: grown, fit: !!g && framing(null, g).ok, reached: reached(st) };
     }
-    const base = mean();
+    const base = standing();
     if (st.id === 'crouch') {
       return {
         kind: 'crouch', fill: grown,
@@ -332,7 +378,8 @@ export function makeCalibration({ aspect = 1 } = {}) {
       if (!(a > 0) || a === frameAspectRatio) return;
       const k = a / frameAspectRatio;
       frameAspectRatio = a;
-      neutral.x *= k;
+      neutral.x = neutral.x.map((v) => v * k);
+      standingCache = null;
       best.left *= k;
       best.right *= k;
       if (Number.isFinite(best.center)) best.center *= k;
@@ -358,10 +405,11 @@ export function makeCalibration({ aspect = 1 } = {}) {
       const hold = t - since;
 
       if (st.id === 'neutral') {
-        neutral.x += g.cxh; neutral.shoulderY += g.shoulderY;
-        neutral.hipY += g.hipY; neutral.S += g.S; neutral.n++;
+        neutral.x.push(g.cxh); neutral.shoulderY.push(g.shoulderY);
+        neutral.hipY.push(g.hipY); neutral.S.push(g.S);
+        standingCache = null;
       } else {
-        const base = mean();
+        const base = standing();
         if (st.id === 'crouch') {
           best.crouch = Math.max(best.crouch, (g.shoulderY - base.neutralShoulderY) / g.S);
         } else {
