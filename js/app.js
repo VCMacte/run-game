@@ -712,7 +712,11 @@ async function startTraining() {
     const { checkVendor } = await import('./vendor.js');
     const v = await checkVendor();
     log.event('offline.check', {
-      ok: v.ok, skipped: v.skipped || null, cache: v.cache || null,
+      /* `caches`, а не `cache`: проверка перестала выбирать кэш по имени и
+         смотрит все сразу, а имя поля осталось прежним — и в журнал
+         записывался `null` при каждом запуске. Ровно та строка, которая нужна
+         теперь, когда кэша два и разбирается гипотеза про вытеснение. */
+      ok: v.ok, skipped: v.skipped || null, caches: v.caches || null,
       missing: v.missing || [],
     });
     if (!v.ok) {
