@@ -11,7 +11,7 @@
 import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, makeDecor, canReach } from './view.js';
-import { MOTION } from './theme.js';
+import { MOTION, ZONES, zoneAt } from './theme.js';
 import {
   makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
   forReuse,
@@ -95,6 +95,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let flash = 0;
   let decor = [];
   let lastSpeed = 0;   // боковая скорость; по ней бадники решают, икать ли
+  // Последняя зона — только чтобы не писать в журнал одно и то же каждый кадр.
+  let lastZone = null;
   let durationS = 240;
   let result = null;
   let lastFrame = 0;
@@ -488,10 +490,24 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
        Различить их может только замер, а не рассуждение, поэтому следующий
        журнал будет содержать оба числа рядом. */
     const drawStart = performance.now();
+    /* Зона кадра. Решает её дирижёр, а не вид: вид не знает ни длины забега, ни
+       стадии. Считается каждый кадр и ничего не стоит — `zoneAt` это деление и
+       округление, — зато состояния здесь нет вовсе, как у всех анимаций
+       проекта: при просадках кадра накопительное расписание разошлось бы с
+       картинкой.
+
+       На стадиях до забега зона всегда первая: установка штатива и калибровка
+       идут в понятных цветах, а не в тех, до которых ребёнок ещё не добежал. */
+    const zone = stage === 'free' ? zoneAt(elapsed, durationS) : ZONES[0];
+    if (zone !== lastZone) {
+      lastZone = zone;
+      log.event('zone', { zone, at: round(elapsed, 1) });
+    }
+
     view.render({
       decor,
       speed: lastSpeed,
-      u, v, travel, stars, obstacles, elapsed,
+      u, v, travel, stars, obstacles, elapsed, zone,
       finishIn: stage === 'free' ? durationS - elapsed : null,
       safe: lastSafe,
       pulse: (now / 220) % 2 < 1 ? 1 : 0,

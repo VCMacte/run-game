@@ -19,7 +19,7 @@
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
-import { THEME, DECOR, MOTION, motionScale, rgba } from './theme.js';
+import { THEME, DECOR, MOTION, ZONES, zoneAt, motionScale, rgba } from './theme.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
 const WALL = 2.6;         // высота стен
@@ -50,11 +50,21 @@ const FOV = 75 * Math.PI / 180;
 /* Палитра переехала в js/theme.js: там она проверяется по светлоте, и там же
    объяснено, почему проём почти белый, а облака подсинённые.
 
-   Тема выбрана на уровне модуля, а не передаётся параметром. Второй темы не
-   существует, и протаскивать её через восемь функций отрисовки ради будущей —
-   та самая работа впрок, которой в этом проекте не делают. Выигрыш уже
-   получен: цвета лежат в одном файле данных и проверяются машинно. */
-const COLORS = THEME.greenHill;
+   Здесь стояло `const COLORS = THEME.greenHill` с объяснением, что второй темы
+   не существует и протаскивать её через восемь функций отрисовки ради будущей
+   не надо. Теперь зон три, и посылка того объяснения кончилась — но вывод
+   остался верным: тема по-прежнему НЕ протаскивается через функции. Вместо
+   этого зона приходит полем кадра и защёлкивается на этот кадр в одной
+   переменной.
+
+   Почему так, а не параметром: функций отрисовки десять плюс две вложенные, и
+   у каждой свой набор аргументов. Лишний параметр в каждой — двенадцать мест,
+   где его однажды забудут передать, и забытый даст `undefined` в fillStyle, на
+   что Canvas молча оставляет прежний цвет. Одна переменная на кадр такого
+   класса ошибок не создаёт вовсе.
+
+   `let`, а не `const`, и меняется ровно в одном месте — в начале render(). */
+let COLORS = THEME.greenHill;
 
 
 /* Границы коридора наружу. Декорации и их проверки обязаны брать эти числа
@@ -145,7 +155,15 @@ export function createView(canvas, { backdrop = null } = {}) {
      */
     render({ u = 0, v = 0, travel = 0, stars = [], dim = 0, obstacles = [],
              elapsed = 0, safe = true, pulse = 0, finishIn = null, decor = [],
-             speed = 0 }) {
+             speed = 0, zone = ZONES[0] }) {
+      /* Палитра кадра. Приходит ПОЛЕМ, а решает её train.js — там же, где
+         живут стадии, пауза и отсчёт: вид остаётся глупым, и это то же
+         разделение, по которому вид не знает ни про камеру, ни про калибровку.
+
+         Неизвестная зона не обнуляет палитру, а оставляет прежнюю: лучше
+         нарисовать кадр в цветах соседней зоны, чем в `undefined`. */
+      COLORS = THEME[zone] || COLORS;
+
       const cam = camera(u, v);
 
       const far = VIEW.fogDistance;
@@ -539,13 +557,18 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
     const base = d.y;                        // кромка обрыва
     const top = base + d.h;
     const sway = palmSway(elapsed, d.phase, mscale);
+    /* Цвета — ЗОНЫ ЭЛЕМЕНТА, а не кадра. На границе зон обочина следующей уже
+       видна (декорации рисуются на 22 метра вперёд), и в палитре предыдущей
+       она выглядела бы ошибкой. Запасной вариант — палитра кадра: у записи от
+       прошлой версии поля `zone` нет. */
+    const C = THEME[d.zone] || COLORS;
 
     if (d.kind === 'palm') {
       const w = 0.09;
       quad(
         project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
         project(d.x + w + sway, top, z, cam), project(d.x - w + sway, top, z, cam),
-        COLORS.palmTrunk,
+        C.palmTrunk,
       );
       /* Крона: два боковых пера и одно вверх. Средним пером тут был тот же
          цикл по [-1, 0, 1], и при нуле все четыре угла схлопывались в одну
@@ -557,30 +580,30 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
         quad(
           project(cx, top - 0.1, z, cam), project(cx + dir * 0.52, top + 0.1, z, cam),
           project(cx + dir * 0.58, top + 0.28, z, cam), project(cx, top + 0.22, z, cam),
-          COLORS.palmLeaf,
+          C.palmLeaf,
         );
       }
       quad(
         project(cx - 0.12, top - 0.05, z, cam), project(cx + 0.12, top - 0.05, z, cam),
         project(cx + 0.16, top + 0.34, z, cam), project(cx - 0.16, top + 0.34, z, cam),
-        COLORS.palmLeaf,
+        C.palmLeaf,
       );
     } else if (d.kind === 'bush') {
       quad(
         project(d.x - 0.34, base, z, cam), project(d.x + 0.34, base, z, cam),
         project(d.x + 0.26, top, z, cam), project(d.x - 0.26, top, z, cam),
-        COLORS.palmLeaf,
+        C.palmLeaf,
       );
       quad(
         project(d.x - 0.18, top - 0.08, z, cam), project(d.x + 0.18, top - 0.08, z, cam),
         project(d.x + 0.12, top + 0.12, z, cam), project(d.x - 0.12, top + 0.12, z, cam),
-        COLORS.grass,
+        C.grass,
       );
     } else if (d.kind === 'flower') {
       quad(
         project(d.x - 0.03, base, z, cam), project(d.x + 0.03, base, z, cam),
         project(d.x + 0.03, top, z, cam), project(d.x - 0.03, top, z, cam),
-        COLORS.grassDark,
+        C.grassDark,
       );
       /* Цветок поворачивается вслед проходящему. Поворот — функция близости, а
          не времени: он должен провожать именно того, кто бежит. */
@@ -588,8 +611,48 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
       quad(
         project(d.x - 0.14 + turn, top, z, cam), project(d.x + 0.14 + turn, top, z, cam),
         project(d.x + 0.14 + turn, top + 0.28, z, cam), project(d.x - 0.14 + turn, top + 0.28, z, cam),
-        COLORS.flower,
+        C.flower,
       );
+    } else if (d.kind === 'cactus') {
+      /* Кактус: ствол и две лапы. Три заливки — дешевле пальмы, у которой
+         четыре, то есть зона дюн кадр не утяжеляет. */
+      const w = 0.13;
+      quad(
+        project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
+        project(d.x + w, top, z, cam), project(d.x - w, top, z, cam),
+        C.cactus,
+      );
+      for (const dir of [-1, 1]) {
+        const y0 = base + d.h * (dir < 0 ? 0.42 : 0.58);
+        quad(
+          project(d.x + dir * w, y0, z, cam), project(d.x + dir * 0.34, y0, z, cam),
+          project(d.x + dir * 0.34, y0 + 0.42, z, cam), project(d.x + dir * w, y0 + 0.2, z, cam),
+          C.cactus,
+        );
+      }
+    } else if (d.kind === 'rock') {
+      // Камень: одна трапеция. Самая дешёвая форма в игре — одна заливка.
+      quad(
+        project(d.x - 0.3, base, z, cam), project(d.x + 0.3, base, z, cam),
+        project(d.x + 0.16, top, z, cam), project(d.x - 0.2, top, z, cam),
+        C.rock,
+      );
+    } else if (d.kind === 'spruce') {
+      /* Ель: ствол и два яруса. Ярусы треугольниками через четырёхугольник с
+         совпадающими верхними углами — тем же приёмом, что зубья на потолке. */
+      quad(
+        project(d.x - 0.06, base, z, cam), project(d.x + 0.06, base, z, cam),
+        project(d.x + 0.06, base + d.h * 0.3, z, cam), project(d.x - 0.06, base + d.h * 0.3, z, cam),
+        C.palmTrunk,
+      );
+      for (const [y0, w] of [[0.25, 0.42], [0.58, 0.3]]) {
+        const yb = base + d.h * y0;
+        quad(
+          project(d.x - w, yb, z, cam), project(d.x + w, yb, z, cam),
+          project(d.x, yb + d.h * 0.42, z, cam), project(d.x, yb + d.h * 0.42, z, cam),
+          C.spruce,
+        );
+      }
     } else if (d.kind === 'post') {
       /* Столб у обочины. Высокий и узкий, то есть почти целиком из пустых
          пикселей, — а мимо глаза проходит заметно. Ради этого и поставлен:
@@ -602,22 +665,22 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
       quad(
         project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
         project(d.x + w, top, z, cam), project(d.x - w, top, z, cam),
-        COLORS.post,
+        C.post,
       );
       // Поясок под верхушкой: по нему столб и опознаётся как метка, а не как
       // палка. Светлее тела, но мелкий — на светлоту кадра не влияет.
       quad(
         project(d.x - w * 1.6, top - 0.34, z, cam), project(d.x + w * 1.6, top - 0.34, z, cam),
         project(d.x + w * 1.6, top - 0.08, z, cam), project(d.x - w * 1.6, top - 0.08, z, cam),
-        COLORS.postMark,
+        C.postMark,
       );
-    } else {
+    } else if (d.kind === 'totem') {
       // Тотем. Подмигивает, когда проходишь вплотную — одна из четырёх шуток
       // уровня, и единственная, которую можно не заметить.
       quad(
         project(d.x - 0.22, base, z, cam), project(d.x + 0.22, base, z, cam),
         project(d.x + 0.22, top, z, cam), project(d.x - 0.22, top, z, cam),
-        COLORS.totem,
+        C.totem,
       );
       /* Порог 3.6 м, а не «вплотную». Декорации стоят за кромкой, на
          x = ±1.75, и ближе ~2.3 м тотем уже за краем кадра: шутка, которую
@@ -627,7 +690,7 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
       quad(
         project(d.x - 0.1, top - 0.3, z, cam), project(d.x + 0.1, top - 0.3, z, cam),
         project(d.x + 0.1, top - 0.3 + eyeH, z, cam), project(d.x - 0.1, top - 0.3 + eyeH, z, cam),
-        COLORS.badnikEye,
+        C.badnikEye,
       );
     }
   }
@@ -1052,23 +1115,35 @@ export function warnBlink(t, phase = 0, scale = 1) {
  * игровую полосу, не даёт очков. Проверяется группой «декорации».
  */
 export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
-  const total = DECOR.kinds.reduce((sum, k) => sum + k.weight, 0);
-  const pick = (r) => {
+  /* Виды берутся из ЗОНЫ, в которую элемент попадает по времени, а зона — из
+     той же `zoneAt`, по которой выбирается палитра кадра. Один источник: две
+     копии расписания разошлись бы, и кактус оказался бы в зелёной зоне. */
+  const pickFrom = (kinds, r) => {
+    const total = kinds.reduce((sum, k) => sum + k.weight, 0);
     let acc = 0;
-    for (const k of DECOR.kinds) {
+    for (const k of kinds) {
       acc += k.weight / total;
       if (r < acc) return k;
     }
-    return DECOR.kinds[DECOR.kinds.length - 1];
+    return kinds[kinds.length - 1];
   };
 
   const out = [];
   let t = DECOR.firstS;
   while (t < durationS) {
     const side = rng() < 0.5 ? -1 : 1;
-    const k = pick(rng());
+    const zone = zoneAt(t, durationS);
+    const k = pickFrom(THEME[zone].decor.kinds, rng());
     out.push({
       kind: k.kind,
+      /* Зона хранится у элемента, и рисуется он ЕЙ, а не палитрой кадра.
+
+         Иначе на границе зон пять секунд видно обочину следующей зоны в цветах
+         предыдущей: декорации видны до `far * 0.75`, то есть на 22 метра
+         вперёд. С полем всё наоборот и лучше — следующая зона видна
+         приближающейся, и это ровно то продвижение, ради которого зоны и
+         сделаны. */
+      zone,
       side,
       x: side * (HALF + DECOR.outM),
       y: WALL,                 // основание — ровно кромка обрыва

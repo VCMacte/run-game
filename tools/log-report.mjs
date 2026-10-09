@@ -373,6 +373,31 @@ export function report(session) {
       + 'собрано было больше');
   }
 
+  /* ── хранилище ──
+
+     Повод: игрок и рекорды сбрасывались между сеансами. Наш код их не чистит,
+     а хранилище, не помеченное постоянным, браузер вправе вытеснить целиком —
+     одним origin, вместе с офлайн-кэшем и localStorage. Приложение занимает
+     порядка 42 МБ, так что поводов у него достаточно.
+
+     Поэтому в журнал поехали три числа, и читать их надо вместе: вытесняемы ли
+     мы, сколько занято и какая это доля квоты. Череда сессий с
+     `persisted:false` и большой долей будет значить, что вытеснение и есть
+     причина; обратное — что причину надо искать не здесь. */
+  const storage = (() => {
+    const est = pick(log, 'storage').pop();
+    const state = pick(log, 'storage.state').pop();
+    const ask = pick(log, 'storage.persist').pop();
+    if (!est && !state && !ask) return null;
+    return {
+      persisted: typeof state?.persisted === 'boolean' ? state.persisted : null,
+      granted: typeof ask?.granted === 'boolean' ? ask.granted : null,
+      usageMb: est?.usageMb ?? null,
+      quotaMb: est?.quotaMb ?? null,
+      pct: est?.pct ?? null,
+    };
+  })();
+
   return {
     id: session?.id ?? null,
     startedAt: session?.startedAt ?? null,
@@ -383,6 +408,7 @@ export function report(session) {
     pose,
     perf,
     panSpan,
+    storage,
     run,
     runs,
     pauses,
@@ -410,6 +436,26 @@ export function format(rep) {
 
   L.push(`  делегат ${rep.pose.delegate ?? '—'} (${rep.pose.pipeline ?? '—'})`
     + `   прогрев p50 ${мс(rep.pose.warmupP50)}   init ${мс(rep.pose.initMs)}`);
+
+  /* Строка про хранилище печатается только когда поля есть: у журналов до этой
+     правки их нет, и «вытесняемое / 0 МБ» читалось бы как замеренный факт.
+
+     Слово выбрано осторожно: `persisted:false` значит не «вытеснено», а
+     «вправе вытеснить». Путать это нельзя — ровно на такой подмене разбор
+     однажды уже соврал, печатая просьбу «экран не гаснет» вместо того, что с
+     экраном случилось. */
+  if (rep.storage) {
+    const st = rep.storage;
+    const режим = st.persisted === true ? 'постоянное'
+      : st.persisted === false ? 'ВЫТЕСНЯЕМОЕ (рекорды браузер вправе удалить)'
+        : 'неизвестно';
+    const занято = st.usageMb == null ? ''
+      : `, занято ${st.usageMb} МБ` + (st.quotaMb ? ` из ${st.quotaMb}` : '')
+        + (st.pct == null ? '' : ` (${st.pct}%)`);
+    const просьба = st.granted === null ? ''
+      : st.granted ? ', просьбу удовлетворили' : ', в просьбе отказали';
+    L.push(`  хранилище: ${режим}${занято}${просьба}`);
+  }
 
   if (rep.perf.windows) {
     L.push(`  позы ${чис(rep.perf.hz.med)} Гц (цель 20)   кадры ${чис(rep.perf.fps.med)} fps`
