@@ -51,6 +51,11 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
      которой всё делалось, внутри такой полосы не видна вовсе. */
   const lastLook = {};
   const sameLook = {};
+  /* Длина серии и сколько в ней осталось. Волна — это форма забега, и она
+     живёт здесь, в расписании, а не в отрисовке: расписание строится один раз
+     на забег и дальше только читается. */
+  const series = () => O.seriesMin + Math.floor(rng() * (O.seriesMax - O.seriesMin + 1));
+  let left = series();
 
   while (t < durationS) {
     // Вид препятствия. Присед реже бокового: он утомительнее, и ребёнок
@@ -86,9 +91,28 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
       verdictAt: null,             // окно прощения опоздания
     });
 
-    // Разброс интервала, но не ниже минимума: равные промежутки превращают
-    // забег в метроном, а короче минимума два телеграфа накладываются.
-    t += O.minGapS + rng() * 2.5;
+    /* Шаг — по фразе, а не бросок на каждое препятствие.
+
+       Внутри серии идём по самому полу (`minGapS` плюс мелкий джиттер), на
+       конце серии — передышка. Ниже пола не опускаемся никогда: там два
+       телеграфа накладываются и теряются оба. Разбор — в OBSTACLES конфига.
+
+       Остаток забега учитывается: если до конца меньше передышки, серия
+       продолжается. Иначе короткий забег кончился бы пустой передышкой, а
+       отладочный на двадцать секунд остался бы вовсе без препятствий. */
+    left--;
+    if (left > 0) {
+      t += O.minGapS + rng() * O.seriesJitterS;
+    } else {
+      const breather = O.breatherS + rng() * O.breatherJitterS;
+      if (durationS - t > breather + O.minGapS) {
+        t += breather;
+        left = series();
+      } else {
+        t += O.minGapS + rng() * O.seriesJitterS;
+        left = 1;
+      }
+    }
   }
   return out;
 }

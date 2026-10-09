@@ -1,3 +1,3 @@
 // Генерируется tools/make-sw.mjs вместе с номером кэша. Руками не править.
-export const VERSION = 'run-v94';
-export const BUILT_AT = '2026-10-09 18:46';
+export const VERSION = 'run-v95';
+export const BUILT_AT = '2026-10-09 19:17';

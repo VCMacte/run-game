@@ -54,7 +54,13 @@ export function makeTally({ starsLost = 0 } = {}) {
     get collected() { return collected; },
     get score() { return score; },
     get hits() { return hits; },
-    star() { collected++; score++; },
+    /* Вес уходит в ОЧКИ, а собранное считается штуками.
+
+       Это не мелочь: `collected` идёт в «X из Y колец» на экране результата и
+       в рекорд, а знаменателем там `stars.length` — тоже штуки. Прибавь вес к
+       собранному, и строка начнёт говорить «102 из 100». Ровно этот класс
+       ошибки — один счётчик на два смысла — здесь уже случался. */
+    star(worth = 1) { collected++; score += worth; },
     hit() {
       hits++;
       // Ниже нуля счётчик в HUD опускаться не должен. Собранное зажимать
@@ -472,9 +478,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         if (z > 0 && z < 1.2 && canReach(s.x, u)) {
           s.taken = true;
           s.takenAtS = elapsed;
-          tally.star();
-          log.event('star', { side: Math.sign(s.x), u: round(u) });
-          audio.play('star');
+          tally.star(s.worth ?? 1);
+          log.event('star', { side: Math.sign(s.x), u: round(u), worth: s.worth ?? 1 });
+          // Три ноты вместо двух: мотивы различаются числом нот, см. audio.js.
+          audio.play(s.worth > 1 ? 'starBig' : 'star');
           hud();
         }
       }
