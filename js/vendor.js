@@ -28,8 +28,10 @@ import { isDev } from './util.js';
  * Сверять настоящий размер можно только прочитав тело, то есть распаковав
  * 17 МБ при каждом старте — ровно ту работу, которую офлайн-кэш и экономит.
  * А смысла в этом мало: `cache.addAll()` атомарен, частично закэшированного
- * комплекта из неудачной загрузки не бывает. Что бывает — выселение отдельных
- * записей браузером, и его ловит именно проверка наличия.
+ * комплекта из неудачной загрузки не бывает. Что бывает — во-первых, выселение
+ * отдельных записей браузером; во-вторых, с разделением кэшей, обрыв сети
+ * МЕЖДУ двумя addAll, когда код приложения уже лёг, а MediaPipe ещё нет. Оба
+ * случая ловит именно проверка наличия.
  *
  * Размеры в `VENDOR.files` остаются: по ним `tests-shell.mjs` сверяет файлы на
  * диске с объявленными, и там сжатие ни при чём.
@@ -40,17 +42,30 @@ export async function checkVendor() {
   if (isDev) return { ok: true, skipped: 'разработка' };
   if (!self.caches) return { ok: true, skipped: 'нет Cache API' };
 
-  const names = await caches.keys();
-  const name = names.find((k) => k.startsWith('run-v'));
-  if (!name) return { ok: true, skipped: 'кэш ещё не создан' };
+  /* Спрашиваем ВСЕ кэши сразу, а не выбираем нужный по имени.
 
-  const cache = await caches.open(name);
-  const missing = [];
-  for (const path of Object.keys(VENDOR.files)) {
-    if (!await cache.match(path)) missing.push(path);
+     Кэша теперь два — код приложения с номером сборки и MediaPipe с
+     отпечатком содержимого, — и выбор по имени здесь был бы третьим местом,
+     где это соответствие надо поддерживать. Хуже того, прежнее условие
+     `startsWith('run-v')` совпадает и с `run-vendor-…`: проверка молча
+     заглядывала бы то в один кэш, то в другой, в зависимости от порядка
+     создания. А вопрос у этой функции ровно один — «лежит ли файл офлайн», —
+     и `CacheStorage.match` отвечает на него сам, обходя все кэши.
+
+     Расхождение двух кэшей при этом по-прежнему ловится: addAll атомарна для
+     каждого, но сеть может кончиться между ними, и тогда код приложения есть,
+     а MediaPipe нет. Это и есть случай, ради которого функция написана. */
+  const names = await caches.keys();
+  if (!names.some((k) => k.startsWith('run-'))) {
+    return { ok: true, skipped: 'кэш ещё не создан' };
   }
 
-  return { ok: !missing.length, cache: name, missing };
+  const missing = [];
+  for (const path of Object.keys(VENDOR.files)) {
+    if (!await caches.match(path)) missing.push(path);
+  }
+
+  return { ok: !missing.length, caches: names, missing };
 }
 
 /**
