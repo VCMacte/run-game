@@ -121,13 +121,26 @@ export function report(session) {
 
   // ── итоги забега ──
   const finish = pick(log, 'run.finish').at(-1) ?? null;
-  const obstacles = { clear: 0, grace: 0, hit: 0, total: 0 };
+  const obstacles = { clear: 0, grace: 0, hit: 0, total: 0, byLook: {} };
   for (const e of pick(log, 'obstacle')) {
     const n = occurrences(e);
     obstacles.total += n;
     if (e.result === 'hit') obstacles.hit += n;
     else if (e.result === 'grace') obstacles.grace += n;
     else obstacles.clear += n;
+    /* Разбивка по ВНЕШНОСТИ препятствия, а не только по виду.
+
+       Внешность не меняет ни действия, ни приговора — но вполне может читаться
+       хуже: силуэт, который ребёнок не узнаёт, даст лишние задетые. Отличить
+       это от усталости можно только здесь, сравнив доли у двух внешностей
+       одного действия. У журналов до перекрасок поля нет, и тогда разбивки
+       просто не будет — это честнее, чем сваливать всё в «неизвестно». */
+    if (typeof e.look === 'string') {
+      const key = `${e.kind || '?'}/${e.look}`;
+      const b = obstacles.byLook[key] || (obstacles.byLook[key] = { total: 0, hit: 0 });
+      b.total += n;
+      if (e.result === 'hit') b.hit += n;
+    }
   }
 
   /* Нет `run.finish` — забег брошен, и считать его забегом с нулём колец
@@ -417,6 +430,7 @@ export function format(rep) {
 
   if (rep.run) {
     const o = rep.run.obstacles;
+    const looks = Object.entries(o.byLook || {});
     /* Нет `starsTotal` — журнал снят со сборки, которая его не писала, и доли
        не существует. Печатать «null%» значит предлагать принять это за число. */
     L.push(`  забег ${rep.run.durationS} с: ${rep.run.stars} колец`
@@ -432,6 +446,16 @@ export function format(rep) {
     if (o.total) {
       L.push(`  препятствия: ${o.total} всего — чисто ${o.clear}, прощено ${o.grace}, `
         + `задето ${o.hit}   не задето ${rep.run.cleanPct}%`);
+      /* Разбивка по внешности. Печатается только когда поле в журнале есть:
+         перекраски появились позже журналов, и «неизвестно/0» выглядело бы как
+         замеренный ноль. Сравнивать надо две внешности ОДНОГО действия: если у
+         одной задето заметно больше, значит силуэт читается хуже, и чинить надо
+         картинку, а не телеграф. */
+      if (looks.length) {
+        L.push('          по внешности: ' + looks
+          .map(([k, b]) => `${k} ${b.total - b.hit}/${b.total}`)
+          .join(' · '));
+      }
     } else {
       L.push(`  препятствий в журнале нет (задето по run.finish: ${rep.run.hits})`);
     }

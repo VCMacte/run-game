@@ -539,7 +539,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       if (!ob.announced && phase.signal) {
         ob.announced = true;
         audio.play(audio.motifFor(ob));
-        log.event('telegraph', { kind: ob.kind, side: ob.side, at: round(ob.at, 1) });
+        /* `look` в журнале — не для полноты. Перекраска не меняет ни действия,
+         ни приговора, но вполне может читаться хуже: силуэт, который ребёнок
+         не узнаёт, даст лишние задетые препятствия, и отличить это от усталости
+         можно будет только по журналу. Поэтому вид едет рядом с видом задачи. */
+      log.event('telegraph', { kind: ob.kind, look: ob.look ?? null, side: ob.side, at: round(ob.at, 1) });
       }
 
       // Пока препятствие в последней секунде, его состояние правит подсветку.
@@ -560,7 +564,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       if (safe) {
         ob.passed = true;
         audio.play('clear');
-        log.event('obstacle', { kind: ob.kind, side: ob.side, result: 'clear', camX: round(camX) });
+        log.event('obstacle', { kind: ob.kind, look: ob.look ?? null, side: ob.side, result: 'clear', camX: round(camX) });
       } else if (ob.verdictAt === null) {
         ob.verdictAt = now + O.lateForgiveMs;
       } else if (now >= ob.verdictAt) {
@@ -577,7 +581,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           hud();
         }
         log.event('obstacle', {
-          kind: ob.kind, side: ob.side,
+          kind: ob.kind, look: ob.look ?? null, side: ob.side,
           result: counted ? 'hit' : 'grace',
           camX: round(camX), crouch: crouching,
         });

@@ -12,7 +12,7 @@ import { SIGNALS as S, VIEW } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition, coverFit } from './js/preview.js';
-import { makeLevel, telegraph, isSafe } from './js/level.js';
+import { makeLevel, telegraph, isSafe, LOOKS } from './js/level.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
@@ -1244,6 +1244,120 @@ group('телеграф', () => {
     `исчезает за ${(O.drawNearM / VIEW.speed).toFixed(2)} с, окно ${forgiveS} с`);
   check('и не слишком рано', O.drawNearM / VIEW.speed < 1.0,
     'иначе препятствие пропадает, когда решение ещё не принято');
+});
+
+/* ───────────── перекраска не достаёт до игры ─────────────
+
+   Препятствий два вида по ДЕЙСТВИЮ — шаг в сторону и присед, — и больше их не
+   станет: у ребёнка ровно две оси управления. А вот внешностей теперь по две
+   на каждое: `beam`/`ceiling` у приседа, `plate`/`gate` у бокового. Пять минут
+   одного и того же силуэта приедаются, и это единственное, что перекраска
+   лечит.
+
+   Вся группа проверяет одно: что `look` не значит НИЧЕГО. Перекраска,
+   дотянувшаяся до приговора, дала бы препятствие, которое выглядит как одно, а
+   судится как другое, — дефект, невидимый на глаз и видимый только ребёнку,
+   который не понял, почему проиграл. Поэтому проверяется не «нарисовалось
+   красиво», а что приговор, метка телеграфа и звук от вида не зависят. */
+group('перекраска не достаёт до игры', () => {
+  const edge = obstacleEdge();
+
+  // Приговор. Перебираются все внешности против всех положений тела.
+  for (const kind of Object.keys(LOOKS)) {
+    for (const side of kind === 'duck' ? [0] : [-1, 1]) {
+      const verdicts = LOOKS[kind].map((look) => {
+        const ob = { at: 10, kind, look, side };
+        return [-1, -edge - 0.01, 0, edge + 0.01, 1]
+          .flatMap((camX) => [true, false].map((crouching) => isSafe(ob, { camX, crouching })))
+          .join(',');
+      });
+      check(`приговор у ${kind} одинаков при любой внешности`,
+        new Set(verdicts).size === 1,
+        LOOKS[kind].map((l, i) => `${l}: ${verdicts[i]}`).join(' | '));
+    }
+  }
+
+  // Звук. Мотив сообщает, ЧТО делать, и перекраска не вправе его менять:
+  // мотивы различаются числом нот, и новый мотив означал бы новое действие.
+  for (const kind of Object.keys(LOOKS)) {
+    const motifs = LOOKS[kind].map((look) => motifFor({ at: 10, kind, look, side: 1 }));
+    check(`мотив у ${kind} одинаков при любой внешности`,
+      new Set(motifs).size === 1, motifs.join(' / '));
+  }
+
+  // Расписание телеграфа — тоже по действию, а не по внешности.
+  for (const kind of Object.keys(LOOKS)) {
+    const plans = LOOKS[kind].map((look) => JSON.stringify(telegraph({ at: 10, kind, look, side: 1 }, 6)));
+    check(`телеграф у ${kind} одинаков при любой внешности`, new Set(plans).size === 1);
+  }
+
+  /* Зубья висят ВНУТРИ щели, в которую ребёнок проходит приседая. Приговор от
+     их длины не зависит (присед судится флагом), но ребёнок видит картинку, а
+     не приговор: длинные зубья учили бы приседать глубже, чем просят. */
+  check('зубья не съедают щель для приседа', O.teethM < O.duckHeight * 0.25,
+    `зубья ${O.teethM} при щели ${O.duckHeight}`);
+
+  // Генератор: внешности из таблицы, обе встречаются, полос нет.
+  const level = makeLevel({ durationS: 300, rng: seeded(11) });
+  check('внешность есть у каждого препятствия', level.every((o) => typeof o.look === 'string'));
+  check('внешности только из таблицы',
+    level.every((o) => LOOKS[o.kind].includes(o.look)),
+    [...new Set(level.map((o) => `${o.kind}/${o.look}`))].join(', '));
+  for (const kind of Object.keys(LOOKS)) {
+    const seen = new Set(level.filter((o) => o.kind === kind).map((o) => o.look));
+    check(`у ${kind} за забег встречаются обе внешности`, seen.size === 2,
+      [...seen].join(', ') || '(ни одного препятствия этого вида)');
+  }
+
+  /* Подряд не больше двух одинаковых. Чистая случайность даёт полосы по
+     пять-шесть штук, и перекраска внутри такой полосы не видна вовсе — то
+     есть не делает того единственного, ради чего сделана. */
+  let worstRun = 1;
+  let runLen = 1;
+  for (let i = 1; i < level.length; i++) {
+    const same = level[i].kind === level[i - 1].kind && level[i].look === level[i - 1].look;
+    runLen = same ? runLen + 1 : 1;
+    worstRun = Math.max(worstRun, runLen);
+  }
+  check('подряд не больше двух одинаковых препятствий', worstRun <= 2, `${worstRun} подряд`);
+
+  check('один посев даёт тот же набор внешностей',
+    JSON.stringify(makeLevel({ durationS: 300, rng: seeded(11) }).map((o) => o.look))
+    === JSON.stringify(level.map((o) => o.look)));
+
+  /* И наконец — что перекраска вообще РИСУЕТСЯ по-другому. Без этой проверки
+     все предыдущие выполнялись бы и у поля, которое никто не читает. */
+  function recorder() {
+    const fills = [];
+    let style = null;
+    const ctx = {
+      get fillStyle() { return style; },
+      set fillStyle(v) { style = v; },
+      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
+      fill() { fills.push(style); },
+      fillRect() { fills.push(style); },
+    };
+    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
+  }
+  const paint = (ob) => {
+    const { canvas, fills } = recorder();
+    createView(canvas).render({
+      u: 0, v: 0, travel: 0, elapsed: 10 - 1.5, obstacles: [ob], stars: [],
+    });
+    return fills;
+  };
+  const C = THEME.greenHill;
+  const teeth = (look) => paint({ at: 10, kind: 'duck', look, side: 0 })
+    .filter((f) => f === C.spike).length;
+  check('у внешности ceiling зубья есть', teeth('ceiling') > 0);
+  check('а у beam их нет', teeth('beam') === 0,
+    'иначе внешности не отличаются, и перекраска существует только в поле');
+
+  const sidePaint = (look) => paint({ at: 10, kind: 'side', look, side: 1 });
+  check('у внешности gate бадника нет', !sidePaint('gate').includes(C.badnik),
+    'живое существо рядом с механической створкой читается как два препятствия');
+  check('а у plate он есть', sidePaint('plate').includes(C.badnik));
 });
 
 group('уклонение', () => {
@@ -2745,6 +2859,28 @@ group('разбор журнала', () => {
     { t: 10000, type: 'pause', why: 'scale', vis: 1, S: 0.37, cx: 0.5, lostMs: 707 },
     { t: 60000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
   ]));
+  /* Разбивка задетых по ВНЕШНОСТИ препятствия. Перекраска не меняет ни
+     действия, ни приговора, но может читаться хуже — и отличить это от
+     усталости ребёнка можно только сравнив две внешности одного действия. */
+  const внешности = report(сессия([
+    { t: 0, type: 'run.start', durationS: 60, obstacles: 4, stars: 10 },
+    { t: 10000, type: 'obstacle', kind: 'side', look: 'plate', side: 1, result: 'clear' },
+    { t: 20000, type: 'obstacle', kind: 'side', look: 'gate', side: -1, result: 'hit' },
+    { t: 30000, type: 'obstacle', kind: 'side', look: 'gate', side: 1, result: 'hit' },
+    { t: 40000, type: 'obstacle', kind: 'duck', look: 'ceiling', side: 0, result: 'clear' },
+    { t: 60000, type: 'run.finish', stars: 8, score: 8, starsTotal: 10, hits: 2, durationS: 60 },
+  ]));
+  check('задетые разложены по внешностям',
+    внешности.run.obstacles.byLook['side/gate']?.hit === 2
+    && внешности.run.obstacles.byLook['side/plate']?.hit === 0,
+    JSON.stringify(внешности.run.obstacles.byLook));
+  check('и сводка печатает разбивку',
+    /по внешности:.*side\/gate 0\/2/.test(format(внешности)),
+    format(внешности).split(String.fromCharCode(10)).filter((l) => /внешности/.test(l)).join('') || '(строки нет)');
+  check('у журнала без внешностей разбивки нет',
+    !/по внешности/.test(format(близко)),
+    'перекраски появились позже журналов, и «неизвестно/0» читалось бы как замеренный ноль');
+
   check('у старого журнала отсутствие полосы названо вслух',
     /торс у «scale»: 0\.37–0\.37 \(полосы в журнале нет/.test(format(безПолосы)),
     format(безПолосы).split(String.fromCharCode(10)).filter((l) => /«scale»/.test(l)).join('') || '(строки нет)');
