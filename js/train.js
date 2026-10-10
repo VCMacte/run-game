@@ -11,7 +11,7 @@
 import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, makeDecor, canReach } from './view.js';
-import { MOTION, ZONES, zoneAt } from './theme.js';
+import { MOTION, ZONES, SKY_FILES, zoneAt } from './theme.js';
 import {
   makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
   forReuse,
@@ -80,10 +80,24 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
      Путь абсолютный, от модуля: относительный разрешался бы от того, кто
      вызывает, и на телефоне выяснилось бы, что он указывает не туда. */
-  const backdrop = new Image();
-  backdrop.src = new URL('../assets/sky.webp', import.meta.url).href;
+  /* Растры неба — по одному на зону.
 
-  const view = createView(canvas, { backdrop });
+     Заказчик: «смена цветового оформления во время забега работает хорошо, но
+     небо и дальний план остаются без изменений». Так и было: растр один, и
+     кладётся он во весь кадр, то есть из-под него цветов зоны не видно вовсе.
+
+     Грузятся все три сразу и молча: `onerror` не обрабатывается нарочно —
+     неподгрузившийся растр просто не станет `complete`, и `drawSky` уйдёт
+     запасным путём, который красится цветами своей зоны. Игра не имеет права
+     зависеть от арта, он собирается отдельным прогоном. */
+  const backdrops = {};
+  for (const [zone, file] of Object.entries(SKY_FILES)) {
+    const im = new Image();
+    im.src = new URL(`../assets/${file}`, import.meta.url).href;
+    backdrops[zone] = im;
+  }
+
+  const view = createView(canvas, { backdrops });
   let tracker = null;
   let source = null;
   let calibrator = null;

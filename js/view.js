@@ -78,6 +78,23 @@ const H = VIEW.height;
 const F = (W / 2) / Math.tan(FOV / 2);
 const HORIZON = H * 0.46;
 
+/* Докуда рисуются пол и обрывы. Это ДАЛЬНИЙ близнец NEAR_DRAW, и дефект у них
+   один.
+
+   Пол кончался на `fogDistance` (30 м), а горизонт — на бесконечности: между
+   дальним краем пола и горизонтом оставался клин чистого неба шириной ровно в
+   коридор на тридцати метрах (65 px) и высотой 33 px. Он был там при ЛЮБОМ
+   смещении, но в середине кадра читается как даль, а при крайнем уезжает вбок
+   от точки схода — и тогда виден как пустота сбоку от дальнего плана.
+   Заметил заказчик; найдено пересчётом пикселей в браузере.
+
+   Число не на глаз: дальний край пола отстоит от горизонта на `cam.y · F / z`
+   пикселей, и дальше этой глубины он тоньше пикселя. Глаза опускаются при
+   приседе, так что берётся самое высокое их положение (EYE) и запас в пятую
+   часть. Заливок это не добавляет ни одной: меняется дальняя кромка тех же
+   четырёхугольников. */
+const FAR_DRAW = EYE * F * 1.2;
+
 /**
  * Положение взгляда при таком состоянии тела.
  *
@@ -121,7 +138,22 @@ export function project(x, y, z, cam) {
 export const vanishX = (cam) => W / 2 + cam.yaw;
 export const horizonY = (cam) => HORIZON + cam.pitch;
 
-export function createView(canvas, { backdrop = null } = {}) {
+/**
+ * Вид коридора.
+ *
+ * `backdrops` — растры неба ПО ЗОНАМ, картой `{ зона: Image }`. Карта, а не
+ * одна картинка, потому что заказчик после забега 10 октября заметил: смена
+ * оформления по зонам работает, «но небо и дальний план остаются без
+ * изменений». Так и было по построению — растр кладётся во весь кадр, и
+ * цветов зоны из-под него не видно вовсе.
+ *
+ * Зона без растра рисуется запасным, векторным путём, и он уже красится
+ * цветами СВОЕЙ зоны. То есть недостающая картинка роняет качество фона, но
+ * не ломает ни зоны, ни игру — ровно как и задумано про `assets/sky.webp` с
+ * самого начала: арт собирается отдельным прогоном, и забег не имеет права от
+ * него зависеть.
+ */
+export function createView(canvas, { backdrops = null } = {}) {
   const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   canvas.width = VIEW.width;
   canvas.height = VIEW.height;
@@ -133,6 +165,13 @@ export function createView(canvas, { backdrop = null } = {}) {
   const reduced = typeof matchMedia === 'function'
     && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const mscale = motionScale(reduced);
+
+  /* Последняя ИЗВЕСТНАЯ зона. Неизвестная оставляет и палитру, и растр
+     прежними: лучше нарисовать кадр в цветах соседней зоны, чем половину его
+     в одних, а половину в других. Без этой памяти неизвестная зона оставляла
+     бы палитру, но роняла растр — то есть небо прыгало бы с картинки на
+     вектор, а всё остальное нет. */
+  let zoneNow = ZONES[0];
 
   function quad(p1, p2, p3, p4, fill) {
     ctx.fillStyle = fill;
@@ -162,7 +201,7 @@ export function createView(canvas, { backdrop = null } = {}) {
 
          Неизвестная зона не обнуляет палитру, а оставляет прежнюю: лучше
          нарисовать кадр в цветах соседней зоны, чем в `undefined`. */
-      COLORS = THEME[zone] || COLORS;
+      if (THEME[zone]) { COLORS = THEME[zone]; zoneNow = zone; }
 
       const cam = camera(u, v);
 
@@ -172,7 +211,7 @@ export function createView(canvas, { backdrop = null } = {}) {
       // В экранных координатах, а не через проекцию: они на бесконечности, и
       // проекция дала бы им нулевой размер. Параллакс здесь — разная скорость
       // слоёв, ровно как в комиксе того же автора.
-      drawSky(ctx, cam, travel, elapsed, backdrop, mscale);
+      drawSky(ctx, cam, travel, elapsed, backdrops?.[zoneNow] ?? null, mscale);
 
       // ── пол: шахматка ──
       drawFloor(ctx, cam, travel, { project, quad, far });
@@ -180,7 +219,7 @@ export function createView(canvas, { backdrop = null } = {}) {
       // ── обрывы вместо стен ──
       // Геометрия та же, что была у стен, и трогать её нельзя: параллакс
       // ближнего поля — единственная обратная связь управления в игре.
-      drawCliffs(cam, { project, quad, far });
+      drawCliffs(cam, { project, quad });
 
       // ── декорации над кромкой ──
       drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscale });
@@ -233,7 +272,16 @@ export function createView(canvas, { backdrop = null } = {}) {
        * просвечивает сквозь неё.
        */
       function drawStars(list, zFrom, zTo) {
-      for (const s of list) {
+      /* Обход с КОНЦА, то есть от дальнего кольца к ближнему.
+
+         Список идёт по возрастанию z, и прямой обход клал дальнее кольцо
+         поверх ближнего: его пятно на полу просвечивало сквозь ближний
+         предмет. Заметил заказчик. Разрез между проходами тут не помогает
+         вовсе — оба кольца лежат в одном проходе, и порядок внутри прохода
+         задаётся только этим циклом. Тот же дефект и та же починка, что у
+         пальмы поверх пальмы в `drawDecor`. */
+      for (let i = list.length - 1; i >= 0; i--) {
+        const s = list[i];
         const z = s.z - travel;
         if (z < NEAR || z > far) continue;
         if (z < zFrom || z >= zTo) continue;
@@ -241,6 +289,13 @@ export function createView(canvas, { backdrop = null } = {}) {
         // Большое кольцо и выглядит большим: иначе его ценность сообщал бы
         // только звук, то есть ребёнок узнавал бы о ней ПОСЛЕ сбора.
         const крупно = (s.worth ?? 1) > 1;
+        /* Цвет большого кольца — свой, и это теперь главное его отличие.
+           Размером отличать нечем: рим 0.256 м против окна сбора 0.26, запас
+           двенадцать миллиметров, и он уже выбран. Заказчик сказал об этом
+           прямо: «визуально не отличается, только другой звук», — то есть о
+           цене ребёнок узнавал ПОСЛЕ сбора. */
+        const colr = крупно ? COLORS.starBig : COLORS.star;
+        const colDim = крупно ? COLORS.starBigDim : COLORS.starDim;
         const r = Math.max(3, p.scale * VIEW.starDrawR * (крупно ? VIEW.bigStarScale : 1));
 
         // Собранное кольцо подпрыгивает и исчезает — короткой функцией от
@@ -290,8 +345,27 @@ export function createView(canvas, { backdrop = null } = {}) {
           ctx.closePath();
           ctx.fill();
         };
-        ring(w, r, COLORS.star);
-        if (w > 2.5) ring(w * 0.42, r * 0.42, COLORS.starDim);
+        /* Лучи у большого кольца. Цвета мало: цветность Miracast режет
+           сильнее светлоты, а форма переживает сжатие лучше всего. Четыре
+           коротких клина по диагоналям — и кольцо читается как награда уже на
+           подходе, а не в момент сбора.
+
+           Рисуются ДО кольца: это сияние за ним, а не накладка поверх. */
+        if (крупно) {
+          for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+            const bx = p.sx + dx * w * 0.5;
+            const by = cy + dy * r * 0.5;
+            ctx.fillStyle = colr;
+            ctx.beginPath();
+            ctx.moveTo(bx + dy * w * 0.18, by - dx * r * 0.18);
+            ctx.lineTo(bx - dy * w * 0.18, by + dx * r * 0.18);
+            ctx.lineTo(p.sx + dx * w * 1.25, cy + dy * r * 1.25);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+        ring(w, r, colr);
+        if (w > 2.5) ring(w * 0.42, r * 0.42, colDim);
       }
       }
 
@@ -450,8 +524,21 @@ function drawFloor(ctx, cam, travel, { project, quad, far }) {
   // начинаться где угодно — под ней уже закрашено.
   quad(
     project(-HALF, 0, NEAR_DRAW, cam), project(HALF, 0, NEAR_DRAW, cam),
-    project(HALF, 0, far, cam), project(-HALF, 0, far, cam),
+    project(HALF, 0, FAR_DRAW, cam), project(-HALF, 0, FAR_DRAW, cam),
     COLORS.floorB,
+  );
+
+  /* Хвост за дымкой — самой бледной полосой, а не самой тёмной.
+
+     Основа пола красится `floorB`, то есть цветом тёмной клетки шахматки, и
+     дотянутая до горизонта она дала бы у самого горизонта тёмную черту —
+     ровно там, где лестница светлоты обязана кончаться самым бледным.
+     Одна заливка на кадр, и она же закрывает тот клин, ради которого
+     FAR_DRAW и появился. */
+  quad(
+    project(-HALF, 0, far, cam), project(HALF, 0, far, cam),
+    project(HALF, 0, FAR_DRAW, cam), project(-HALF, 0, FAR_DRAW, cam),
+    COLORS.floorFar,
   );
 
   const zStart = Math.ceil((NEAR + travel) / step) * step - travel;
@@ -489,36 +576,72 @@ function drawFloor(ctx, cam, travel, { project, quad, far }) {
    взгляда разница подсказывает направление даже после сжатия, когда цвет уже
    размыт. Поверх — полоса травы по кромке и тёмная полоса глубже: именно они
    делают из стены обрыв. */
-function drawCliffs(cam, { project, quad, far }) {
+function drawCliffs(cam, { project, quad }) {
   // Все четыре полосы — от NEAR_DRAW, а не от NEAR: обрыв обязан доходить до
   // края кадра при любом смещении камеры, иначе сбоку видно небо.
   const cliff = (x, earth) => {
     quad(
       project(x, 0, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
-      project(x, WALL, far, cam), project(x, 0, far, cam),
+      project(x, WALL, FAR_DRAW, cam), project(x, 0, FAR_DRAW, cam),
       earth,
     );
     // Тёмная полоса у основания: глубина обрыва.
     quad(
       project(x, 0, NEAR_DRAW, cam), project(x, 0.5, NEAR_DRAW, cam),
-      project(x, 0.5, far, cam), project(x, 0, far, cam),
+      project(x, 0.5, FAR_DRAW, cam), project(x, 0, FAR_DRAW, cam),
       COLORS.earthDeep,
     );
     // Кромка травы. Две полосы — светлая сверху, тёмная под ней: один тон
     // после сжатия сливается с землёй.
     quad(
       project(x, WALL - 0.34, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
-      project(x, WALL, far, cam), project(x, WALL - 0.34, far, cam),
+      project(x, WALL, FAR_DRAW, cam), project(x, WALL - 0.34, FAR_DRAW, cam),
       COLORS.grassDark,
     );
     quad(
       project(x, WALL - 0.14, NEAR_DRAW, cam), project(x, WALL, NEAR_DRAW, cam),
-      project(x, WALL, far, cam), project(x, WALL - 0.14, far, cam),
+      project(x, WALL, FAR_DRAW, cam), project(x, WALL - 0.14, FAR_DRAW, cam),
       COLORS.grass,
     );
   };
   cliff(-HALF, COLORS.earthL);
   cliff(HALF, COLORS.earthR);
+}
+
+/**
+ * Ниже какой высоты точка обочины спрятана за обрывом.
+ *
+ * Декорации стоят ЗА плоскостью обрыва (`x = ±(HALF + out)`), а рисовались
+ * одним проходом после него — то есть не перекрывались им ни разу, и обочина
+ * висела поверх стены. Заметил заказчик.
+ *
+ * Перекрытие здесь выходит точным и почти бесплатным, и причина в самой
+ * проекции: `sy` не зависит от `x` вовсе. Значит кромка обрыва — линия
+ * (`x = ±HALF`, `y = WALL`) — проецируется в ПРЯМУЮ, проходящую через точку
+ * схода, и условие «точка за обрывом» сводится к неравенству, из которого
+ * глубина сокращается начисто:
+ *
+ *     видно  ⇔  y > cam.y + (WALL − cam.y) · |x − cam.x| / |side·HALF − cam.x|
+ *
+ * Поэтому ни `clip`, ни второго прохода обрыва не нужно: достаточно поднять
+ * каждую вершину декорации до этой высоты. Нижняя кромка фигуры при этом
+ * ложится ровно по линии перекрытия, а не по горизонтали, — то есть так, как
+ * её и обрезал бы обрыв.
+ *
+ * Три следствия, и все три проверены в группе «что чем перекрыто»: доля
+ * скрытого НЕ зависит от глубины; уход взгляда в сторону перекрывает свою
+ * обочину сильнее, а противоположную слабее; при нейтрали скрыто ровно
+ * `(WALL − EYE) / HALF × out` метра. Последнее и есть причина, по которой у
+ * низких видов обочины свой, меньший отступ от кромки: при общем 0.55 скрыто
+ * 0.64 м, и куст с цветком исчезли бы из игры целиком.
+ */
+export function decorYMask(x, cam, side) {
+  // Расстояние от глаза до плоскости обрыва по горизонтали. В ноль не
+  // обращается: ход камеры 0.72 м при полуширине коридора 1.2 — но делить на
+  // него всё равно нельзя без оговорки, а не с запасом «вроде хватает».
+  const a = Math.abs(side * HALF - cam.x);
+  if (a < 1e-6) return Infinity;
+  return cam.y + (WALL - cam.y) * Math.abs(x - cam.x) / a;
 }
 
 /* Декорации.
@@ -564,6 +687,17 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
 
     const base = d.y;                        // кромка обрыва
     const top = base + d.h;
+
+    /* Обрыв перекрывает низ декорации, и дальше вся фигура рисуется через
+       `pr`, а не через `project`: вершина ниже кромки поднимается до неё.
+       Разбор — у `decorYMask`. Считается маска по вершине, а не по фигуре:
+       перья пальмы разъезжаются на полметра, и у них своя высота кромки. */
+    const side = d.side || Math.sign(d.x) || 1;
+    // Целиком скрытая декорация не рисуется вовсе: вырожденные
+    // четырёхугольники нулевой площади — это заливки в пользу никому.
+    if (top <= decorYMask(d.x, cam, side)) continue;
+    const pr = (x, y, zz) => project(x, Math.max(y, decorYMask(x, cam, side)), zz, cam);
+
     const sway = palmSway(elapsed, d.phase, mscale);
     /* Цвета — ЗОНЫ ЭЛЕМЕНТА, а не кадра. На границе зон обочина следующей уже
        видна (декорации рисуются на 22 метра вперёд), и в палитре предыдущей
@@ -574,8 +708,8 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
     if (d.kind === 'palm') {
       const w = 0.09;
       quad(
-        project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
-        project(d.x + w + sway, top, z, cam), project(d.x - w + sway, top, z, cam),
+        pr(d.x - w, base, z), pr(d.x + w, base, z),
+        pr(d.x + w + sway, top, z), pr(d.x - w + sway, top, z),
         C.palmTrunk,
       );
       /* Крона: два боковых пера и одно вверх. Средним пером тут был тот же
@@ -586,39 +720,57 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
       const cx = d.x + sway;
       for (const dir of [-1, 1]) {
         quad(
-          project(cx, top - 0.1, z, cam), project(cx + dir * 0.52, top + 0.1, z, cam),
-          project(cx + dir * 0.58, top + 0.28, z, cam), project(cx, top + 0.22, z, cam),
+          pr(cx, top - 0.1, z), pr(cx + dir * 0.52, top + 0.1, z),
+          pr(cx + dir * 0.58, top + 0.28, z), pr(cx, top + 0.22, z),
           C.palmLeaf,
         );
       }
       quad(
-        project(cx - 0.12, top - 0.05, z, cam), project(cx + 0.12, top - 0.05, z, cam),
-        project(cx + 0.16, top + 0.34, z, cam), project(cx - 0.16, top + 0.34, z, cam),
+        pr(cx - 0.12, top - 0.05, z), pr(cx + 0.12, top - 0.05, z),
+        pr(cx + 0.16, top + 0.34, z), pr(cx - 0.16, top + 0.34, z),
         C.palmLeaf,
       );
     } else if (d.kind === 'bush') {
       quad(
-        project(d.x - 0.34, base, z, cam), project(d.x + 0.34, base, z, cam),
-        project(d.x + 0.26, top, z, cam), project(d.x - 0.26, top, z, cam),
+        pr(d.x - 0.34, base, z), pr(d.x + 0.34, base, z),
+        pr(d.x + 0.26, top, z), pr(d.x - 0.26, top, z),
         C.palmLeaf,
       );
       quad(
-        project(d.x - 0.18, top - 0.08, z, cam), project(d.x + 0.18, top - 0.08, z, cam),
-        project(d.x + 0.12, top + 0.12, z, cam), project(d.x - 0.12, top + 0.12, z, cam),
+        pr(d.x - 0.18, top - 0.08, z), pr(d.x + 0.18, top - 0.08, z),
+        pr(d.x + 0.12, top + 0.12, z), pr(d.x - 0.12, top + 0.12, z),
         C.grass,
       );
     } else if (d.kind === 'flower') {
       quad(
-        project(d.x - 0.03, base, z, cam), project(d.x + 0.03, base, z, cam),
-        project(d.x + 0.03, top, z, cam), project(d.x - 0.03, top, z, cam),
+        pr(d.x - 0.03, base, z), pr(d.x + 0.03, base, z),
+        pr(d.x + 0.03, top, z), pr(d.x - 0.03, top, z),
         C.grassDark,
       );
       /* Цветок поворачивается вслед проходящему. Поворот — функция близости, а
          не времени: он должен провожать именно того, кто бежит. */
       const turn = clamp(1 - z / 6, 0, 1) * MOTION.flowerTurnM * mscale * -Math.sign(d.x);
+
+      /* Поворот упирается в край коридора, а не проходит сквозь него.
+
+         Цветок — самый низкий вид обочины, и отступ от кромки у него самый
+         маленький (0.08): иначе обрыв скрыл бы его целиком. Но лепесток
+         шириной 0.28 шире этого отступа сам по себе, а поворот добавляет ещё
+         0.18 внутрь — и у самого глаза лепесток оказывался НАД игровой
+         полосой, в полуметре от края. Спрятать его там нечем: внутри
+         коридора маска обрыва не работает по построению.
+
+         Поэтому не отступ больше (он зажат видимостью с другой стороны), а
+         упор: лепесток доезжает до стены и дальше не идёт. Выглядит это
+         правдоподобнее поворота в пустоту, а проверяется тем, что ни одна
+         заливка обочины не попадает между кромками коридора. */
+      const s = Math.sign(d.x) || 1;
+      const cxf = d.x + turn;
+      const push = Math.max(0, HALF - (Math.abs(cxf) - 0.14));
+      const fx = cxf + s * push;
       quad(
-        project(d.x - 0.14 + turn, top, z, cam), project(d.x + 0.14 + turn, top, z, cam),
-        project(d.x + 0.14 + turn, top + 0.28, z, cam), project(d.x - 0.14 + turn, top + 0.28, z, cam),
+        pr(fx - 0.14, top, z), pr(fx + 0.14, top, z),
+        pr(fx + 0.14, top + 0.28, z), pr(fx - 0.14, top + 0.28, z),
         C.flower,
       );
     } else if (d.kind === 'cactus') {
@@ -626,38 +778,38 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
          четыре, то есть зона дюн кадр не утяжеляет. */
       const w = 0.13;
       quad(
-        project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
-        project(d.x + w, top, z, cam), project(d.x - w, top, z, cam),
+        pr(d.x - w, base, z), pr(d.x + w, base, z),
+        pr(d.x + w, top, z), pr(d.x - w, top, z),
         C.cactus,
       );
       for (const dir of [-1, 1]) {
         const y0 = base + d.h * (dir < 0 ? 0.42 : 0.58);
         quad(
-          project(d.x + dir * w, y0, z, cam), project(d.x + dir * 0.34, y0, z, cam),
-          project(d.x + dir * 0.34, y0 + 0.42, z, cam), project(d.x + dir * w, y0 + 0.2, z, cam),
+          pr(d.x + dir * w, y0, z), pr(d.x + dir * 0.34, y0, z),
+          pr(d.x + dir * 0.34, y0 + 0.42, z), pr(d.x + dir * w, y0 + 0.2, z),
           C.cactus,
         );
       }
     } else if (d.kind === 'rock') {
       // Камень: одна трапеция. Самая дешёвая форма в игре — одна заливка.
       quad(
-        project(d.x - 0.3, base, z, cam), project(d.x + 0.3, base, z, cam),
-        project(d.x + 0.16, top, z, cam), project(d.x - 0.2, top, z, cam),
+        pr(d.x - 0.3, base, z), pr(d.x + 0.3, base, z),
+        pr(d.x + 0.16, top, z), pr(d.x - 0.2, top, z),
         C.rock,
       );
     } else if (d.kind === 'spruce') {
       /* Ель: ствол и два яруса. Ярусы треугольниками через четырёхугольник с
          совпадающими верхними углами — тем же приёмом, что зубья на потолке. */
       quad(
-        project(d.x - 0.06, base, z, cam), project(d.x + 0.06, base, z, cam),
-        project(d.x + 0.06, base + d.h * 0.3, z, cam), project(d.x - 0.06, base + d.h * 0.3, z, cam),
+        pr(d.x - 0.06, base, z), pr(d.x + 0.06, base, z),
+        pr(d.x + 0.06, base + d.h * 0.3, z), pr(d.x - 0.06, base + d.h * 0.3, z),
         C.palmTrunk,
       );
       for (const [y0, w] of [[0.25, 0.42], [0.58, 0.3]]) {
         const yb = base + d.h * y0;
         quad(
-          project(d.x - w, yb, z, cam), project(d.x + w, yb, z, cam),
-          project(d.x, yb + d.h * 0.42, z, cam), project(d.x, yb + d.h * 0.42, z, cam),
+          pr(d.x - w, yb, z), pr(d.x + w, yb, z),
+          pr(d.x, yb + d.h * 0.42, z), pr(d.x, yb + d.h * 0.42, z),
           C.spruce,
         );
       }
@@ -671,23 +823,23 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
          хуже ровного. */
       const w = 0.08;
       quad(
-        project(d.x - w, base, z, cam), project(d.x + w, base, z, cam),
-        project(d.x + w, top, z, cam), project(d.x - w, top, z, cam),
+        pr(d.x - w, base, z), pr(d.x + w, base, z),
+        pr(d.x + w, top, z), pr(d.x - w, top, z),
         C.post,
       );
       // Поясок под верхушкой: по нему столб и опознаётся как метка, а не как
       // палка. Светлее тела, но мелкий — на светлоту кадра не влияет.
       quad(
-        project(d.x - w * 1.6, top - 0.34, z, cam), project(d.x + w * 1.6, top - 0.34, z, cam),
-        project(d.x + w * 1.6, top - 0.08, z, cam), project(d.x - w * 1.6, top - 0.08, z, cam),
+        pr(d.x - w * 1.6, top - 0.34, z), pr(d.x + w * 1.6, top - 0.34, z),
+        pr(d.x + w * 1.6, top - 0.08, z), pr(d.x - w * 1.6, top - 0.08, z),
         C.postMark,
       );
     } else if (d.kind === 'totem') {
       // Тотем. Подмигивает, когда проходишь вплотную — одна из четырёх шуток
       // уровня, и единственная, которую можно не заметить.
       quad(
-        project(d.x - 0.22, base, z, cam), project(d.x + 0.22, base, z, cam),
-        project(d.x + 0.22, top, z, cam), project(d.x - 0.22, top, z, cam),
+        pr(d.x - 0.22, base, z), pr(d.x + 0.22, base, z),
+        pr(d.x + 0.22, top, z), pr(d.x - 0.22, top, z),
         C.totem,
       );
       /* Порог 3.6 м, а не «вплотную». Декорации стоят за кромкой, на
@@ -696,8 +848,8 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
       const wink = z < 3.6 && Math.sin(elapsed * 6 + d.phase * 9) > 0.4;
       const eyeH = wink ? 0.03 : 0.12;
       quad(
-        project(d.x - 0.1, top - 0.3, z, cam), project(d.x + 0.1, top - 0.3, z, cam),
-        project(d.x + 0.1, top - 0.3 + eyeH, z, cam), project(d.x - 0.1, top - 0.3 + eyeH, z, cam),
+        pr(d.x - 0.1, top - 0.3, z), pr(d.x + 0.1, top - 0.3, z),
+        pr(d.x + 0.1, top - 0.3 + eyeH, z), pr(d.x - 0.1, top - 0.3 + eyeH, z),
         C.badnikEye,
       );
     }
@@ -796,7 +948,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
 
       // Шипы вниз по нижней кромке — вторая внешность того же приседа.
       if (ob.look === 'ceiling') {
-        drawTeeth(z, cam, { project, quad });
+        drawTeeth(ob, z, cam, { project, quad });
       }
     } else {
       const x0 = ob.side > 0 ? edge : -HALF;
@@ -826,7 +978,6 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
          той же по светлоте, проём — самым светлым местом кадра, а шипы и враг
          добавлены поверх. Нарушить этот порядок значит сделать красивый
          уровень, в котором непонятно, куда уходить. */
-      drawSpikes(ob, z, cam, { project, quad, x0, x1 });
       /* Бадник или створка — ровно одно из двух, и это не экономия, а смысл:
          две внешности одного препятствия должны отличаться с первого взгляда,
          а живое существо рядом с механической створкой читается как два разных
@@ -837,6 +988,15 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
       } else {
         drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, still, mscale });
       }
+      /* Шипы — ПОСЛЕ внешности, и порядок тут содержательный.
+
+         Сначала они шли первыми, и стойки створки (от пола до самой кромки)
+         закрашивали корни крайних зубьев: те два снова читались колпаками на
+         кромке — ровно тем, ради чего `spikeRootM` и появился. Бадник так не
+         мешает (его тело кончается на 2.05 при корне зубьев 2.38), но
+         полагаться на это нельзя: порядок обязан быть верным для ЛЮБОЙ
+         внешности, а не только для той, где фигуры разошлись случайно. */
+      drawSpikes(ob, z, cam, { project, quad, x0, x1 });
     }
 
     // Линия по полу, которая дойдёт вместе с препятствием.
@@ -878,45 +1038,102 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
    зубьями просвечивал бы проём, то есть самое светлое место кадра оказалось
    бы там, куда идти как раз не надо. Форма сообщает тему, светлота сообщает
    решение — здесь это ровно тот же порядок, что у боковых шипов ниже. */
-function drawTeeth(z, cam, { project, quad }) {
-  const N = 7;
+function drawTeeth(ob, z, cam, { project, quad }) {
+  const N = O.teethN;
   const w = (HALF * 2) / N;
-  const h = O.teethM;
   for (let i = 0; i < N; i++) {
     const xa = -HALF + i * w;
+    /* Разброс идёт ВНИЗ от `teethM`, а не вверх. Это не стилистика: зубья
+       висят внутри щели, в которую ребёнок проходит приседая, и потолок их
+       длины связан с `duckHeight` проверкой. Неровность им разрешена, рост —
+       нет; проверяется в группе «силуэт препятствия», в пикселях кадра. */
+    const h = O.teethM * (0.45 + 0.55 * wobble(ob.at, i));
+    // Остриё смещено внутри своей доли — иначе гребень остаётся регулярным,
+    // даже когда зубья разной длины.
+    const tip = xa + w * (0.3 + 0.4 * wobble(ob.at, i + 97));
     // Треугольник четырёхугольником: два верхних угла врозь, нижние — вместе.
     quad(
       project(xa, O.duckHeight, z, cam), project(xa + w, O.duckHeight, z, cam),
-      project(xa + w * 0.5, O.duckHeight - h, z, cam), project(xa + w * 0.5, O.duckHeight - h, z, cam),
+      project(tip, O.duckHeight - h, z, cam), project(tip, O.duckHeight - h, z, cam),
       COLORS.spike,
     );
   }
 }
 
-/* Створка: та же плита, но с поперечными полосами и утолщённым низом.
+/* Створка во всю плиту: рама по краям, поперечины по всей высоте, два болта.
 
-   Вторая внешность бокового препятствия. Полосы — `blockDark`, тем же цветом
-   нарисована задняя грань плиты: новый цвет здесь не нужен и был бы вреден —
-   на лице плиты, которое сообщает решение, любая светлая полоса начала бы
-   спорить с проёмом. */
+   Было три полоски посередине, и заказчик назвал это ровно так — «просто
+   красная стена, скучнее, чем было». Он прав: три полоски на двух с половиной
+   метрах заливки не делают силуэта, а только слегка пачкают его.
+
+   Правило при этом не меняется ни на пиксель: ЛИЦО плиты сообщает решение, и
+   всё, что на нём рисуется, обязано быть темнее его. Деталям поэтому дан свой
+   цвет, `blockDeep`: в `blockDark` они не читались вовсе — разница светлоты
+   0.080 против 0.160, и на кадре створка оставалась ровной заливкой. Новый
+   цвет темнее лица впятеро, то есть переживёт и сжатие. Болты — единственное
+   светлое, и они мелкие: на
+   светлоту кадра несколько пикселей не влияют, а металл читается только по
+   ним. Тот же порядок, по которому у бадника светлый ровно глаз. */
 function drawGate(z, cam, { project, quad, x0, x1 }) {
-  for (const y of [0.7, 1.4, 2.1]) {
+  const w = x1 - x0;
+  const stile = w * 0.09;
+  // Стойки во всю высоту: без них поперечины висят в воздухе, и створка
+  // читается полосатой стеной, а не рамой.
+  for (const sx of [x0, x1 - stile]) {
+    quad(
+      project(sx, 0, z, cam), project(sx + stile, 0, z, cam),
+      project(sx + stile, WALL, z, cam), project(sx, WALL, z, cam),
+      COLORS.blockDeep,
+    );
+  }
+  // Поперечины по всей высоте, а не только по середине.
+  for (const y of [0.2, 0.84, 1.48, 2.12]) {
     quad(
       project(x0, y, z, cam), project(x1, y, z, cam),
-      project(x1, y + 0.12, z, cam), project(x0, y + 0.12, z, cam),
-      COLORS.blockDark,
+      project(x1, y + 0.2, z, cam), project(x0, y + 0.2, z, cam),
+      COLORS.blockDeep,
+    );
+  }
+  // Болты. Два, а не ряд: каждая лишняя заливка здесь умножается на число
+  // препятствий в кадре, а характер металла дают уже эти два.
+  for (const y of [0.86, 2.14]) {
+    const bx = x0 + w * 0.5;
+    quad(
+      project(bx - w * 0.05, y + 0.02, z, cam), project(bx + w * 0.05, y + 0.02, z, cam),
+      project(bx + w * 0.05, y + 0.14, z, cam), project(bx - w * 0.05, y + 0.14, z, cam),
+      COLORS.spike,
     );
   }
 }
 
+/* Шипы по верхней кромке боковой плиты.
+
+   Было три ровных колпака на кромке, и заказчик сказал прямо: недостаточно
+   шипастые, пусть начинаются выше и будут неровными. Поменялось три вещи, и
+   каждая отвечает своей половине жалобы.
+
+   Корень уходит ВНУТРЬ плиты (`spikeRootM`). Сидя ровно на кромке, зубцы
+   читались как колпаки на крыше: силуэт начинался там же, где кончалась
+   плита, и гребня не возникало. Корни внутри — и плита кончается зубьями, а
+   не под ними.
+
+   Зубьев девять вместо трёх, и каждый своей длины и со смещённым остриём.
+   Разнобой — `wobble` от метки препятствия, то есть функция, а не случайность:
+   иначе гребень менялся бы каждый кадр, и это была бы рябь.
+
+   Ограничений на длину здесь нет вовсе, в отличие от зубьев приседа: эти выше
+   кромки обрыва, вне игровой полосы, и приговор о них ничего не знает. */
 function drawSpikes(ob, z, cam, { project, quad, x0, x1 }) {
-  const n = 3;
+  const n = O.spikeN;
   const w = (x1 - x0) / n;
+  const root = WALL - O.spikeRootM;
   for (let i = 0; i < n; i++) {
     const a = x0 + i * w;
-    const apex = project(a + w / 2, WALL + 0.26, z, cam);
+    const h = O.spikeM * (0.45 + 0.55 * wobble(ob.at, i));
+    const tip = a + w * (0.25 + 0.5 * wobble(ob.at, i + 53));
+    const apex = project(tip, WALL + h, z, cam);
     quad(
-      project(a, WALL, z, cam), project(a + w, WALL, z, cam),
+      project(a, root, z, cam), project(a + w, root, z, cam),
       apex, apex,
       COLORS.spike,
     );
@@ -939,6 +1156,7 @@ function drawSpikes(ob, z, cam, { project, quad, x0, x1 }) {
 */
 function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, still, mscale }) {
   const cx = (x0 + x1) / 2;
+  const pw = Math.abs(x1 - x0);
   const opened = dt <= O.lastCallS && safe;
 
   // Икота: короткий подскок, и только когда ребёнок не двигается.
@@ -946,18 +1164,37 @@ function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, stil
     ? Math.max(0, Math.sin(elapsed * (2 * Math.PI / MOTION.badnikHiccupS) * 3)) ** 8 * 0.1 * mscale
     : 0;
 
-  const bodyY = 0.14 + hic;
-  const bodyH = 0.3;
+  /* Размеры тела — ДОЛИ плиты, а не метры.
+
+     Заказчик: «бадник — мелкое существо, позади которого красная стена во всю
+     высоту, и из-за неё самого препятствия почти не видно». Это была правда:
+     тело занимало 12% высоты заливки и висело на ней маркой.
+
+     Красную область при этом нельзя трогать вовсе — это приговор, по её краю
+     судит `isSafe()`, её светлота против проёма сообщает «сюда нельзя». Но
+     `look` не значит ничего, и ему ничто не мешало вырасти до размера плиты.
+     Контраст от этого не падает, а растёт: тело тёмное, а проём остаётся
+     самым светлым местом кадра.
+
+     Полуширина берётся долей ПЛИТЫ, потому что ширина плиты зависит от
+     `blockFrac`, то есть от гейм-плея: тело, заданное в метрах, при правке
+     этого числа однажды вылезло бы за край и пообещало проход там, где его
+     нет. Проверяется это в группе «силуэт препятствия». */
+  const bw = pw * 0.33;
+  const bodyY = 0.44 + hic;
+  const bodyH = WALL * 0.62;
 
   if (opened) {
     // Вскрылся: две половинки разъехались. Чем ближе, тем шире — функция dt,
-    // а не накопленное время.
+    // а не накопленное время. Половинки выросли вместе с телом: они и есть
+    // оно, разъехавшееся надвое.
     const open = clamp(1 - dt / O.lastCallS, 0, 1);
+    const hw = bw * 0.45;
     for (const dir of [-1, 1]) {
-      const hx = cx + dir * (0.1 + open * 0.22);
+      const hx = cx + dir * (hw + open * bw);
       quad(
-        project(hx - 0.1, bodyY, z, cam), project(hx + 0.1, bodyY, z, cam),
-        project(hx + 0.1, bodyY + bodyH * 0.7, z, cam), project(hx - 0.1, bodyY + bodyH * 0.7, z, cam),
+        project(hx - hw, bodyY, z, cam), project(hx + hw, bodyY, z, cam),
+        project(hx + hw, bodyY + bodyH * 0.7, z, cam), project(hx - hw, bodyY + bodyH * 0.7, z, cam),
         COLORS.badnik,
       );
     }
@@ -977,29 +1214,68 @@ function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, stil
 
   // Тело.
   quad(
-    project(cx - 0.24, bodyY, z, cam), project(cx + 0.24, bodyY, z, cam),
-    project(cx + 0.24, bodyY + bodyH, z, cam), project(cx - 0.24, bodyY + bodyH, z, cam),
+    project(cx - bw, bodyY, z, cam), project(cx + bw, bodyY, z, cam),
+    project(cx + bw, bodyY + bodyH, z, cam), project(cx - bw, bodyY + bodyH, z, cam),
     COLORS.badnik,
   );
-  // Колёсико: крутится. Видно по полоске, которая ходит вверх-вниз, — сплошной
-  // круг вращения не показывает вовсе.
-  const spin = Math.sin(elapsed * 2 * Math.PI * MOTION.badnikWheelHz * mscale) * 0.05;
+  /* Колёсико: крутится. Видно по полоске, которая ходит вверх-вниз, — сплошной
+     круг вращения не показывает вовсе.
+
+     Полоска обязана оставаться ВНУТРИ корпуса (0.02 … bodyY). Когда тело
+     выросло до размера плиты, размах подняли с 0.05 до 0.12, а полосу
+     оставили на прежней высоте 0.1…0.22 — и на нижнем краю размаха она
+     уходила в −0.02, то есть светлая метка выезжала из колеса и ложилась на
+     пол перед препятствием. Теперь она по центру корпуса, и запас с обеих
+     сторон одинаковый; проверяется это в группе «силуэт препятствия». */
+  const spin = Math.sin(elapsed * 2 * Math.PI * MOTION.badnikWheelHz * mscale) * 0.12;
   quad(
-    project(cx - 0.14, 0.02, z, cam), project(cx + 0.14, 0.02, z, cam),
-    project(cx + 0.14, bodyY, z, cam), project(cx - 0.14, bodyY, z, cam),
+    project(cx - bw * 0.55, 0.02, z, cam), project(cx + bw * 0.55, 0.02, z, cam),
+    project(cx + bw * 0.55, bodyY, z, cam), project(cx - bw * 0.55, bodyY, z, cam),
     COLORS.earthDeep,
   );
   quad(
-    project(cx - 0.08, 0.06 + spin, z, cam), project(cx + 0.08, 0.06 + spin, z, cam),
-    project(cx + 0.08, 0.1 + spin, z, cam), project(cx - 0.08, 0.1 + spin, z, cam),
+    project(cx - bw * 0.3, 0.17 + spin, z, cam), project(cx + bw * 0.3, 0.17 + spin, z, cam),
+    project(cx + bw * 0.3, 0.29 + spin, z, cam), project(cx - bw * 0.3, 0.29 + spin, z, cam),
     COLORS.spike,
   );
-  // Глаз. Маленький и светлый: на светлоту кадра не влияет, но без него враг
-  // не читается как живой.
+  /* Глаз. Светлый — и единственное светлое на враге.
+
+     Доли у него СВОИ, подобранные отдельно от пропорций тела, и это важнее,
+     чем кажется. `badnikEye`
+     (светлота 0.96) ярче проёма (0.954) и в наборы ролей не входит вовсе —
+     исключён нарочно, со словами «занимает несколько пикселей и на светлоту
+     кадра не влияет». Когда тело выросло до размера плиты, глаз поехал вместе
+     с ним и это условие перестало выполняться: на плите появилось светлое
+     пятно, спорящее с «иди сюда». Поймано глазами на первом же кадре закатной
+     зоны.
+
+     Поэтому доли подобраны так, чтобы пятно осталось пятном, а не окном, и
+     его площадь проверяется тестом — иначе следующая правка пропорций тихо
+     вернёт то же самое. Честная оговорка: доли всё равно СВЯЗАНЫ с телом, и
+     следующая правка пропорций снова их подвинет. Держит здесь не формула, а
+     потолок площади в тесте, и порог у него с запасом — 1.5% при нынешнем
+     1.07%, а не впритык. */
+  const eyeW = bw * 0.26;
+  const eyeH = bodyH * 0.10;
+  const eyeY = bodyY + bodyH * 0.74;
   quad(
-    project(cx - 0.07, bodyY + bodyH * 0.55, z, cam), project(cx + 0.07, bodyY + bodyH * 0.55, z, cam),
-    project(cx + 0.07, bodyY + bodyH * 0.85, z, cam), project(cx - 0.07, bodyY + bodyH * 0.85, z, cam),
+    project(cx - eyeW, eyeY, z, cam), project(cx + eyeW, eyeY, z, cam),
+    project(cx + eyeW, eyeY + eyeH, z, cam), project(cx - eyeW, eyeY + eyeH, z, cam),
     COLORS.badnikEye,
+  );
+  /* Рот. Жуёт — функцией времени, без состояния, как и всё движение в игре.
+
+     Сам по себе он украшение, но украшение нужное: тело во всю плиту без рта
+     читается тёмным прямоугольником, а не существом, — то есть ровно тем, на
+     что заказчик и жаловался, только тёмным вместо красного. Амплитуду жмёт
+     `motionScale`, но не в ноль: неисполняемый путь гниёт отдельно. */
+  const chew = (0.5 + 0.5 * Math.sin(elapsed * 2 * Math.PI * MOTION.badnikChewHz)) * mscale;
+  const mouthY = bodyY + bodyH * 0.22;
+  const mouthH = bodyH * (0.08 + 0.16 * chew);
+  quad(
+    project(cx - bw * 0.58, mouthY, z, cam), project(cx + bw * 0.58, mouthY, z, cam),
+    project(cx + bw * 0.58, mouthY + mouthH, z, cam), project(cx - bw * 0.58, mouthY + mouthH, z, cam),
+    COLORS.badnikMouth,
   );
 }
 
@@ -1078,6 +1354,24 @@ function drawFinish(ctx, cam, z, { project, quad, pulse }) {
    прогоняет их без браузера и канваса, как и всю остальную математику. */
 
 /**
+ * Неровность, которая не дрожит.
+ *
+ * Шипам и зубьям нужен разнобой — ровный гребень читается как пила на
+ * картинке, а не как угроза, — но случайность тут запрещена: `Math.random()` в
+ * отрисовке дал бы новый гребень КАЖДЫЙ кадр, то есть рябь вместо шипов. По
+ * тому же правилу в проекте сделаны все анимации: функция от времени, без
+ * накопленного состояния.
+ *
+ * Поэтому разнобой берётся хешем от двух чисел — метки препятствия и номера
+ * зуба. Одно препятствие носит один гребень весь забег, соседнее — другой, и
+ * проверяется это из node, без браузера.
+ */
+function wobble(a, b) {
+  const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
  * Сжатие кольца по горизонтали: оно крутится.
  *
  * `t` — секунды от старта забега, `phase` — своя фаза кольца, чтобы весь ряд
@@ -1153,7 +1447,10 @@ export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
          сделаны. */
       zone,
       side,
-      x: side * (HALF + DECOR.outM),
+      /* Отступ от кромки — свой у вида, общий как умолчание. Низкие виды
+         стоят у самой кромки, иначе обрыв скрывает их целиком: разбор — у
+         `decorYMask` и у `DECOR.outM`. */
+      x: side * (HALF + (k.out ?? DECOR.outM)),
       y: WALL,                 // основание — ровно кромка обрыва
       h: k.height,
       z: t * VIEW.speed,

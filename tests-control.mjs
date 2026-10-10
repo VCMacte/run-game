@@ -21,14 +21,14 @@ import { describe, motifFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
   makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed,
-  skyGaps, CORRIDOR_HALF, CLIFF_TOP,
+  skyGaps, CORRIDOR_HALF, CLIFF_TOP, decorYMask,
 } from './js/view.js';
 import {
   players, normalizeName, rankRecords, capRecords, migrateRecord, NAME_MAX,
 } from './js/players.js';
 import {
   THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS,
-  ZONES, zoneAt, luminance, motionScale,
+  ZONES, SKY_FILES, zoneAt, luminance, motionScale,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
 
@@ -41,6 +41,66 @@ function check(name, cond, detail = '') {
   console.error(`  ПРОВАЛ  ${name}${detail ? '\n          ' + detail : ''}`);
 }
 function group(name, fn) { console.log(name); return fn(); }
+
+/* ───────────────── поддельный холст ─────────────────
+
+   Порядок заливок и их геометрия — это и есть половина дефектов вида: кольцо
+   поверх плиты, тень дальнего кольца поверх ближнего, обочина поверх стены.
+   Проверять их можно только по НАСТОЯЩЕМУ вызову отрисовки, поэтому вместо
+   Canvas подставляется вот это: оно не рисует, а записывает.
+
+   Два среза одного и того же. `fills` — только цвета по порядку, им проверяют
+   «что чем накрыто» и считают бюджет кадра. `shapes` — то же плюс рамка каждой
+   фигуры, и этим отличают дальнее кольцо от ближнего: цвет у них один, разный
+   только размер.
+
+   Был он здесь в четырёх почти одинаковых копиях, и каждая умела чуть своё.
+   Разные копии расходятся молча: проверка начинает мерить не то, что рисует
+   соседняя, и спорят в итоге не код с кодом, а два теста между собой. */
+function painter() {
+  const fills = [];
+  const shapes = [];
+  const images = [];
+  let style = null;
+  let pts = [];
+  const add = (x, y) => pts.push([x, y]);
+  const done = () => {
+    fills.push(style);
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    shapes.push({
+      style,
+      minX: Math.min(...xs), maxX: Math.max(...xs),
+      minY: Math.min(...ys), maxY: Math.max(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+    });
+  };
+  const ctx = {
+    get fillStyle() { return style; },
+    set fillStyle(v) { style = v; },
+    beginPath() { pts = []; },
+    closePath() {},
+    moveTo: add,
+    lineTo: add,
+    ellipse(x, y) { add(x, y); },
+    quadraticCurveTo(x1, y1, x2, y2) { add(x1, y1); add(x2, y2); },
+    drawImage(im) { images.push(im); },
+    fill() { done(); },
+    fillRect(x, y, w, h) { pts = [[x, y], [x + w, y + h]]; done(); },
+  };
+  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images };
+}
+
+/** Один кадр поддельным холстом. Умолчания — пустая сцена без ничего. */
+function paintFrame(patch = {}) {
+  const p = painter();
+  createView(p.canvas, patch.backdrops ? { backdrops: patch.backdrops } : {})
+    .render({
+      u: 0, v: 0, travel: 0, elapsed: 0, stars: [], obstacles: [], decor: [], ...patch,
+    });
+  return p;
+}
 
 /* Случайность с посевом. Генераторы уровня, звёзд и декораций принимают rng
    снаружи именно для этого: тест прогоняет тысячу РАЗНЫХ уровней, а не один и
@@ -1636,19 +1696,7 @@ group('перекраска не достаёт до игры', () => {
 
   /* И наконец — что перекраска вообще РИСУЕТСЯ по-другому. Без этой проверки
      все предыдущие выполнялись бы и у поля, которое никто не читает. */
-  function recorder() {
-    const fills = [];
-    let style = null;
-    const ctx = {
-      get fillStyle() { return style; },
-      set fillStyle(v) { style = v; },
-      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
-      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
-      fill() { fills.push(style); },
-      fillRect() { fills.push(style); },
-    };
-    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
-  }
+  const recorder = painter;   // общий поддельный холст, см. выше
   const paint = (ob) => {
     const { canvas, fills } = recorder();
     createView(canvas).render({
@@ -1667,6 +1715,305 @@ group('перекраска не достаёт до игры', () => {
   check('у внешности gate бадника нет', !sidePaint('gate').includes(C.badnik),
     'живое существо рядом с механической створкой читается как два препятствия');
   check('а у plate он есть', sidePaint('plate').includes(C.badnik));
+});
+
+/* ───────────── силуэт препятствия ─────────────
+
+   Заказчик после забега 10 октября: «каждое препятствие залито красным, так и
+   должно быть? бадник — мелкое существо, позади которого красная стена во всю
+   высоту, и из-за неё самого препятствия почти не видно». Плюс: шипы
+   недостаточно шипастые, а створка выглядит просто красной стеной.
+
+   Жалоба верна, и ответ на неё — не «убрать красное». Красная область и есть
+   приговор: по её краю судит `isSafe()`, её светлота против почти белого
+   проёма — единственное, что переживает сжатие Miracast. Менять в ней нельзя
+   ничего. А вот `look` — наклейка поверх приговора, он не значит ничего, и ему
+   ничто не мешает вырасти до размера плиты.
+
+   Поэтому здесь проверяется ровно эта развязка: приговор на месте (это
+   соседняя группа), а внешность занимает плиту, а не висит на ней маркой.
+   Доли нарочно грубые — вопрос «крупно или мелко», а не «красиво». */
+group('силуэт препятствия', () => {
+  const C = THEME.greenHill;
+  const at = 10;
+  const paint = (ob, dt = 1.5) => paintFrame({ elapsed: at - dt, obstacles: [ob] }).shapes;
+  const plateOf = (shapes) => shapes.find((f) => f.style === C.block);
+  const side = (look) => ({ at, kind: 'side', look, side: 1 });
+
+  // ─── бадник занимает плиту, а не висит на ней ───
+  {
+    const shapes = paint(side('plate'));
+    const plate = plateOf(shapes);
+    const body = shapes.find((f) => f.style === C.badnik);
+    check('плита нарисована', !!plate);
+    check('бадник нарисован', !!body);
+    const doleH = body ? body.h / plate.h : 0;
+    const doleW = body ? body.w / plate.w : 0;
+    check('бадник занимает больше половины высоты плиты', doleH > 0.5,
+      `${(doleH * 100).toFixed(0)}% высоты — иначе из-за стены самого препятствия не видно`);
+    check('и больше половины её ширины', doleW > 0.5, `${(doleW * 100).toFixed(0)}% ширины`);
+    check('но не вылезает за плиту',
+      body && body.minX >= plate.minX - 1 && body.maxX <= plate.maxX + 1,
+      'приговор судит по краю плиты, и фигура не вправе обещать проход там, где его нет');
+    check('у бадника есть рот', shapes.some((f) => f.style === C.badnikMouth),
+      'заказчик описал его как существо с анимацией рта — её не было вовсе');
+
+    /* ─── и светлое пятно на враге осталось пятном ───
+
+       `badnikEye` светлее проёма (0.96 против 0.954) и не входит ни в один
+       набор ролей — исключён нарочно, со словами «занимает несколько пикселей
+       и на светлоту кадра не влияет». Когда тело выросло до размера плиты,
+       глаз поехал вместе с ним, и условие исключения молча перестало
+       выполняться: на плите появилось окно ярче проёма. Поймано глазами на
+       первом же кадре закатной зоны, а не тестом, — поэтому тест теперь есть.
+
+       Порог в долях площади ПЛИТЫ, а не в пикселях: пиксели зависят от
+       глубины, а доля — нет. */
+    const eye = shapes.find((f) => f.style === C.badnikEye);
+    check('глаз бадника нарисован', !!eye);
+    const доля = eye ? (eye.w * eye.h) / (plate.w * plate.h) : 1;
+    check('но остаётся мелким пятном, а не окном', доля < 0.015,
+      `${(доля * 100).toFixed(1)}% площади плиты, а он ярче проёма: `
+      + 'именно поэтому он и не входит ни в один набор ролей');
+  }
+
+  // Рот живёт, и живёт функцией времени, без состояния: видно это из node.
+  {
+    const рты = [0, 0.2, 0.4, 0.6, 0.8].map((d) => {
+      const m = paint(side('plate'), 2.4 - d).find((f) => f.style === C.badnikMouth);
+      return m ? Math.round(m.h) : -1;
+    });
+    check('рот открывается и закрывается', new Set(рты).size > 1, рты.join(' / '));
+  }
+
+  /* ─── колёсико остаётся внутри корпуса ───
+
+     Размах полоски подняли с 0.05 до 0.12 вместе с ростом тела, а высоту её
+     оставили прежней — и на нижнем краю размаха светлая метка уходила в
+     y = −0.02, то есть выезжала из колеса и ложилась на пол ПЕРЕД
+     препятствием. Нашлось ревью, а не глазами: дефект живёт ровно в те кадры,
+     когда синус на дне.
+
+     Проверяется по всему обороту, а не в одной фазе: дефект фазовый, и
+     единственный снимок его пропустил бы с вероятностью в девять десятых. */
+  {
+    for (const dt of [1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2]) {
+      const shapes = paint(side('plate'), dt);
+      const plate = plateOf(shapes);
+      // Полоска колеса — единственная светлая фигура НИЖЕ тела бадника.
+      const body = shapes.find((f) => f.style === C.badnik);
+      const колесо = shapes.filter((f) => f.style === C.spike && f.minY > body.maxY);
+      check(`колёсико нарисовано (dt=${dt})`, колесо.length === 1, `${колесо.length} фигур`);
+      if (!колесо.length) continue;
+      check(`колёсико не выезжает ниже пола (dt=${dt})`, колесо[0].maxY <= plate.maxY + 0.5,
+        `низ полоски ${колесо[0].maxY.toFixed(1)} при полу ${plate.maxY.toFixed(1)}`);
+    }
+  }
+
+  /* ─── шипы переживают створку ───
+
+     Шипы рисовались ДО внешности, а стойки створки идут от пола до самой
+     кромки — и закрашивали корни крайних зубьев. Те два снова читались
+     колпаками на кромке, то есть ровно тем, ради чего корни и уводили внутрь
+     плиты. С бадником это не всплывало: его тело кончается ниже корней, и
+     порядок случайно оказывался верным. */
+  {
+    /* Шип опознаётся формой, а не цветом: `spike` носят ещё полоска колеса и
+       болты створки, и счёт по одному цвету сравнивал бы разные наборы фигур.
+       Шип — единственная фигура, которая ТОРЧИТ выше кромки плиты и при этом
+       уходит корнем ниже неё. */
+    const корни = (look) => {
+      const shapes = paint(side(look));
+      const plate = plateOf(shapes);
+      return shapes.filter((f) => f.style === C.spike
+        && f.minY < plate.minY && f.maxY > plate.minY + 1).length;
+    };
+    check('корни шипов видны и у створки', корни('gate') === корни('plate'),
+      `${корни('gate')} против ${корни('plate')} у бадника: стойки створки их закрашивали`);
+  }
+
+  // ─── створка тоже на всю плиту ───
+  {
+    const shapes = paint(side('gate'));
+    const plate = plateOf(shapes);
+    const детали = shapes.filter((f) => f.style === C.blockDeep);
+    check('у створки есть детали', детали.length >= 5,
+      `${детали.length} — три полоски посередине заказчик и назвал красной стеной`);
+    /* И детали обязаны быть ВИДНЫ. В `blockDark` их не было видно вовсе:
+       0.080 против 0.160 у лица плиты — после сжатия Miracast ноль. Разница
+       вчетверо и больше переживёт и его. */
+    check('детали заметно темнее лица плиты',
+      luminance(C.block) / luminance(C.blockDeep) > 4,
+      `${luminance(C.block).toFixed(3)} против ${luminance(C.blockDeep).toFixed(3)}`);
+    check('но не светлее его', luminance(C.blockDeep) < luminance(C.block),
+      'светлое пятно на лице плиты начинает спорить с проёмом');
+    const высоко = детали.some((f) => f.minY < plate.minY + plate.h * 0.25);
+    const низко = детали.some((f) => f.maxY > plate.minY + plate.h * 0.75);
+    check('детали идут по всей высоте плиты', высоко && низко,
+      'иначе верх и низ створки остаются той же заливкой');
+    const широко = Math.max(...детали.map((f) => f.w)) / plate.w;
+    check('и по всей её ширине', широко > 0.8, `${(широко * 100).toFixed(0)}% ширины`);
+  }
+
+  // ─── шипы по кромке плиты ───
+  {
+    const shapes = paint(side('plate'));
+    const plate = plateOf(shapes);
+    const spikes = shapes.filter((f) => f.style === C.spike && f.minY < plate.minY);
+    check('шипов больше трёх', spikes.length > 3, `${spikes.length}`);
+    const высоты = spikes.map((f) => f.h);
+    check('шипы неровные', new Set(высоты.map((h) => Math.round(h))).size > 1,
+      `высоты ${высоты.map((h) => h.toFixed(0)).join(', ')} — ровный гребень и был скучным`);
+    check('шипы начинаются ВНУТРИ плиты', spikes.some((f) => f.maxY > plate.minY + 1),
+      'корни за кромкой читаются как колпаки на крыше, а не как гребень');
+  }
+
+  /* Неровность обязана быть ФУНКЦИЕЙ, а не случайностью: дрожащий от кадра к
+     кадру гребень — это рябь, а не шипы. По тому же правилу сделаны все
+     анимации проекта. */
+  {
+    const гребень = (ob, dt) => paint(ob, dt).filter((f) => f.style === C.spike)
+      .map((f) => f.h.toFixed(3)).join(',');
+    check('гребень не дрожит от кадра к кадру',
+      гребень(side('plate'), 1.5) === гребень(side('plate'), 1.5));
+    check('а у соседнего препятствия он другой',
+      гребень(side('plate'), 1.5)
+      !== paintFrame({ elapsed: at + 0.7 - 1.5, obstacles: [{ at: at + 0.7, kind: 'side', look: 'plate', side: 1 }] })
+        .shapes.filter((f) => f.style === C.spike).map((f) => f.h.toFixed(3)).join(','),
+      'иначе все препятствия забега носят один и тот же гребень');
+  }
+
+  /* ─── зубья приседа: неровные, но НЕ длиннее ───
+
+     Зубья висят внутри щели, в которую ребёнок проходит. Приговор от их длины
+     не зависит — присед судится флагом, — но ребёнок видит картинку, а не
+     приговор: длинные зубья учили бы приседать глубже, чем просят. Поэтому
+     неровность им разрешена, а рост — нет, и потолок мерится в пикселях
+     кадра, а не в доверии к формуле. */
+  {
+    const z = 1.5 * VIEW.speed;
+    const cam = camera(0, 0);
+    const потолок = Math.abs(project(0, O.duckHeight - O.teethM, z, cam).sy
+      - project(0, O.duckHeight, z, cam).sy);
+    const зубья = paint({ at, kind: 'duck', look: 'ceiling', side: 0 })
+      .filter((f) => f.style === C.spike);
+    check('зубьев больше прежних семи', зубья.length > 7, `${зубья.length}`);
+    check('зубья неровные', new Set(зубья.map((f) => Math.round(f.h))).size > 1,
+      зубья.map((f) => f.h.toFixed(0)).join(', '));
+    const самый = Math.max(...зубья.map((f) => f.h));
+    check('но ни один не длиннее teethM', самый <= потолок + 0.5,
+      `самый длинный ${самый.toFixed(1)} px при потолке ${потолок.toFixed(1)}`);
+  }
+});
+
+/* ───────────── большое кольцо видно, а не только слышно ─────────────
+
+   Заказчик: «кольцо с большим количеством очков визуально не отличается от
+   остальных, только другой звук». Это и значит, что о его ценности ребёнок
+   узнаёт ПОСЛЕ сбора, то есть редкое событие перестаёт быть событием.
+
+   Размером отличать больше нечем: рим большого кольца 0.256 м против окна
+   сбора 0.26 — запас двенадцать миллиметров, и он уже выбран. Поэтому цвет, и
+   цвет РЕШЕНИЯ: общий на все зоны, как и у обычного кольца, иначе зона
+   перекрасила бы язык игры посреди забега. */
+group('большое кольцо', () => {
+  const C = THEME.greenHill;
+  const ring = (worth) => paintFrame({ stars: [{ x: 0, z: 4, worth }] }).shapes;
+
+  const обычное = ring(1);
+  const большое = ring(3);
+  check('обычное кольцо золотое', обычное.some((f) => f.style === C.star));
+  check('большое кольцо другого цвета', большое.some((f) => f.style === C.starBig),
+    'иначе о цене ребёнок узнаёт только задним числом, по звуку');
+  check('и золотым оно не рисуется', !большое.some((f) => f.style === C.star),
+    'два цвета на одном кольце читаются как два кольца');
+  check('у обычного кольца нового цвета нет', !обычное.some((f) => f.style === C.starBig),
+    'иначе отличать нечем снова');
+  check('у большого есть лучи',
+    большое.filter((f) => f.style === C.starBig).length
+    > обычное.filter((f) => f.style === C.star).length,
+    'один только цвет после сжатия Miracast различается хуже, чем цвет плюс форма');
+
+  // Цвета большого кольца — решения, а не фона: общие на все зоны и под
+  // проверкой светлоты. Неотнесённый цвет не проверяется ничем.
+  check('starBig отнесён к цветам решения', DECISION_KEYS.includes('starBig'));
+  check('starBigDim тоже', DECISION_KEYS.includes('starBigDim'));
+  for (const z of ZONES) {
+    check(`${z}: большое кольцо того же цвета, что в первой зоне`,
+      THEME[z].starBig === THEME.greenHill.starBig
+      && THEME[z].starBigDim === THEME.greenHill.starBigDim,
+      'язык игры ребёнок учит в первые полминуты, и зона не вправе его перекрасить');
+    check(`${z}: большое кольцо отличается от обычного по светлоте`,
+      Math.abs(luminance(THEME[z].starBig) - luminance(THEME[z].star)) > 0.05,
+      `${luminance(THEME[z].starBig).toFixed(3)} против ${luminance(THEME[z].star).toFixed(3)}: `
+      + 'цветность Miracast режет сильнее светлоты, и отличие обязано быть в ней');
+  }
+
+  // Размер по-прежнему зажат окном сбора: нарисованное крупнее собираемого —
+  // это обещание, которого игра не держит.
+  check('рим большого кольца внутри окна сбора',
+    VIEW.starDrawR * VIEW.bigStarScale < VIEW.starReach,
+    `${(VIEW.starDrawR * VIEW.bigStarScale).toFixed(3)} против ${VIEW.starReach}`);
+});
+
+/* ───────────── небо меняется вместе с зоной ─────────────
+
+   Заказчик после забега 10 октября: «смена цветового оформления во время
+   забега работает хорошо, но небо и дальний план остаются без изменений».
+
+   Так и было, и не по недосмотру, а по построению: растр один на весь забег и
+   кладётся во ВЕСЬ кадр (1024×576 на 1280×720 даёт dy = 0, dh = 720 — это
+   посчитано в соседней группе). То есть `COLORS.sky` зоны закрашивался
+   картинкой целиком, и зона могла перекрасить всё, кроме верхней половины
+   кадра, — ровно той, которая и называется «небо и дальний план».
+
+   Проверяется здесь не красота картинок, а развязка: у каждой зоны свой
+   растр, а зона без растра уходит на векторный путь СВОИХ цветов, не утаскивая
+   за собой ни палитру, ни игру. */
+group('небо меняется вместе с зоной', () => {
+  const растр = (метка) => ({ width: 1024, height: 576, метка });
+  const backdrops = {
+    greenHill: растр('утро'),
+    sunsetDunes: растр('закат'),
+  };
+  const кадр = (zone) => paintFrame({ zone, backdrops, travel: 30, elapsed: 30 });
+
+  check('в первой зоне кладётся её растр',
+    кадр('greenHill').images.every((i) => i.метка === 'утро'),
+    кадр('greenHill').images.map((i) => i.метка).join(', ') || 'ни одного');
+  check('во второй — её, а не первой',
+    кадр('sunsetDunes').images.length > 0
+    && кадр('sunsetDunes').images.every((i) => i.метка === 'закат'),
+    'иначе всё оформление зоны меняется, кроме верхней половины кадра');
+
+  /* Зона без растра: картинки нет, но игра идёт, и фон рисуется цветами
+     ЭТОЙ зоны. Это и есть та независимость от арта, ради которой запасной
+     путь вообще существует. */
+  const ночь = кадр('nightHills');
+  check('зона без растра обходится без него', ночь.images.length === 0);
+  check('и рисуется в своих цветах, а не в чужих',
+    ночь.fills.includes(THEME.nightHills.sky)
+    && !ночь.fills.includes(THEME.greenHill.sky),
+    'запасной путь красится палитрой кадра, и зона обязана доехать до него');
+
+  /* Неизвестная зона не роняет растр. Без памяти о последней известной зоне
+     палитра оставалась бы прежней, а небо прыгало бы с картинки на вектор —
+     то есть кадр оказался бы наполовину в одной зоне, наполовину в другой. */
+  const p = painter();
+  const v = createView(p.canvas, { backdrops });
+  v.render({ zone: 'sunsetDunes', travel: 30, elapsed: 30, stars: [], obstacles: [], decor: [] });
+  const было = p.images.length;
+  v.render({ zone: 'чего-то такого нет', travel: 30, elapsed: 30, stars: [], obstacles: [], decor: [] });
+  check('неизвестная зона оставляет прежний растр, а не роняет его',
+    p.images.length > было && p.images[p.images.length - 1].метка === 'закат');
+
+  // Таблица зона → файл одна на проект: по ней грузит train.js и по ней же
+  // собирается список офлайн-кэша.
+  check('у каждой зоны назван файл неба',
+    ZONES.every((z) => typeof SKY_FILES[z] === 'string' && SKY_FILES[z].endsWith('.webp')),
+    JSON.stringify(SKY_FILES));
+  check('файлы разные', new Set(Object.values(SKY_FILES)).size === ZONES.length,
+    'один файл на две зоны вернул бы ровно ту жалобу, с которой всё началось');
 });
 
 group('уклонение', () => {
@@ -2166,19 +2513,7 @@ group('порядок маляра', () => {
 
   // Настоящий порядок заливок. Контекст поддельный: нужен не рисунок, а
   // последовательность, в которой он кладётся.
-  function recorder() {
-    const fills = [];
-    let style = null;
-    const ctx = {
-      get fillStyle() { return style; },
-      set fillStyle(v) { style = v; },
-      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
-      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
-      fill() { fills.push(style); },
-      fillRect() { fills.push(style); },
-    };
-    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
-  }
+  const recorder = painter;   // общий поддельный холст, см. выше
 
   const order = (starZ) => {
     const { canvas, fills } = recorder();
@@ -2303,19 +2638,7 @@ group('порядок маляра', () => {
 group('бюджет кадра', () => {
   const CEILING = 150;
 
-  function recorder() {
-    const fills = [];
-    let style = null;
-    const ctx = {
-      get fillStyle() { return style; },
-      set fillStyle(v) { style = v; },
-      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
-      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
-      fill() { fills.push(style); },
-      fillRect() { fills.push(style); },
-    };
-    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
-  }
+  const recorder = painter;   // общий поддельный холст, см. выше
 
   /* По нескольким посевам, а не по одному. Худший кадр зависит от того, как
      встали декорации и кольца, и разброс между посевами — десяток заливок:
@@ -2422,7 +2745,10 @@ group('небо не красит невидимое', () => {
   }
   const кадр = (opts, backdrop) => {
     const r = recorder();
-    createView(r.canvas, backdrop ? { backdrop } : {}).render({
+    /* Растр теперь приходит КАРТОЙ по зонам: небо меняется вместе с зоной.
+       Здесь зона одна — умолчание `render`, то есть первая, — и карты из
+       одной записи достаточно. */
+    createView(r.canvas, backdrop ? { backdrops: { [ZONES[0]]: backdrop } } : {}).render({
       u: 0, v: 0, travel: 0, elapsed: 0, obstacles: [], stars: [], ...opts,
     });
     return r;
@@ -2694,19 +3020,7 @@ group('зоны', () => {
   }
 
   // ── палитра кадра действительно меняется ──
-  function recorder() {
-    const fills = [];
-    let style = null;
-    const ctx = {
-      get fillStyle() { return style; },
-      set fillStyle(v) { style = v; },
-      beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
-      ellipse() {}, quadraticCurveTo() {}, drawImage() {},
-      fill() { fills.push(style); },
-      fillRect() { fills.push(style); },
-    };
-    return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills };
-  }
+  const recorder = painter;   // общий поддельный холст, см. выше
   const кадр = (zone) => {
     const { canvas, fills } = recorder();
     createView(canvas).render({ u: 0, v: 0, travel: 0, elapsed: 0, zone });
@@ -2734,22 +3048,25 @@ group('зоны', () => {
   const формы = new Map();
   for (const z of ZONES) {
     for (const k of THEME[z].decor.kinds) {
-      if (!формы.has(k.kind)) формы.set(k.kind, { zone: z, height: k.height });
+      if (!формы.has(k.kind)) формы.set(k.kind, { zone: z, height: k.height, out: k.out ?? DECOR.outM });
     }
   }
-  const заливок = (zone, kind, height) => {
+  const заливок = (zone, kind, height, out = DECOR.outM) => {
     const { canvas, fills } = recorder();
     createView(canvas).render({
       u: 0, v: 0, travel: 0, elapsed: 0, zone,
-      decor: [{ kind, zone, side: 1, x: 1.75, y: 2.6, h: height, z: 4, at: 1, phase: 0.3 }],
+      /* Отступ от кромки — тот, что у ВИДА, а не общий: обрыв скрывает низ
+         декорации, и при чужом отступе низкий вид не нарисовался бы вовсе.
+         Разбор — у `decorYMask` и в группе «что чем перекрыто». */
+      decor: [{ kind, zone, side: 1, x: CORRIDOR_HALF + out, y: CLIFF_TOP, h: height, z: 4, at: 1, phase: 0.3 }],
     });
     const пусто = кадр(zone).length;
     return fills.length - пусто;
   };
   const пальма = заливок('greenHill', 'palm', 2.2);
   check('пальма вообще рисуется', пальма > 0, `${пальма} заливок`);
-  for (const [kind, { zone, height }] of формы) {
-    const n = заливок(zone, kind, height);
+  for (const [kind, { zone, height, out }] of формы) {
+    const n = заливок(zone, kind, height, out);
     check(`форма «${kind}» рисуется`, n > 0, `${n} заливок`);
     check(`форма «${kind}» не дороже пальмы`, n <= пальма,
       `${n} против ${пальма} у пальмы — кадр станет тяжелее сегодняшнего`);
@@ -2927,6 +3244,41 @@ group('стены', () => {
       `ближний угол на ${left.toFixed(0)} px — слева видно небо`);
     check(`при u=${u} правый обрыв доходит до края кадра`, right >= VIEW.width,
       `ближний угол на ${right.toFixed(0)} px при ширине ${VIEW.width} — справа видно небо`);
+  }
+
+  /* ─── и та же дырка с ДАЛЬНЕГО конца ───
+
+     Пол и обрывы кончались на `fogDistance` (30 м), а горизонт — на
+     бесконечности. Между дальним краем пола и горизонтом оставался клин
+     чистого неба шириной ровно в коридор на 30 метрах (65 px) и высотой до
+     32 px. Он был там ВСЕГДА, при любом смещении, — но в середине кадра
+     читается как даль, а при крайнем уезжает вбок от точки схода и становится
+     виден как пустота сбоку от дальнего плана. Заметил заказчик; найдено
+     пересчётом пикселей в браузере, потому что глазами это спорно.
+
+     Чинится тем же приёмом, что ближний край: отрисовка идёт до `FAR_DRAW`, а
+     не до `far`. Заливок это не добавляет — меняется только дальняя кромка
+     тех же четырёхугольников, — а площади добавляет на тот самый клин,
+     который и был дыркой.
+
+     Проверяется не константа, а РИСУНОК: поддельный контекст ловит самую
+     верхнюю точку пола, и она обязана подойти к горизонту ближе пикселя.
+     Проверять константу значило бы поверить, что ею кто-то пользуется. */
+  {
+    const floorKeys = ['floorA', 'floorB', 'floorMid', 'floorFar'];
+    const C = THEME.greenHill;
+    const floors = new Set(floorKeys.map((k) => C[k]));
+    for (const u of [-1.5, 0, 1.5]) {
+      for (const v of [0, 0.6]) {
+        const { shapes } = paintFrame({ u, v, travel: 30, elapsed: 30 });
+        const tops = shapes.filter((f) => floors.has(f.style)).map((f) => f.minY);
+        const top = Math.min(...tops);
+        const hy = horizonY(camera(u, v));
+        check(`при u=${u}, v=${v} пол доходит до горизонта`, top - hy < 1,
+          `верх пола на ${top.toFixed(1)}, горизонт на ${hy.toFixed(1)} — `
+          + `клин неба в ${(top - hy).toFixed(1)} px ниже горизонта`);
+      }
+    }
   }
 });
 
@@ -3741,6 +4093,147 @@ group('разбор журнала', () => {
     !/rows/.test(текст) && !/\[\[/.test(текст),
     'measurements/ уезжает в публичный репозиторий, а samples и skeleton — это движения ребёнка');
 });
+
+
+/* ───────────────── что чем перекрыто ─────────────────
+
+   Две жалобы заказчика после забега 10 октября, и обе — об одном: кадр
+   собирается в правильном порядке по ГЛУБИНЕ, но внутри слоя порядка нет.
+
+   1. «Тени дальних колец видны сквозь ближние предметы». Проходов по кольцам
+      два, и разрез между ними честный, — но внутри прохода список шёл по
+      ВОЗРАСТАНИЮ z, то есть дальнее кольцо и его пятно красились поверх
+      ближнего. У декораций этот же дефект уже ловили и уже починили обратным
+      обходом; у колец он остался.
+
+   2. «Объекты фона по бокам видны полностью, хотя должны перекрываться
+      стенами». Декорации стоят ЗА плоскостью обрыва (x = ±(HALF + out)), а
+      рисуются одним проходом после него — то есть перекрытия не было ни у
+      одной, и обочина висела в воздухе поверх стены.
+
+   Перекрытие здесь считается точно и даром, без clip и без второго прохода
+   обрыва. Причина — в самой проекции: `sy` не зависит от `x` вовсе, поэтому
+   кромка обрыва (y = WALL на плоскости x = ±HALF) проецируется в ПРЯМУЮ,
+   проходящую через точку схода. Условие «точка за обрывом» сводится к
+   неравенству, из которого z сокращается:
+
+       видно  ⇔  y > cam.y + (WALL − cam.y) · |x − cam.x| / |±HALF − cam.x|
+
+   Отсюда три следствия, и каждое проверяется ниже: доля скрытого НЕ зависит от
+   глубины; уход взгляда в сторону перекрывает свою обочину сильнее, а
+   противоположную слабее; а скрыто при нейтрали ровно `1.1667 × out` метра —
+   поэтому у низких видов обочины свой, меньший отступ от кромки, иначе цветы и
+   камни исчезли бы из игры целиком. */
+group('что чем перекрыто', () => {
+  const C = THEME.greenHill;
+
+  const frame = (patch = {}) => paintFrame(patch).shapes;
+
+  // ─── кольца внутри прохода: от дальнего к ближнему ───
+  const two = frame({ stars: [{ x: 0, z: 3 }, { x: 0, z: 12 }] });
+  const rings = two.filter((s) => s.style === C.star);
+  const spots = two.filter((s) => s.style === C.shadow);
+  check('оба кольца нарисованы', rings.length === 2, `нашлось ${rings.length}`);
+  check('оба пятна нарисованы', spots.length === 2, `нашлось ${spots.length}`);
+  check('дальнее кольцо кладётся раньше ближнего',
+    rings.length === 2 && rings[0].h < rings[1].h,
+    rings.map((r) => r.h.toFixed(1)).join(' затем '));
+  check('и пятно дальнего кольца — тоже раньше',
+    spots.length === 2 && spots[0].h < spots[1].h,
+    `ровно это заказчик и увидел: тень дальнего кольца поверх ближнего предмета`);
+
+  // ─── декорация обрезана кромкой обрыва ───
+  const post = (z, side = 1, out = DECOR.outM, h = 2.6) => ({
+    kind: 'post', zone: 'greenHill', side, x: side * (CORRIDOR_HALF + out),
+    y: CLIFF_TOP, h, z, at: 0, phase: 0,
+  });
+
+  const far = frame({ decor: [post(12)] }).filter((s) => s.style === C.post);
+  const cam0 = camera(0, 0);
+  const rawBase = project(CORRIDOR_HALF + DECOR.outM, CLIFF_TOP, 12, cam0).sy;
+  check('столб обочины нарисован', far.length > 0);
+  check('его основание обрезано кромкой обрыва', far.length > 0 && far[0].maxY < rawBase - 1,
+    `низ на ${far[0]?.maxY?.toFixed(1)}, непокрытое основание на ${rawBase.toFixed(1)}`);
+
+  // Доля скрытого не зависит от глубины: и обрыв, и обочина — плоскости
+  // x = const, поэтому z в неравенстве сокращается. Проверяется отношением
+  // видимой высоты к полной на двух глубинах.
+  const seen = (z) => {
+    const s = frame({ decor: [post(z)] }).filter((f) => f.style === C.post)[0];
+    const full = project(CORRIDOR_HALF + DECOR.outM, CLIFF_TOP, z, cam0).sy
+      - project(CORRIDOR_HALF + DECOR.outM, CLIFF_TOP + 2.6, z, cam0).sy;
+    return s.h / full;
+  };
+  check('доля видимого одна и та же на 6 и на 18 метрах',
+    Math.abs(seen(6) - seen(18)) < 0.02, `${seen(6).toFixed(3)} против ${seen(18).toFixed(3)}`);
+
+  // ─── маска и уход взгляда ───
+  const mask = (x, cam, side) => decorYMask(x, cam, side);
+  const atRest = mask(CORRIDOR_HALF + DECOR.outM, cam0, 1);
+  check('при нейтрали скрыто ровно 1.1667 × out',
+    Math.abs((atRest - CLIFF_TOP) - (CLIFF_TOP - camera(0, 0).y) / CORRIDOR_HALF * DECOR.outM) < 1e-9,
+    `скрыто ${(atRest - CLIFF_TOP).toFixed(3)} м`);
+
+  const right = camera(1.5, 0);
+  check('уход вправо перекрывает правую обочину сильнее',
+    mask(CORRIDOR_HALF + DECOR.outM, right, 1) > atRest,
+    'взгляд ушёл к правому обрыву, и он поднялся в кадре');
+  check('а левую — слабее',
+    mask(-(CORRIDOR_HALF + DECOR.outM), right, -1) < atRest,
+    'от левого обрыва взгляд отошёл, и из-за него стало видно больше');
+
+  /* ─── обочина обязана остаться видимой ───
+
+     Это не про красоту, а про то, что правка не имеет права вычесть из игры
+     половину обочины. Скрыто при нейтрали `1.1667 × out`, то есть 0.64 м при
+     общем отступе 0.55 — а куст высотой 0.7 и цветок 0.45 после такого просто
+     исчезли бы, и заметить это в node было бы нечем. Поэтому у низких видов
+     свой отступ, и порог здесь — треть высоты. */
+  for (const z of ZONES) {
+    for (const k of THEME[z].decor.kinds) {
+      const out = k.out ?? DECOR.outM;
+      const m = mask(CORRIDOR_HALF + out, cam0, 1);
+      const visible = CLIFF_TOP + k.height - m;
+      check(`${z}/${k.kind}: при нейтрали видно хотя бы треть`,
+        visible > k.height / 3,
+        `видно ${visible.toFixed(2)} из ${k.height} м при out ${out}`);
+    }
+  }
+
+  /* ─── и обочина не залезает в коридор ───
+
+     Отступы у низких видов пришлось уменьшить, чтобы обрыв не скрывал их
+     целиком, — и цветок на этом попался: лепесток шириной 0.28 сам по себе
+     шире отступа 0.08, а поворот вслед бегущему добавлял ещё 0.18 внутрь.
+     У самого глаза лепесток оказывался НАД игровой полосой, и спрятать его
+     там нечем: внутри коридора маска обрыва не работает по построению.
+
+     Проверяется не якорь элемента, а НАРИСОВАННАЯ фигура: якорь был снаружи
+     всё это время, в коридор заезжала геометрия. Сравнивать можно прямо по
+     экрану — `sx` не зависит от `y`, поэтому кромка коридора на нужной
+     глубине это одно число. */
+  for (const s of [-1, 1]) {
+    for (const z of [0.9, 1.5, 3, 6]) {
+      const el = {
+        kind: 'flower', zone: 'greenHill', side: s,
+        x: s * (CORRIDOR_HALF + 0.22), y: CLIFF_TOP, h: 0.45, z, at: 0, phase: 0,
+      };
+      const нарисовано = frame({ decor: [el] }).filter((f) => f.style === C.flower);
+      const край = project(s * CORRIDOR_HALF, 0, z, cam0).sx;
+      const внутрь = нарисовано.some((f) => (s > 0 ? f.minX < край - 0.5 : f.maxX > край + 0.5));
+      check(`цветок на ${s > 0 ? 'правой' : 'левой'} обочине, z=${z}: не залезает в коридор`,
+        !внутрь, 'лепесток повис бы над игровой полосой, и скрыть его нечем');
+    }
+  }
+
+  // Декорация, целиком ушедшая за обрыв, не рисуется вовсе: вырожденные
+  // четырёхугольники нулевой площади — это заливки в пользу никому.
+  const buried = frame({ decor: [post(12, 1, DECOR.outM, 0.2)] });
+  check('полностью скрытая декорация не рисуется',
+    !buried.some((s) => s.style === C.post),
+    'иначе кадр платит заливками за то, чего не видно');
+});
+
 
 // ─────────────────────────── итог ───────────────────────────
 

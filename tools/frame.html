@@ -16,12 +16,17 @@
 
     ?finishIn=2.3                 — ворота и табличка
     ?kind=side&side=1&dt=1.8&u=-0.9 — боковое препятствие, ребёнок ушёл влево
-    ?kind=duck&dt=1.2             — верхнее
-    ?band=1                       — init-полоса для фонового растра
+    ?kind=duck&dt=1.2&look=ceiling — верхнее, вторая внешность (зубья)
+    ?band=greenHill               — init-полоса для фонового растра зоны
+                                    (?band=1 — то же для первой зоны)
+
+  Полос теперь три, по одной на зону: небо у зон своё, иначе смена оформления
+  посреди забега не достаёт до верхней половины кадра — именно это и заметил
+  заказчик 10 октября.
 
   В консоли браузера:
-    await saveFrame('tools/init/band.png')
-    await toWebp('tools/painted/sky-band.png', 'assets/sky.webp', 0.82, 0.704)
+    await saveFrame('tools/init/band-sunsetDunes.png')
+    await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82, 0.704)
     // последний аргумент обязателен: без него облака останутся белыми
 
   Инструмент разработки: в офлайн-кэш не попадает, tools/ туда не берут.
@@ -41,6 +46,7 @@
 <script type="module">
   import { createView, makeDecor, makeStars } from '../js/view.js';
   import { VIEW } from '../js/config.js';
+  import { THEME, ZONES, SKY_FILES } from '../js/theme.js';
 
   const q = new URLSearchParams(location.search);
   const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -104,6 +110,15 @@
   const showRuler = () => { ruler.style.top = `${(canvas.clientHeight * 0.46).toFixed(1)}px`; };
 
   if (q.has('band')) {
+    /* Зона полосы. `?band=1` оставлен и значит первую зону: так в README
+       записан весь ритуал сборки фона, и ломать его ради единообразия
+       незачем. */
+    const zone = ZONES.includes(q.get('band')) ? q.get('band') : ZONES[0];
+    const T = THEME[zone];
+    /* Облака в init ЯРЧЕ палитры намеренно. Это не картинка игры, а подсказка
+       модели: из бледного пятна она облака не вырастит. Светлоту потом
+       зажимает `toWebp(..., clampTo)` — там, где это имеет значение. */
+    const cloudHi = '#f4fbff';
     /* init-полоса для фонового растра — и это НЕ кадр коридора.
 
        Кадр здесь не годится: в нём запечены обрывы, а фон едет по горизонтали
@@ -114,11 +129,11 @@
     const W = VIEW.width;
     const hy = VIEW.height * 0.46;
     const g = ctx.createLinearGradient(0, 0, 0, hy);
-    g.addColorStop(0, '#3f97d4');
-    g.addColorStop(1, '#9bd6f2');
+    g.addColorStop(0, T.sky);
+    g.addColorStop(1, T.skyLow);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, hy);
-    ctx.fillStyle = '#2f7a4a';
+    ctx.fillStyle = T.hills;
     ctx.fillRect(0, hy, W, VIEW.height - hy);
 
     /* Полосе нужна КОМПОЗИЦИЯ, а не заливка. Проверено прямо здесь: от двух
@@ -127,7 +142,7 @@
        же автора init всегда был векторной сценой; это то же самое правило.
        Поэтому грубые облака и горбы холмов рисуются здесь руками, а нейросеть
        делает из них мягкие — ровно то, чего вектор не умеет. */
-    ctx.fillStyle = '#f4fbff';
+    ctx.fillStyle = cloudHi;
     for (const [cx, cy, r] of [[0.12, 0.42, 1], [0.34, 0.26, 0.7], [0.58, 0.47, 1.15], [0.8, 0.3, 0.85]]) {
       const x = cx * W;
       const y = cy * hy;
@@ -142,7 +157,7 @@
 
     // Гряда холмов по линии горизонта и редкие стволы: силуэт, из которого
     // модели есть что вырастить.
-    ctx.fillStyle = '#287044';
+    ctx.fillStyle = T.hills;
     for (let i = 0; i < 7; i++) {
       const x = (i + 0.5) * W / 7;
       const rw = W * (0.1 + 0.03 * (i % 3));
@@ -153,7 +168,7 @@
       ctx.closePath();
       ctx.fill();
     }
-    ctx.fillStyle = '#1f5c38';
+    ctx.fillStyle = T.grassDark;
     for (let i = 0; i < 5; i++) {
       const x = (i + 0.3) * W / 5;
       ctx.fillRect(x, hy - hy * 0.1, W * 0.006, hy * 0.1);
@@ -163,19 +178,23 @@
     }
 
     showRuler();
-    info.textContent = 'init-полоса для фона: горизонт на 46%';
+    info.textContent = `init-полоса зоны «${T.name}» (${zone}) → assets/${SKY_FILES[zone]}, горизонт на 46%`;
   } else {
     // ?sky=1 готовит init-кадр для генерации — в нём фонового растра быть не
     // должно, иначе следующая генерация пойдёт от самой себя.
     const bare = q.has('sky');
-    let backdrop = null;
+    /* Растры приходят КАРТОЙ по зонам — небо меняется вместе с зоной.
+       Недостающий файл просто не попадает в карту, и зона уходит на векторный
+       путь: ровно то же, что в игре. */
+    const zone = ZONES.includes(q.get('zone')) ? q.get('zone') : ZONES[0];
+    const backdrops = {};
     if (!bare) {
-      backdrop = new Image();
-      backdrop.src = '/assets/sky.webp';
-      try { await backdrop.decode(); } catch { backdrop = null; }
+      const im = new Image();
+      im.src = `/assets/${SKY_FILES[zone]}`;
+      try { await im.decode(); backdrops[zone] = im; } catch { /* нет файла — вектор */ }
     }
 
-    const view = createView(canvas, { backdrop });
+    const view = createView(canvas, { backdrops });
     const travel = num('travel', 7.5);
     const elapsed = num('elapsed', travel / VIEW.speed);
 
@@ -185,6 +204,9 @@
     if (q.get('kind')) {
       obstacles.push({
         kind: q.get('kind'),
+        // Внешность по заказу: ?look=gate / ceiling. Без неё посмотреть вторую
+        // внешность нечем, а именно на неё и жалуются глазами.
+        look: q.get('look') || undefined,
         side: num('side', -1),
         at: elapsed + num('dt', 1.2),
         passed: false, hit: false, verdictAt: null,
@@ -203,6 +225,9 @@
       pulse: num('pulse', 1),
       finishIn: q.has('finishIn') ? num('finishIn', 1.2) : null,
       dim: 0,
+      // Зона кадра: ?zone=nightHills. Иначе любой кадр смотрится в первой, и
+      // посмотреть на закат или ночь было бы нечем.
+      zone,
     });
 
     showRuler();

@@ -14,15 +14,29 @@
 node serve.js                     # http://localhost:8099 + POST /save для инструментов
 ```
 
-Арт первого уровня собирается отдельно и в обычной работе не нужен:
+Фон неба собирается отдельно и в обычной работе не нужен. Растров три, по
+одному на зону забега (`SKY_FILES` в `js/theme.js`), и каждый идёт тем же
+путём — init-полоса в цветах своей зоны, img2img, перегон в WebP с зажимом
+светлоты:
 
 ```
 # сервер Easy Diffusion — только так, из Git Bash он не стартует:
 #   Start-Process cmd.exe -ArgumentList '/c','"D:\EasyDiffusion\Start Stable Diffusion UI.cmd"'
-# в браузере http://localhost:8099/tools/frame.html?band=1 -> saveFrame('tools/init/band.png')
-node tools/ed-generate.mjs --init tools/init/band.png --strength 0.55 --out tools/painted/sky-band.png --prompt "..."
-# затем в tools/frame.html: toWebp('tools/painted/sky-band.png', 'assets/sky.webp', 0.82, 0.704)
+# в браузере http://localhost:8099/tools/frame.html?band=sunsetDunes
+#   -> await saveFrame('tools/init/band-sunsetDunes.png')
+node tools/ed-generate.mjs --init tools/init/band-sunsetDunes.png --strength 0.55 \
+  --w 1024 --h 576 --steps 28 --out tools/painted/sky-sunset.png --prompt "..."
+# затем в tools/frame.html:
+#   await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82, 0.704)
 ```
+
+Последний аргумент — потолок светлоты, и он обязателен: без него облака
+остаются чисто белыми и начинают спорить с проёмом. У дневных зон это 0.704
+(граница `GAP_GUARD`), **у ночной — 0.30**: при общем потолке её облака вышли
+бы вчетверо светлее самого светлого цвета её же палитры.
+
+Посмотреть любой кадр, не дожидаясь его в забеге, — там же:
+`tools/frame.html?zone=nightHills&kind=side&side=1&look=gate&dt=2.6`.
 
 Сборщика и зависимостей нет: голые ES-модули, как есть. `node_modules` не существует.
 
