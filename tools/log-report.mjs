@@ -475,10 +475,47 @@ export function report(session) {
     };
   })();
 
+  /* ── сборка и офлайн-комплект ──
+
+     Номер сборки появился в журнале после 10 октября, когда выяснилось, что
+     отличить «телефон не видел новый sw.js» от «install упал и снёс addAll
+     целиком» нечем: у неудавшейся установки события нет вовсе.
+
+     Исход починки читается ТОЛЬКО вместе с проверкой: `offline.check` говорит,
+     чего не хватало, `offline.repair` — чем дело кончилось. Порознь первое
+     похоже на «всё хорошо» (ровно та ложь, из-за которой правка и случилась),
+     а второе — на действие без повода. */
+  const build = (() => {
+    const b = pick(log, 'build').pop();
+    if (!b) return null;
+    return {
+      version: b.version ?? null,
+      builtAt: b.builtAt ?? null,
+      controlled: typeof b.controlled === 'boolean' ? b.controlled : null,
+    };
+  })();
+
+  const offline = (() => {
+    const check = pick(log, 'offline.check').pop();
+    const repair = pick(log, 'offline.repair').pop();
+    if (!check && !repair) return null;
+    return {
+      ok: typeof check?.ok === 'boolean' ? check.ok : null,
+      gone: check?.gone === true,
+      skipped: check?.skipped ?? null,
+      missing: check?.missing?.length ?? 0,
+      asked: repair ? repair.asked === true : null,
+      repaired: repair ? (typeof repair.ok === 'boolean' ? repair.ok : null) : null,
+      repairMs: repair?.ms ?? null,
+    };
+  })();
+
   return {
     id: session?.id ?? null,
     startedAt: session?.startedAt ?? null,
     ua: session?.ua ?? null,
+    build,
+    offline,
     events: log.length,
     spanS: round(end / 1000, 1),
     finished,
@@ -550,6 +587,33 @@ export function format(rep) {
     const просьба = st.granted === null ? ''
       : st.granted ? ', просьбу удовлетворили' : ', в просьбе отказали';
     L.push(`  хранилище: ${режим}${занято}${просьба}`);
+  }
+
+  /* Сборка — отдельной строкой и только когда есть: журналы до 10 октября её
+     не носят, и прочерк читался бы как «сборка неизвестна», что верно, но
+     занимает строку в каждой старой сессии. */
+  if (rep.build) {
+    const ведёт = rep.build.controlled === null ? ''
+      : rep.build.controlled ? ', страницу ведёт воркер' : ', воркер страницу не ведёт';
+    L.push(`  сборка ${rep.build.version ?? '—'}`
+      + (rep.build.builtAt ? ` от ${rep.build.builtAt}` : '') + ведёт);
+  }
+
+  /* Офлайн-комплект. Слова выбраны так, чтобы «пропал» нельзя было прочитать
+     как «ещё не скачан»: до правки это были одна и та же строка, и журнал
+     четыре сессии подряд писал `ok` при отсутствующем комплекте. */
+  if (rep.offline) {
+    const o = rep.offline;
+    const состояние = o.gone ? 'ПРОПАЛ (был и вытеснен)'
+      : o.missing ? `не хватает ${o.missing} файлов`
+        : o.skipped ? `не проверялся: ${o.skipped}`
+          : o.ok ? 'на месте' : 'неизвестно';
+    const починка = o.asked === null ? ''
+      : o.asked === false ? ', добирать было некого'
+        : o.repaired === true ? `, добран${o.repairMs == null ? '' : ` за ${мс(o.repairMs)}`}`
+          : o.repaired === false ? ', добрать не удалось'
+            : ', исход добора неизвестен';
+    L.push(`  офлайн-комплект: ${состояние}${починка}`);
   }
 
   if (rep.perf.windows) {

@@ -19,7 +19,7 @@
 // один раз». Поэтому MediaPipe переехал в собственный кэш, имя которого
 // содержит отпечаток его содержимого, а не номер сборки: правка игры имя не
 // меняет, и перекачивать нечего.
-const CACHE = 'run-v98';
+const CACHE = 'run-v99';
 
 /* Имя задаётся ОТПЕЧАТКОМ содержимого vendor/, а не номером сборки, и это и
    есть весь смысл разделения: то же имя — те же байты по построению, значит
@@ -79,8 +79,9 @@ const VENDOR_ASSETS = [
   './vendor/models/pose_landmarker_lite.task',
 ];
 
-/* Установка качает файлы в обход обычного кэша браузера, и это не
-   перестраховка, а исправление настоящей поломки.
+/* Наполнение кэшей. Живёт отдельной функцией, а не внутри `install`, и качает
+   файлы в обход обычного кэша браузера. Обе особенности — исправления
+   настоящих поломок, и каждая стоила по журналу.
 
    GitHub Pages отдаёт всё с max-age=600. Обычный addAll берёт файлы через
    кэш браузера, поэтому свежепоставленный service worker складывал в новый
@@ -97,23 +98,61 @@ const VENDOR_ASSETS = [
    либо полон, либо отсутствует — частично скачанного комплекта не бывает. А
    вот РАСХОЖДЕНИЕ двух кэшей бывает: сеть кончилась между ними. Ровно это и
    проверяет checkVendor() в js/vendor.js, показывая «нужен интернет один раз»
-   вместо попытки запустить распознавание на половине комплекта. */
+   вместо попытки запустить распознавание на половине комплекта.
+
+   А вынесена она из `install` по второму поводу, замеченному журналом
+   10 октября. CacheStorage браузер вправе вытеснить ЦЕЛИКОМ, не снимая при этом
+   регистрацию воркера. А наполнял кэш только `install`, который запускается
+   лишь при смене байтов sw.js: `activate` чистит чужие имена, `fetch` при
+   промахе уходит в сеть, разговаривать с воркером страница не умела вовсе.
+   То есть состояние «регистрация жива, кэша нет» не лечилось НИЧЕМ —
+   установленное приложение молча работало из сети, и офлайна у ребёнка не
+   было до следующей сборки. Замерено: 9 октября кэш `run-v89` жив, 10 октября
+   в том же приложении 0 МБ занято, и четыре сессии подряд он не вернулся.
+
+   Функция ОДНА на оба пути намеренно. Вторая копия наполнения — это второе
+   место, где надо поддерживать соответствие со списками, а списки пишет
+   генератор; разъехались бы они молча. */
+async function prime() {
+  const cache = await caches.open(CACHE);
+  await cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'no-cache' })));
+
+  /* Качается только отсутствующее. При неизменном vendor/ имя кэша то же,
+     всё уже лежит, список пуст — и сборка не стоит ни одного байта. */
+  const vendor = await caches.open(VENDOR_CACHE);
+  const missing = [];
+  for (const url of VENDOR_ASSETS) if (!(await vendor.match(url))) missing.push(url);
+  if (missing.length) {
+    await vendor.addAll(missing.map((url) => new Request(url, { cache: 'no-cache' })));
+  }
+
+  const left = [];
+  for (const url of VENDOR_ASSETS) if (!(await vendor.match(url))) left.push(url);
+  return { ok: !left.length, missing: left };
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
-    const cache = await caches.open(CACHE);
-    await cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'no-cache' })));
-
-    /* Качается только отсутствующее. При неизменном vendor/ имя кэша то же,
-       всё уже лежит, список пуст — и сборка не стоит ни одного байта. */
-    const vendor = await caches.open(VENDOR_CACHE);
-    const missing = [];
-    for (const url of VENDOR_ASSETS) if (!(await vendor.match(url))) missing.push(url);
-    if (missing.length) {
-      await vendor.addAll(missing.map((url) => new Request(url, { cache: 'no-cache' })));
-    }
-
+    await prime();
     await self.skipWaiting();
   })());
+});
+
+/* Единственный способ для страницы попросить добрать вытесненное: `install`
+   на неизменных байтах не повторится, а ждать новой сборки — значит оставить
+   ребёнка без офлайна на неизвестный срок.
+
+   Ответ уходит в порт `MessageChannel`, потому что просящему нужен ИСХОД, а
+   не факт отправки: без него в журнале осталась бы просьба без последствия, и
+   отличить «добрали» от «сеть кончилась» было бы нечем. Порта нет — молча
+   делаем работу: это законный вызов «просто почини». */
+self.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'prime') return;
+  const port = e.ports && e.ports[0];
+  e.waitUntil(prime().then(
+    (r) => port && port.postMessage(r),
+    (err) => port && port.postMessage({ ok: false, missing: [], error: String(err) }),
+  ));
 });
 
 self.addEventListener('activate', (e) => {
