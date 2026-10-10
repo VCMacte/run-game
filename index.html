@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0b0d14">
-<title>Беги!</title>
+<meta name="theme-color" content="#c6e2f4">
+<title>Шустрик</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -15,11 +15,36 @@
 <div id="stage">
   <div class="corridor"></div>
 
+  <!-- ШУСТРИК — талисман игры, и рисунок у него ОДИН на три места: здесь,
+       в иконке приложения (tools/make-icons.mjs) и в самом забеге, где он
+       выскакивает из бадника (js/view.js). Среды разные — разметка, байтовый
+       кодировщик PNG и четырёхугольники Canvas2D, — слить их в один источник
+       нечем. Цвета поэтому взяты из js/theme.js и сверяются тестом, а форму
+       приходится держать руками: см. CLAUDE.md, «мордочка в трёх местах».
+
+       Встроенным SVG, а не файлом: tools/make-sw.mjs кладёт в офлайн-кэш из
+       icons/ только .png, и отдельный .svg тихо остался бы вне кэша — у
+       ребёнка без сети пропала бы картинка, а приложение бы установилось. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="shustrik" viewBox="0 0 100 100">
+      <circle cx="25" cy="27" r="15" fill="#dfb871"/>
+      <circle cx="75" cy="27" r="15" fill="#dfb871"/>
+      <circle cx="50" cy="57" r="33" fill="#dfb871"/>
+      <circle cx="25" cy="27" r="7" fill="#6b4a2a"/>
+      <circle cx="75" cy="27" r="7" fill="#6b4a2a"/>
+      <ellipse cx="50" cy="70" rx="19" ry="14" fill="#eafff2"/>
+      <circle cx="37" cy="50" r="6" fill="#120d14"/>
+      <circle cx="63" cy="50" r="6" fill="#120d14"/>
+      <circle cx="50" cy="63" r="4.5" fill="#120d14"/>
+    </symbol>
+  </svg>
+
   <!-- Калитка. Нужна обязательно: без жеста пользователя браузер не даст ни
        полноэкранный режим, ни камеру. Нажатие кнопки и есть этот жест. -->
   <section id="gate" class="sheet screen center">
-    <h1>Беги!</h1>
-    <p class="lead">Поставьте телефон на штатив под телевизором и включите трансляцию экрана.</p>
+    <svg class="mascot" aria-hidden="true"><use href="#shustrik"/></svg>
+    <h1>Шустрик</h1>
+    <p class="lead">Беги и лови кольца.<br>Поставьте телефон на штатив под телевизором и включите трансляцию экрана.</p>
 
     <div class="card warn" id="installHint" hidden>
       <h2>Откройте как приложение</h2>
@@ -35,10 +60,11 @@
 
   <!-- Главное меню. Две двери: тренировка и игра. -->
   <section id="menu" class="sheet screen center" hidden>
-    <h1>Беги!</h1>
+    <svg class="mascot small" aria-hidden="true"><use href="#shustrik"/></svg>
+    <h1>Шустрик</h1>
     <div class="row center">
       <button id="goTrain" class="big">Тренировка<small id="trainSub">учимся двигаться</small></button>
-      <button id="goPlay" class="big ghost">Игра<small id="playSub">забег до финиша</small></button>
+      <button id="goPlay" class="big grass">Игра<small id="playSub">забег до финиша</small></button>
     </div>
     <p class="lead" id="menuHint">Сначала тренировка: на ней игра научится узнавать именно тебя.</p>
     <!-- Кто играет. Это не родительская настройка, а первый вопрос перед
@@ -85,6 +111,18 @@
     </div>
 
     <div id="runOverlay" hidden>
+      <!-- Шустрик на финише: награда за добеганный забег, а не украшение.
+           Видимость решается там же, где у остальных частей результата, —
+           одним выражением в refreshHud(), а не веткой: на блоке результата
+           на этом уже ошибались, и он оставался висеть поверх следующего
+           забега.
+
+           Обёртка `div` вокруг `svg` обязательна. Всё приложение прячет
+           элементы через `el.hidden`, но у SVGElement это свойство НЕ
+           отражается в атрибут: присваивание проходит молча, `hidden` остаётся
+           в разметке, и картинка не появляется никогда. Поймано глазами на
+           первом же финише. -->
+      <div id="runMascot" hidden><svg class="mascot small" aria-hidden="true"><use href="#shustrik"/></svg></div>
       <div id="runOverlayTitle">—</div>
       <div id="runOverlayText">—</div>
       <div id="runNumbers" hidden></div>

@@ -1,19 +1,37 @@
 // Иконки приложения. Собираются из байтов, а не рисуются в редакторе:
-// растеризатора SVG на машине нет, а тащить зависимость ради четырёх картинок
+// растеризатора SVG на машине нет, а тащить зависимость ради трёх картинок
 // незачем. Заодно генератор детерминирован — diff иконки осмыслен.
 //
-//   node tools/make-icons.mjs
+//   node tools/make-icons.mjs        (строго из корня проекта: пути от cwd)
 //
-// Рисунок — тот же коридор, что и в игре: тёмный фон, светлый пол, уходящий
-// в точку, и поперечные линии. Крупные плоские формы: иконка должна читаться
-// и в списке приложений, и после сжатия трансляции.
+// Рисунок — мордочка Шустрика, талисмана игры. Она же стоит встроенным SVG в
+// index.html и она же выскакивает из бадника в забеге (js/view.js): три места,
+// три разные среды, и слить их в один источник нечем. ЦВЕТА при этом общие —
+// берутся отсюда, из js/theme.js, — а форму приходится держать руками.
+// Правило записано в CLAUDE.md: «мордочка в трёх местах».
+//
+// Крупные плоские формы: иконка должна читаться и в списке приложений, и
+// после сжатия трансляции.
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { THEME } from '../js/theme.js';
 
-const BG = [0x0b, 0x0d, 0x14];
-const FLOOR = [0x5a, 0xa9, 0xff];
-const LINE = [0xf2, 0xf5, 0xff];
+/* Цвета зверька не дублируются числами: разъехавшись с палитрой, иконка стала
+   бы зверьком другой масти, и заметить это можно было бы только глазами.
+
+   Фон — исключение, и честное: это `--bg` из css/style.css, а CSS отсюда не
+   импортируется. Значит он тут ЧИСЛОМ, и совпадение двух литералов сторожит
+   проверка в tests-shell.mjs — иначе иконка однажды разойдётся с заставкой и
+   с меню молча. Цвет светлый небесный, но НЕ `sky` первой зоны (#4aa6dd):
+   тот насыщеннее и для листа, который держат в руке, слишком тёмен. */
+const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const T = THEME.greenHill;
+const BG = hex('#c6e2f4');        // = --bg в css/style.css
+const FUR = hex(T.critter);
+const EAR = hex(T.palmTrunk);
+const MUZZLE = hex(T.gap);
+const EYE = hex(T.badnikMouth);
 
 const CRC = (() => {
   const t = new Int32Array(256);
@@ -67,30 +85,54 @@ function png(width, height, rgb) {
 
 // pad — доля поля, свободная по краям. Для maskable Android обрезает до 20%
 // с каждой стороны, поэтому рисунок там поджимается внутрь.
-function corridor(size, pad) {
+//
+// Единицы внутри — доли рисунка: голова, два уха, светлая мордочка, два глаза
+// и нос. Те же доли, что у символа в index.html, только там они на сетке 100.
+function shustrik(size, pad) {
   const inner = size * (1 - 2 * pad);
   const off = size * pad;
-  const horizon = 0.20;        // доля высоты рисунка, где сходится коридор
-  const nearHalf = 0.50;       // половина ширины пола у ближнего края
-  const farHalf = 0.028;       // и у горизонта
-  const lines = [0.12, 0.33, 0.58, 0.87]; // поперечные линии, сгущаются к горизонту
+  const disc = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 
   return (px, py) => {
     const x = (px - off) / inner;
     const y = (py - off) / inner;
     if (x < 0 || x > 1 || y < 0 || y > 1) return BG;
-    if (y < horizon) return BG;
 
-    const t = (y - horizon) / (1 - horizon);        // 0 у горизонта, 1 у ближнего края
-    const half = farHalf + (nearHalf - farHalf) * Math.pow(t, 1.7); // показатель даёт перспективу
-    if (Math.abs(x - 0.5) > half) return BG;
+    // Порядок обратный порядку рисования: сначала то, что сверху.
+    if (disc(x, y, 0.50, 0.63, 0.045)) return EYE;      // нос
+    if (disc(x, y, 0.37, 0.50, 0.060)) return EYE;      // глаза
+    if (disc(x, y, 0.63, 0.50, 0.060)) return EYE;
+    // Мордочка — эллипс, поэтому своя мерка по осям.
+    if (((x - 0.50) / 0.19) ** 2 + ((y - 0.70) / 0.14) ** 2 <= 1) return MUZZLE;
+    // Внутренняя часть уха выше головы, а не ниже: голова краем заходит на
+    // ухо, и при обратном порядке она откусывала от коричневого кружка
+    // ломтик — ухо читалось щербатым.
+    if (disc(x, y, 0.25, 0.27, 0.07)) return EAR;
+    if (disc(x, y, 0.75, 0.27, 0.07)) return EAR;
+    if (disc(x, y, 0.50, 0.57, 0.33)) return FUR;       // голова
+    if (disc(x, y, 0.25, 0.27, 0.15)) return FUR;       // уши
+    if (disc(x, y, 0.75, 0.27, 0.15)) return FUR;
+    return BG;
+  };
+}
 
-    // Поперечные линии: толщина растёт вместе с перспективой, иначе у горизонта
-    // они исчезают в один пиксель и после сжатия пропадают совсем.
-    for (const l of lines) {
-      if (Math.abs(t - l) < 0.016 + 0.05 * l) return LINE;
+/* Сглаживание: 3×3 подвыборки на пиксель со средним.
+
+   Коридору оно было не нужно — он собран из прямых, и ступенек на них не
+   видно. У зверька сплошные дуги, и без сглаживания на 192 пикселях ухо идёт
+   лесенкой. Детерминированность сохраняется: сетка подвыборок фиксирована,
+   случайности нет, зависимостей не прибавилось. */
+function smooth(sample) {
+  const grid = [0.1667, 0.5, 0.8333];
+  return (px, py) => {
+    let r = 0, g = 0, b = 0;
+    for (const dy of grid) {
+      for (const dx of grid) {
+        const c = sample(px + dx, py + dy);
+        r += c[0]; g += c[1]; b += c[2];
+      }
     }
-    return FLOOR;
+    return [Math.round(r / 9), Math.round(g / 9), Math.round(b / 9)];
   };
 }
 
@@ -102,7 +144,7 @@ for (const [name, size, pad] of [
   ['icon-512-maskable.png', 512, 0.20],
 ]) {
   const file = `icons/${name}`;
-  writeFileSync(file, png(size, size, corridor(size, pad)));
+  writeFileSync(file, png(size, size, smooth(shustrik(size, pad))));
   made.push(`${file} ${size}×${size}`);
 }
 console.log(made.join('\n'));

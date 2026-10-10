@@ -610,6 +610,7 @@ function renderRunHud(h = {}) {
   const onResult = stage === 'result';
   $('runResult').hidden = !onResult;
   $('runResultRow').hidden = !onResult;
+  $('runMascot').hidden = !onResult;
 
   /* Кнопка смены камеры живёт ровно на одном экране — установке штатива:
      только там видно, что камера снимает. Видимость решается здесь, одним

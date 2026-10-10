@@ -1359,6 +1359,26 @@ function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, stil
       project(sx + 0.09, sy + 0.18, z, cam), project(sx - 0.09, sy + 0.18, z, cam),
       COLORS.critter,
     );
+    /* Уши и глаза. Зверёк — ТАЛИСМАН игры, его мордочка стоит на иконке
+       приложения и в меню; безликий квадрат в самой игре означал бы, что имя
+       «Шустрик» ни к чему в кадре не относится.
+
+       Это третье место, где он нарисован, и синхронизировать три среды —
+       байтовый PNG, SVG в разметке и четырёхугольники здесь — нечем. Цвета
+       общие (`critter`, `badnikMouth` из js/theme.js), форму держим руками:
+       правило записано в CLAUDE.md. */
+    for (const d of [-1, 1]) {
+      quad(
+        project(sx + d * 0.085, sy + 0.15, z, cam), project(sx + d * 0.035, sy + 0.15, z, cam),
+        project(sx + d * 0.035, sy + 0.22, z, cam), project(sx + d * 0.085, sy + 0.22, z, cam),
+        COLORS.critter,
+      );
+      quad(
+        project(sx + d * 0.055, sy + 0.09, z, cam), project(sx + d * 0.02, sy + 0.09, z, cam),
+        project(sx + d * 0.02, sy + 0.13, z, cam), project(sx + d * 0.055, sy + 0.13, z, cam),
+        COLORS.badnikMouth,
+      );
+    }
     return;
   }
 

@@ -316,8 +316,8 @@ export async function save() {
     try {
       await navigator.share({
         files: [file],
-        title: 'Журнал «Беги!»',
-        text: `Журнал событий «Беги!», ${count(data.sessions.length, SESSIONS)}`,
+        title: 'Журнал «Шустрика»',
+        text: `Журнал событий «Шустрика», ${count(data.sessions.length, SESSIONS)}`,
       });
       shared = 'shared';
     } catch (e) {

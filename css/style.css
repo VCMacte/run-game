@@ -11,15 +11,52 @@
       здесь косметика, а не несущая конструкция: вылезла строка состояния —
       приложение стало на несколько процентов меньше и продолжает работать. */
 
+/* ПАЛИТРА РАЗДЕЛЕНА НАДВОЕ, и это несущее различие, а не аккуратность.
+
+   Листы (меню, калитка, настройки) — светлые: их держат в руке, и адресат у
+   них дневной. Раньше здесь был почти чёрный фон с одной синей кнопкой, и
+   заказчик сказал прямо: «всё выглядит весьма мрачно, а игра-то детская».
+
+   А всё, что лежит ПОВЕРХ живого коридора — HUD, пауза, результат, — светлым
+   текстом на тёмном и осталось. Под ним три разные зоны, включая ночную, и
+   тёмный текст в ней исчезает. Поэтому у «поверх коридора» свои токены
+   (`--on-dark`, `--scrim`, `--track`), и брать для них `--fg` нельзя. */
 :root {
-  --bg: #0b0d14;
-  --panel: #141827;
-  --fg: #f2f5ff;
-  --dim: #8b94b2;
-  --accent: #5aa9ff;
+  /* ── лист: светлое дневное ── */
+  --bg: #c6e2f4;     /* светлое небо; НЕ sky первой зоны — тот темнее */
+  --panel: #ffffff;
+  --fg: #10243a;
+  --dim: #41607a;
+  --ink: #0b1a2a;    /* текст на цветной кнопке */
+  --accent: #ff9f1c; /* главная кнопка */
+  --grass: #3cab4f;  /* вторая кнопка */
+  --slate: #2c4a63;  /* служебная кнопка, текст светлый */
+  /* Состояния на ЛИСТЕ — тёмные, их читают на светлом фоне. */
+  --ok-ink: #1f8f4d;
+  --warn-ink: #b06400;
+  /* Подложка кнопки: синеватая, а не чёрная — на светлом фоне чёрная тень
+     читается грязью. */
+  --press: rgba(16, 36, 58, 0.32);
+  --me: rgba(255, 159, 28, 0.26); /* своя строка в таблице рекордов */
+
+  /* ── поверх коридора ── */
+  --on-dark: #f4f9ff;
+  --on-dark-dim: #c3d2e4;
+  /* Карточка поверх кадра. Полупрозрачная НАМЕРЕННО: за текстом результата
+     продолжает рисоваться коридор, и зона обязана быть видна до конца забега
+     (см. CLAUDE.md). Непрозрачная карточка отменила бы это решение, не сломав
+     ни одного теста. */
+  --scrim: rgba(10, 22, 38, 0.62);
+  /* А те же состояния ПОВЕРХ коридора — яркие, и это не дубль ради симметрии:
+     тёмная охра на закатном небе и в ночной зоне не читается вовсе, а
+     «камера не работает» и «ты вышел из кадра» обязаны быть видны всегда. */
   --ok: #39d98a;
   --warn: #ffb02e;
   --bad: #ff5a5f;
+  --track: #1b2237;  /* дорожка полосы прогресса и полосы поля */
+  --zone: #23406b;
+  --star: #ffd34d;   /* то же золото, что у колец в игре */
+  --stage-run: #0b0d14; /* поля по бокам кадра 16:9 на экране 20:9 */
 
   --safe: 3.5%;      /* запас на overscan телевизора */
   --vh: 100dvh;      /* переопределяется из js по visualViewport */
@@ -127,9 +164,20 @@ h1 {
   font-size: calc(var(--u) * 9);
   line-height: 1;
   letter-spacing: -0.01em;
-  text-shadow: 0 calc(var(--u) * 0.6) 0 rgba(0, 0, 0, 0.5);
+  text-shadow: 0 calc(var(--u) * 0.6) 0 var(--press);
 }
 h2 { margin: 0; font-size: calc(var(--u) * 4.4); }
+
+/* Талисман на калитке и в меню. Размер в `--u`, как и всё остальное: иначе он
+   перестанет масштабироваться между телефоном и зеркалом на телевизоре. */
+.mascot {
+  display: block;
+  width: calc(var(--u) * 30);
+  height: calc(var(--u) * 30);
+  margin-inline: auto;
+  flex: none;
+}
+.mascot.small { width: calc(var(--u) * 18); height: calc(var(--u) * 18); }
 p { margin: 0; }
 .dim { color: var(--dim); }
 .lead { font-size: calc(var(--u) * 3.6); font-weight: 400; color: var(--dim); }
@@ -142,7 +190,7 @@ p { margin: 0; }
 button {
   font: inherit;
   font-size: calc(var(--u) * 4);
-  color: #07111f;
+  color: var(--ink);
   background: var(--accent);
   border: 0;
   border-radius: calc(var(--u) * 2.6);
@@ -151,14 +199,31 @@ button {
   cursor: pointer;
   text-align: center;
   /* Тонкая рамка исчезла бы при сжатии, поэтому различаем кнопки заливкой. */
-  box-shadow: 0 calc(var(--u) * 0.8) 0 rgba(0, 0, 0, 0.45);
+  box-shadow: 0 calc(var(--u) * 0.8) 0 var(--press);
 }
 button:active { transform: translateY(calc(var(--u) * 0.4)); box-shadow: none; }
 button:disabled { opacity: 0.45; }
+/* `ghost` больше НЕ прозрачная, и это исправление по собственному же правилу
+   проекта, записанному двумя абзацами ниже: прозрачная кнопка с тонким
+   контуром на телевизоре после сжатия выглядит не как кнопка, а как пустое
+   место — контур Miracast съедает первым. В главном меню таких было три из
+   пяти, то есть большинство кнопок читалось пустотой.
+
+   Имя класса оставлено: оно стоит в разметке десятка экранов, и переименование
+   дало бы диff на сотню строк ради слова. Значит `ghost` теперь — белая
+   заливка, самая светлая из четырёх. */
 button.ghost {
-  background: transparent;
+  background: var(--panel);
   color: var(--fg);
-  box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--dim);
+  box-shadow: 0 calc(var(--u) * 0.8) 0 var(--press);
+}
+
+/* Вторая по важности кнопка: трава. Отличается от главной и тоном, и
+   светлотой — цветность режется сильнее светлоты, поэтому одного тона мало. */
+button.grass {
+  background: var(--grass);
+  color: var(--ink);
+  box-shadow: 0 calc(var(--u) * 0.8) 0 var(--press);
 }
 
 /* Второстепенная кнопка — заливкой, а не рамкой. Прозрачная с тонким
@@ -166,9 +231,9 @@ button.ghost {
    пустое место: контур Miracast съедает первым. Отличается от главной
    светлотой, а не только тоном — цветность режется сильнее светлоты. */
 button.secondary {
-  background: #39415c;
-  color: var(--fg);
-  box-shadow: 0 calc(var(--u) * 0.8) 0 rgba(0, 0, 0, 0.45);
+  background: var(--slate);
+  color: var(--on-dark);
+  box-shadow: 0 calc(var(--u) * 0.8) 0 var(--press);
 }
 /* Мелкая кнопка: для того, что нужно взрослому и не должно спорить за
    внимание с «Тренировкой» и «Игрой». */
@@ -199,12 +264,17 @@ button.big small {
 .screen { display: flex; flex-direction: column; gap: calc(var(--u) * 2.6); }
 .screen.center { align-items: center; text-align: center; }
 
+/* Карточка. На тёмном фоне она отличалась от него сама; на светлом белое по
+   светло-голубому даёт отношение светлот 1.35, и после сжатия Miracast край
+   карточки теряется. Поэтому к заливке добавлена подложка — тем же приёмом,
+   что у кнопок, и той же переменной: тонкой рамке тут веры нет. */
 .card {
   background: var(--panel);
   border-radius: calc(var(--u) * 3);
   padding: calc(var(--u) * 3);
+  box-shadow: 0 calc(var(--u) * 0.6) 0 var(--press);
 }
-.card.warn { box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--warn); }
+.card.warn { box-shadow: inset 0 0 0 calc(var(--u) * 0.5) var(--warn-ink); }
 
 /* Единственное текстовое поле в приложении — имя игрока.
 
@@ -265,14 +335,16 @@ button.big small {
    место заголовку, переключателю длины и кнопке «Назад» — тому, ради чего
    рубеж и стоит. */
 #recList, #playerList { max-height: calc(var(--vh) * 0.5); overflow-y: auto; }
-/* Это --accent (#5aa9ff) с прозрачностью 0.16. Числом, а не переменной:
-   подмешать альфу к hex-переменной в CSS нечем, кроме color-mix, а он здесь
-   один на весь файл и ради одной строки не стоит нового приёма. Менять
-   вместе с --accent. */
-.rec.me { background: rgba(90, 169, 255, 0.16); }
+/* Своя строка подсвечена `--me` — это `--accent` с прозрачностью. Отдельной
+   переменной, а не числом внутри правила: подмешать альфу к hex в CSS нечем,
+   кроме color-mix, зато рядом с `--accent` её видно и меняют вместе. */
+.rec.me { background: var(--me); }
 .rec .place { color: var(--dim); min-width: calc(var(--u) * 5); }
 .rec .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec .num { color: var(--accent); }
+/* Число рекорда — тёмной охрой, а не `--accent`. Оранжевая заливка кнопки
+   работает как ЗАЛИВКА, но тем же цветом по белой карточке текст даёт
+   отношение 2.05 — для цифры, ради которой таблицу и открывают, этого мало. */
+.rec .num { color: var(--warn-ink); }
 .rec .when { color: var(--dim); font-size: calc(var(--u) * 2.6); }
 
 /* Полоса состояния для взрослого: установлено ли приложение, держится ли
@@ -288,9 +360,9 @@ button.big small {
   gap: calc(var(--u) * 2);
 }
 #status b { font-weight: 700; }
-#status .no { color: var(--warn); }
+#status .no { color: var(--warn-ink); }
 #status .ver { opacity: 0.65; }
-#status .yes { color: var(--ok); }
+#status .yes { color: var(--ok-ink); }
 
 /* Невидимая зона в углу: долгое удержание открывает родительское меню.
    Ребёнок на неё не наткнётся — там нет ничего, что просит нажатия. */
@@ -329,9 +401,12 @@ button.big small {
   align-items: flex-start;
   pointer-events: none;
   font-size: calc(var(--u) * 6);
+  /* Свой цвет, а не унаследованный от body: `--fg` на листе теперь тёмный, а
+     HUD лежит поверх живого коридора, и в ночной зоне тёмный текст исчезает. */
+  color: var(--on-dark);
   text-shadow: 0 calc(var(--u) * 0.5) 0 rgba(0, 0, 0, 0.6);
 }
-#runScore::before { content: '★ '; color: #ffd34d; }
+#runScore::before { content: '★ '; color: var(--star); }
 
 /* Полоса до финиша. Ребёнку обещан конец забега, и он должен быть виден:
    «сколько ещё» — первый вопрос, который задают на третьей минуте.
@@ -346,16 +421,16 @@ button.big small {
   top: 0;
   height: calc(var(--u) * 0.9);
   border-radius: calc(var(--u) * 0.45);
-  background: #1b2237;
+  background: var(--track);
   overflow: hidden;
 }
 #runProgressFill {
   height: 100%;
   width: 0%;
-  background: #ffd34d;
+  background: var(--star);
   border-radius: inherit;
 }
-#runSeen { font-size: calc(var(--u) * 2.6); font-weight: 400; color: var(--dim); }
+#runSeen { font-size: calc(var(--u) * 2.6); font-weight: 400; color: var(--on-dark-dim); }
 #runSeen.lost { color: var(--warn); }
 
 /* Окошко камеры всегда в углу и никогда посередине.
@@ -377,7 +452,9 @@ button.big small {
   border-radius: calc(var(--u) * 1.6);
   overflow: hidden;
   background: #000;
-  box-shadow: 0 0 0 calc(var(--u) * 0.5) var(--dim);
+  /* Контур окошка лежит поверх коридора, поэтому светлый: `--dim` листа
+     теперь тёмный и на тёмной зоне растворился бы. */
+  box-shadow: 0 0 0 calc(var(--u) * 0.5) var(--on-dark-dim);
 }
 
 /* На калибровке окошко НЕ уменьшается, и это решение развёрнуто намеренно.
@@ -415,8 +492,8 @@ button.big small {
   width: 17%;
   height: calc(var(--u) * 3.4);
   border-radius: calc(var(--u) * 1.7);
-  background: #1b2237;
-  box-shadow: inset 0 0 0 calc(var(--u) * 0.35) var(--dim);
+  background: var(--track);
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.35) var(--on-dark-dim);
   overflow: hidden;
 }
 /* Безопасная зона — та часть кадра, где игра уверенно видит ребёнка. */
@@ -426,7 +503,7 @@ button.big small {
   right: 8%;
   top: 0;
   bottom: 0;
-  background: #23406b;
+  background: var(--zone);
 }
 #runFieldMark {
   position: absolute;
@@ -465,9 +542,9 @@ button.big small {
   justify-content: center;
   font-size: calc(var(--u) * 2.8);
   font-weight: 400;
-  color: var(--dim);
+  color: var(--on-dark-dim);
 }
-#runNumbers b { display: block; font-size: calc(var(--u) * 4); color: var(--fg); font-weight: 700; }
+#runNumbers b { display: block; font-size: calc(var(--u) * 4); color: var(--on-dark); font-weight: 700; }
 #runNumbers .bad b { color: var(--warn); }
 #runNumbers .good b { color: var(--ok); }
 
@@ -491,8 +568,25 @@ button.big small {
 #runOverlay.setup #runNumbers { padding-left: 30%; }
 #runOverlay.setup #runOverlayTitle { font-size: calc(var(--u) * 6); }
 
-#runOverlayTitle { font-size: calc(var(--u) * 11); line-height: 1; }
-#runOverlayText { font-size: calc(var(--u) * 4); font-weight: 400; color: var(--dim); }
+#runOverlayTitle { font-size: calc(var(--u) * 11); line-height: 1; color: var(--on-dark); }
+#runOverlayText { font-size: calc(var(--u) * 4); font-weight: 400; color: var(--on-dark-dim); }
+
+/* Подложка под текстом паузы и результата. Стоит на СОДЕРЖИМОМ, а не на всём
+   `#runOverlay`: оверлей занимает кадр целиком, и залив его, мы спрятали бы
+   коридор — а он обязан быть виден до конца забега, иначе зона на финише
+   перестаёт держаться (это уже чинили). Полупрозрачная по той же причине. */
+#runOverlayTitle, #runOverlayText, #runResult {
+  background: var(--scrim);
+  border-radius: calc(var(--u) * 2.4);
+  padding: calc(var(--u) * 1.4) calc(var(--u) * 3.4);
+}
+/* Пустая строка подложки не получает: на калибровке до первой достоверной позы
+   подсказка пуста, и под заголовком висела бы тёмная плашка в две строки
+   высотой — на пустом месте и без причины. */
+#runOverlayTitle:empty, #runOverlayText:empty, #runResult:empty {
+  background: none;
+  padding: 0;
+}
 
 /* Результат забега. Крупно: его читают с дивана, и читает его ребёнок. */
 #runResult {
@@ -501,10 +595,10 @@ button.big small {
   justify-content: center;
   font-size: calc(var(--u) * 3);
   font-weight: 400;
-  color: var(--dim);
+  color: var(--on-dark-dim);
 }
-#runResult b { display: block; font-size: calc(var(--u) * 9); color: var(--fg); font-weight: 700; }
-#runResult .stars b { color: #ffd34d; }
+#runResult b { display: block; font-size: calc(var(--u) * 9); color: var(--on-dark); font-weight: 700; }
+#runResult .stars b { color: var(--star); }
 
 /* Полоса состояния адресована взрослому при настройке. Во время забега она на
    телевизоре — мусор поверх игры, да ещё и в том углу, где и так есть HUD. */
@@ -516,7 +610,7 @@ body:has(#run:not([hidden])) #status { display: none; }
    цвета неба — того же, которым закрашен кадр, — и поля перестают читаться
    как поля. */
 body:has(#run:not([hidden])) .corridor { display: none; }
-body:has(#run:not([hidden])) #stage { background: #0b0d14; }
+body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
 
 /* Подсказка о повороте. Показывается только когда экран действительно
    вертикальный, поэтому ей всё равно, сработала блокировка ориентации или
@@ -541,11 +635,16 @@ body:has(#run:not([hidden])) #stage { background: #0b0d14; }
     background: var(--bg);
   }
 }
-#runRotateIcon { font-size: calc(var(--u) * 18); line-height: 1; color: var(--accent); }
+#runRotateIcon { font-size: calc(var(--u) * 18); line-height: 1; color: var(--fg); }
 #runRotateText { font-size: calc(var(--u) * 6); }
 #runRotateHint { font-size: calc(var(--u) * 3.4); font-weight: 400; color: var(--dim); }
 
+/* Кнопка паузы — единственная кнопка, которая живёт ПОВЕРХ живого коридора.
+   Значит и цвета у неё оттуда же: белая заливка листа была бы в кадре вторым
+   по светлоте пятном после проёма и спорила бы с ним за «иди сюда». */
 #runExit {
+  background: var(--scrim);
+  color: var(--on-dark);
   position: absolute;
   right: var(--safe);
   bottom: var(--safe);
@@ -555,15 +654,23 @@ body:has(#run:not([hidden])) #stage { background: #0b0d14; }
   opacity: 0.5;
 }
 
-/* Фон коридора: тот же рисунок, что в иконке. Чистый CSS, ничего не грузит.
+/* Фон меню: уходящая вдаль дорожка. Чистый CSS, ничего не грузит.
    Треугольником, а не коническим градиентом: у клипа геометрия задана тремя
-   точками и предсказуема, а градиент приходится подбирать углами. */
+   точками и предсказуема, а градиент приходится подбирать углами.
+
+   Был синим пятном на почти чёрном — единственным цветом на экране. Стал
+   травяным клином на светлом небе: то же небо и та же трава, что в первой
+   зоне забега, поэтому меню и игра читаются как одно место.
+
+   Непрозрачность подбиралась глазами и дважды: 0.18 на светлом фоне не видно
+   вовсе, а 0.5 превращает клин в зелёную пирамиду во весь экран, которая
+   спорит и с заголовком, и с талисманом. 0.28 — дорожка, а не фигура. */
 .corridor {
   position: absolute;
   inset: 0;
   z-index: -1;
-  opacity: 0.18;
-  background: var(--accent);
+  opacity: 0.28;
+  background: var(--grass);
   clip-path: polygon(50% 16%, 108% 112%, -8% 112%);
 }
 

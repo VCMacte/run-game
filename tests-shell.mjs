@@ -15,6 +15,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { THEME, luminance } from './js/theme.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -63,6 +64,104 @@ group('манифест', () => {
       `заявлено ${icon.sizes}, в файле ${sizeOf(icon.src)}`);
   }
   check('есть maskable-иконка', m.icons.some((i) => i.purpose === 'maskable'));
+});
+
+/* ───────────────────────────── имя и вид ─────────────────────────────
+
+   До ребрендинга оформление не проверялось НИЧЕМ: ни цвета, ни тексты, ни
+   совпадение названия в манифесте с заголовком страницы. А имя живёт в пяти
+   местах сразу, и расходятся такие вещи молча: в списке приложений одно, в
+   заголовке другое, и заметить это можно только глазами и случайно.
+
+   Цвета проверяются той же `luminance`, которой проверяется палитра игры:
+   правило «различать по светлоте, а не по тону» одно на весь проект, потому
+   что Miracast режет цветность сильнее светлоты. */
+group('имя и вид', () => {
+  const m = JSON.parse(read('manifest.webmanifest'));
+  const css = read('css/style.css');
+
+  // ── имя одно и то же везде ──
+  const title = html.match(/<title>([^<]+)<\/title>/)?.[1] ?? '';
+  check('имя страницы и манифеста совпадают', title === m.name,
+    `<title> «${title}», манифест «${m.name}»`);
+  check('короткое имя то же самое', m.short_name === m.name,
+    `${m.short_name} против ${m.name}`);
+
+  /* Заголовок ищется ТОЛЬКО на двух экранах, где он и есть имя игры, — на
+     калитке и в меню. Требовать совпадения от каждого `<h1>` в файле нельзя:
+     следующий экран, озаглавленный «Рекорды», завалил бы набор, хотя никакого
+     расхождения имён в нём нет. */
+  for (const screen of ['gate', 'menu']) {
+    // `\\s` — не описка: внутри шаблонной строки одиночный `\s` схлопнулся бы
+    // в `s`, и класс стал бы «буква s или S».
+    const body = html.match(new RegExp(`<section id="${screen}"[\\s\\S]*?</section>`))?.[0] ?? '';
+    const h1 = body.match(/<h1>([^<]+)<\/h1>/)?.[1] ?? '';
+    check(`на экране ${screen} заголовок — имя игры`, h1 === m.name,
+      `«${h1}» против «${m.name}»`);
+  }
+
+  // ── цвет строки состояния задан в двух местах и обязан совпадать ──
+  const meta = html.match(/name="theme-color" content="([^"]+)"/)?.[1] ?? '';
+  check('theme-color в разметке совпадает с манифестом', meta === m.theme_color,
+    `разметка ${meta}, манифест ${m.theme_color}`);
+
+  // ── контраст листа ──
+  const tok = (name) => css.match(new RegExp(`\\n  --${name}: (#[0-9a-f]{6})`))?.[1] ?? '';
+  const contrast = (a, b) => {
+    const hi = Math.max(luminance(a), luminance(b));
+    const lo = Math.min(luminance(a), luminance(b));
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const bg = tok('bg');
+  check('токены палитры читаются', !!bg && !!tok('fg'), `--bg ${bg}, --fg ${tok('fg')}`);
+  check('текст листа контрастен фону', contrast(tok('fg'), bg) >= 7,
+    `${contrast(tok('fg'), bg).toFixed(1)}:1 — это детский экран, да ещё и сжатый`);
+  check('подписи читаются тоже', contrast(tok('dim'), bg) >= 4.5,
+    `${contrast(tok('dim'), bg).toFixed(1)}:1`);
+
+  /* ── кнопки различаются ЗАЛИВКОЙ, а не рамкой ──
+
+     Прозрачная кнопка с тонким контуром после сжатия Miracast выглядит не как
+     кнопка, а как пустое место — это записано в самом style.css. И при этом в
+     главном меню таких было три из пяти. */
+  check('прозрачных кнопок не осталось', !/background:\s*transparent/.test(css),
+    'контур Miracast съедает первым, и кнопка читается пустотой');
+  const fills = ['accent', 'grass', 'slate', 'panel'].map(tok);
+  check('все заливки кнопок заданы', fills.every(Boolean), fills.join(' '));
+  for (let i = 0; i < fills.length; i++) {
+    for (let j = i + 1; j < fills.length; j++) {
+      const l = Math.max(luminance(fills[i]), luminance(fills[j]))
+        / Math.max(0.001, Math.min(luminance(fills[i]), luminance(fills[j])));
+      check(`заливки ${fills[i]} и ${fills[j]} различимы по светлоте`, l >= 1.4,
+        `${l.toFixed(2)}× — цветность режется сильнее светлоты`);
+    }
+  }
+
+  /* ── талисман: цвета те же, что в игре ──
+
+     Шустрик нарисован в трёх местах (разметка, иконка, js/view.js), и форму
+     сверить нечем — среды разные. А цвета общие, и расхождение по ним даёт
+     зверька другой масти на иконке и в кадре. Это единственная половина
+     правила, которую можно проверить машинно, поэтому она проверяется. */
+  const symbol = html.match(/<symbol id="shustrik"[\s\S]*?<\/symbol>/)?.[0] ?? '';
+  check('талисман есть в разметке', !!symbol);
+  const T = THEME.greenHill;
+  for (const [role, hex] of [['шерсть', T.critter], ['ухо', T.palmTrunk],
+    ['мордочка', T.gap], ['глаз', T.badnikMouth]]) {
+    check(`цвет «${role}» у талисмана взят из палитры игры`,
+      symbol.toLowerCase().includes(hex.toLowerCase()),
+      `${hex} не найден в символе`);
+  }
+  const icons = read('tools/make-icons.mjs');
+  check('иконка берёт цвета оттуда же, а не числами',
+    /THEME\.greenHill/.test(icons),
+    'иначе иконка разойдётся с игрой, и заметить это можно будет только глазами');
+  /* Фон иконки — единственный её цвет, которого в палитре игры нет: это `--bg`
+     листа, а CSS в генератор не импортируется. Значит он там числом, и
+     совпадение двух литералов приходится сторожить здесь — иначе иконка
+     разойдётся с заставкой и с меню молча. */
+  check('фон иконки совпадает с фоном листа',
+    icons.includes(`hex('${bg}')`), `--bg ${bg}, а в генераторе этого литерала нет`);
 });
 
 // ────────────────── разметка и код ссылаются друг на друга ──────────────────
