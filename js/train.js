@@ -18,7 +18,7 @@ import {
 } from './calibrate.js';
 import { framing, frameAspect } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
-import { makeLevel, isSafe, telegraph } from './level.js';
+import { makeLevel, isSafe, telegraph, telegraphDebt } from './level.js';
 import { tuneFor, nextStep, whyStep, clampStep } from './difficulty.js';
 import { players } from './players.js';
 import * as audio from './audio.js';
@@ -485,10 +485,36 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     hud();
   }
 
+  /* Вернуть забегу телеграф, съеденный паузой.
+
+     Зовётся из начала отсчёта, а не из возврата, и это содержательно: отмотка
+     двигает МИР назад (время забега и путь связаны одним множителем), и делать
+     это надо, пока мир стоит под надписью отсчёта. На возврате ребёнок увидел
+     бы скачок коридора назад.
+
+     Отметки телеграфа этого препятствия сбрасываются: `announced` и `calledAt`
+     — флаги «уже сыграно», и без сброса отмотанное время прошло бы в тишине,
+     то есть вернуло бы секунды, но не сам телеграф. Долг считает `level.js`
+     той же функцией, что проверяется тестами. */
+  function giveBackTelegraph() {
+    const долг = telegraphDebt(obstacles, elapsed);
+    if (!(долг > 0)) return;
+    elapsed -= долг;
+    travel -= долг * VIEW.speed;
+    const ob = obstacles.find((o) => !o.passed && o.at > elapsed);
+    if (ob) { ob.announced = false; ob.calledAt = 0; }
+    log.event('rewind', {
+      s: round(долг, 2),
+      at: ob ? round(ob.at, 1) : null,
+      kind: ob?.kind ?? null,
+    });
+  }
+
   function beginCountdown(now) {
     if (run !== RUN.paused) return;
     run = RUN.countdown;
     countdownUntil = now + S.resumeMs + S.countdown * 1000;
+    giveBackTelegraph();
     log.event('countdown', { n: S.countdown });
     hud();
   }
