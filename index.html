@@ -58,19 +58,29 @@
     </div>
   </section>
 
-  <!-- Главное меню. Две двери: тренировка и игра. -->
+  <!-- Главное меню. ОДНА дверь: забег.
+
+       Дверей было две — «Тренировка» и «Игра», — и они врали обе: за
+       тренировкой стоял полноценный забег с финишем и результатом, а за игрой
+       заглушка «скоро». Калибровку спрашивать отдельной дверью не надо: она
+       спрашивается сама, когда прошлая не годится (`isStale` в
+       js/calibrate.js), и объясняет себя зоной-целью в окошке камеры. -->
   <section id="menu" class="sheet screen center" hidden>
     <svg class="mascot small" aria-hidden="true"><use href="#shustrik"/></svg>
     <h1>Шустрик</h1>
     <div class="row center">
-      <button id="goTrain" class="big">Тренировка<small id="trainSub">учимся двигаться</small></button>
-      <button id="goPlay" class="big grass">Игра<small id="playSub">забег до финиша</small></button>
+      <button id="goPlay" class="big grass">Играть<small id="playLen">—</small></button>
     </div>
-    <p class="lead" id="menuHint">Сначала тренировка: на ней игра научится узнавать именно тебя.</p>
     <!-- Кто играет. Это не родительская настройка, а первый вопрос перед
          забегом: от выбранного игрока зависит и калибровка, и то, в чью
          таблицу попадёт результат. Поэтому кнопка здесь, а не в настройках. -->
     <div class="row center">
+      <!-- Длину забега выбирает ребёнок, и это та же настройка, которую
+           крутит взрослый в родительском меню: два ключа об одном разошлись
+           бы на первом же «почему в меню три минуты, а в настройках пять».
+           Отдельного экрана выбора нет нарочно — он стоил бы записи в
+           SCREENS, ORIENTATION и BACK и лишнего нажатия по дороге к забегу. -->
+      <button id="setRunLen" class="ghost">Забег: <span id="runLenV">—</span></button>
       <button id="goPlayers" class="ghost">Кто играет: <span id="whoV">—</span></button>
       <button id="goRecords" class="ghost">Рекорды</button>
     </div>

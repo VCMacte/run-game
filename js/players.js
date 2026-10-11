@@ -76,6 +76,14 @@ function fresh(name) {
     createdAt: Date.now(),
     calib: null,
     records: [],
+    /* Копилка колец — всё, что игрок собрал за свою жизнь в игре.
+
+       Это СОБСТВЕННОЕ число, а не сумма по таблице рекордов, и разница тут не
+       в удобстве. В таблицу попадает только забег, который нажали «Записать»,
+       а `capRecords` вытесняет из неё худшие записи — то есть сумма по ней со
+       временем начала бы занижать, причём молча. Число, которое врёт, на
+       экране результата хуже отсутствующего. */
+    bank: 0,
   };
 }
 
@@ -139,6 +147,11 @@ function read() {
       records: Array.isArray(p.records)
         ? p.records.filter((r) => r && Number.isFinite(r.stars)).map(migrateRecord)
         : [],
+      /* Профиль собирается полями ПОИМЁННО, и всё незнакомое теряется. Значит
+         новое поле добавляется в два места сразу: забыть здесь — получить
+         копилку, которая обнуляется при каждой перезагрузке, а заметить это
+         можно только на второй сессии. */
+      bank: Number.isFinite(p.bank) && p.bank > 0 ? Math.round(p.bank) : 0,
     }));
   if (list.length === 0) return migrate();
   const currentId = list.some((p) => p.id === raw.currentId) ? raw.currentId : list[0].id;
@@ -178,7 +191,9 @@ function me() {
   return state.list.find((p) => p.id === state.currentId) || null;
 }
 
-const card = (p) => ({ id: p.id, name: p.name, hasCalib: !!p.calib, runs: p.records.length });
+const card = (p) => ({
+  id: p.id, name: p.name, hasCalib: !!p.calib, runs: p.records.length, bank: p.bank || 0,
+});
 
 export const players = {
   all: () => state.list.map(card),
@@ -244,6 +259,27 @@ export const players = {
     if (!p) return;
     p.calib = null;
     persist();
+  },
+
+  // ── копилка ──
+
+  /* Сколько колец игрок собрал за всю жизнь. Растёт на КАЖДОМ доведённом до
+     финиша забеге, независимо от того, нажали ли «Записать»: нажатие — это
+     про таблицу рекордов, а не про то, сколько ребёнок набегал.
+
+     Копятся КОЛЬЦА (`collected`), а не очки. Эти два числа в проекте уже
+     путали однажды: «88 из 100» означало забег, в котором собрано было 90.
+
+     Отказ хранилища молчит, как и везде, кроме записи рекорда: игра важнее.
+     Потерянная сотня колец — досадно, остановленный забег — хуже. */
+  bank: () => me()?.bank || 0,
+
+  addToBank(stars) {
+    const p = me();
+    if (!p || !Number.isFinite(stars) || stars <= 0) return p?.bank || 0;
+    p.bank = (p.bank || 0) + Math.round(stars);
+    persist();
+    return p.bank;
   },
 
   // ── рекорды ──

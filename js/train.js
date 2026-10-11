@@ -20,7 +20,7 @@ import { framing, frameAspect } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
 import { makeLevel, isSafe, telegraph } from './level.js';
 import * as audio from './audio.js';
-import { settings } from './settings.js';
+import { settings, runDurationS } from './settings.js';
 import { cameraX } from './view.js';
 import { round, flag, quantile } from './util.js';
 import * as pose from './pose.js';
@@ -208,13 +208,12 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     stage = next;
     if (next === 'calibrate') calibrator = makeCalibration({ aspect });
     if (next === 'free') {
-      /* Длина забега. Параметр адреса сильнее всего, затем режим ускоренной
-         отладки, затем родительская настройка: ждать пять минут на каждую
-         проверку экрана финиша бессмысленно. */
-      durationS = Number(flag('run'))
-        || (settings.get('debug') === 'fast' ? 30 : 0)
-        || settings.get('runLength')
-        || 300;
+      /* Длина забега — из `settings.js`, одной функцией на всех. Лесенка
+         перебивок (параметр адреса → отладочный режим → настройка) живёт там,
+         потому что читателей у неё два: забег и подпись под кнопкой «Играть».
+         Вторая копия означала бы меню, обещающее пять минут над
+         тридцатисекундным забегом. */
+      durationS = runDurationS();
       /* Препятствия ПЕРВЫМИ: кольца расставляются уже зная о них.
 
          Раньше оба расписания строились независимо, и в журнале первого
