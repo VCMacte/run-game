@@ -7,7 +7,7 @@
 // Почему ручек ровно три и почему остальные заперты — разобрано в js/config.js
 // рядом с таблицей STEPS. Здесь — то, чего в таблице не видно.
 
-import { OBSTACLES as O, DIFFICULTY as D, STEPS } from './config.js';
+import { OBSTACLES as O, DIFFICULTY as D, STEPS, VIEW } from './config.js';
 
 export const STEP_MAX = STEPS.length - 1;
 
@@ -61,6 +61,13 @@ export function tuneFor(step) {
     seriesMin: s.seriesMin,
     seriesMax: s.seriesMax,
     breatherS: breatherFor(s.seriesMin, s.seriesMax),
+    /* Числа ряда колец. Умолчания живут в `VIEW` — там же, где вся остальная
+       геометрия колец, — а строка ступени их переопределяет. Берутся через
+       `??`, а не копируются в каждую строку: ступеням 1…4 они одинаковы, и
+       пять копий разъехались бы с источником при первой правке. */
+    starBesideObstacle: s.starBesideObstacle ?? VIEW.starBesideObstacle,
+    starSwitchScale: s.starSwitchScale ?? VIEW.starSwitchScale,
+    starGapS: s.starGapS ?? VIEW.starGapS,
   };
 }
 

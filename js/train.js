@@ -257,7 +257,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       step = clampStep(players.step());
       tune = tuneFor(step);
       obstacles = makeLevel({ durationS, crouch: settings.get('crouch'), tune });
-      stars = makeStars({ durationS, obstacles });
+      /* `tune` обязателен: без него кольца строились бы умолчаниями `VIEW`,
+         то есть ступень 0 получала бы ряд ступеней 1…4 — с кольцом в окне
+         уклонения и переходом впритык. Ровно то, что правка и убирает. */
+      stars = makeStars({ durationS, obstacles, tune });
       decor = makeDecor({ durationS });
       travel = 0;
       elapsed = 0;
