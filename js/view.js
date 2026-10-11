@@ -913,8 +913,12 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
  * возрасте уже освоен.
  */
 function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse, still, mscale }) {
-  const edge = obstacleEdge();
   for (const ob of obstacles) {
+    /* Край берётся У САМОГО препятствия: с тихой адаптацией сложности он
+       зависит от ступени, на которой построен уровень, а не от текущего
+       конфига. Запасной путь нужен для препятствий, собранных руками в
+       тестах и в tools/frame.html. */
+    const edge = ob.edge ?? obstacleEdge();
     /* Глубина берётся из obstacleDepth, а не считается здесь: по ней же
        режется проход по кольцам, и две копии разошлись бы — кольцо снова
        начало бы просвечивать сквозь плиту. Отсечения («прошли», «дальше
@@ -1716,7 +1720,7 @@ export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
 }
 
 /** Где кончается препятствие и начинается проём. Связано с ходом камеры. */
-export const obstacleEdge = () => Math.abs(camera(1, 0).x) * O.blockFrac;
+export const obstacleEdge = (blockFrac = O.blockFrac) => Math.abs(camera(1, 0).x) * blockFrac;
 
 /**
  * Глубина, на которой препятствие будет нарисовано, или `null` — не рисуется.

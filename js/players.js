@@ -84,6 +84,11 @@ function fresh(name) {
        временем начала бы занижать, причём молча. Число, которое врёт, на
        экране результата хуже отсутствующего. */
     bank: 0,
+    /* Ступень сложности. У каждого своя — как калибровка и рекорды, и по той
+       же причине: взрослый 173 см проходит забег чисто, ребёнок 7 лет учится.
+       Общая ступень означала бы, что один вечер игры взрослого делает игру
+       ребёнка труднее. */
+    step: 0,
   };
 }
 
@@ -152,6 +157,10 @@ function read() {
          копилку, которая обнуляется при каждой перезагрузке, а заметить это
          можно только на второй сессии. */
       bank: Number.isFinite(p.bank) && p.bank > 0 ? Math.round(p.bank) : 0,
+      // Зажим по длине таблицы ступеней делает не хранилище, а js/difficulty.js:
+      // здесь мы не знаем, сколько их. Нечисло — значит профиль старый, и
+      // начинать ему с нуля правильно.
+      step: Number.isInteger(p.step) && p.step > 0 ? p.step : 0,
     }));
   if (list.length === 0) return migrate();
   const currentId = list.some((p) => p.id === raw.currentId) ? raw.currentId : list[0].id;
@@ -274,6 +283,21 @@ export const players = {
      Потерянная сотня колец — досадно, остановленный забег — хуже. */
   bank: () => me()?.bank || 0,
 
+  // ── ступень сложности ──
+
+  /* Хранилище её только ХРАНИТ: что ступень значит, какие у неё границы и
+     когда она двигается — дело js/difficulty.js. Здесь нет даже потолка:
+     длина таблицы ступеней этому файлу неизвестна, и знать её ему незачем. */
+  step: () => me()?.step || 0,
+
+  setStep(n) {
+    const p = me();
+    if (!p || !Number.isInteger(n) || n < 0) return p?.step || 0;
+    p.step = n;
+    persist();
+    return p.step;
+  },
+
   addToBank(stars) {
     const p = me();
     if (!p || !Number.isFinite(stars) || stars <= 0) return p?.bank || 0;
@@ -286,7 +310,7 @@ export const players = {
 
   /* Записывается только дошедший до финиша забег. Выход через паузу сюда не
      попадает вовсе — не фильтром, а тем, что его путь этого метода не зовёт. */
-  addRecord({ durationS, stars, score, starsTotal, hits, playerId } = {}) {
+  addRecord({ durationS, stars, score, starsTotal, hits, step, playerId } = {}) {
     const p = playerId ? state.list.find((x) => x.id === playerId) : me();
     if (!p || !Number.isFinite(stars) || !Number.isFinite(durationS)) return null;
     const rec = {
@@ -303,6 +327,11 @@ export const players = {
       score: Math.round(Number.isFinite(score) ? score : stars),
       starsTotal: Math.round(starsTotal ?? 0),
       hits: Math.round(hits ?? 0),
+      /* Ступень, на которой забег шёл. Отсутствие поля — не ноль, а «запись
+         сделана до тихой адаптации»: нулём это значило бы, что прошлые
+         рекорды поставлены на самой лёгкой ступени, а поставлены они
+         неизвестно на какой. То же правило, что у `panSpan` и у очков. */
+      ...(Number.isInteger(step) ? { step } : {}),
     };
     /* Если на диск не легло — откатываем и отвечаем null.
 

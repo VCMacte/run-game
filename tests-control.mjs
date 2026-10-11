@@ -13,6 +13,7 @@ import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition, coverFit } from './js/preview.js';
 import { makeLevel, telegraph, isSafe, LOOKS } from './js/level.js';
+import { tuneFor, nextStep, whyStep, breatherFor, clampStep, STEP_MAX } from './js/difficulty.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
@@ -1410,8 +1411,11 @@ group('уровень', () => {
   let ducks = 0;
   let firstTooEarly = 0;
 
+  /* Прогон идёт по ВСЕМ ступеням сложности: доля приседов и длина серии —
+     ручки ступени, и инвариант «приседания встречаются, но не преобладают»
+     обязан держаться на каждой, а не только на нулевой. */
   for (let i = 0; i < 1000; i++) {
-    const level = makeLevel({ durationS: 180, crouch: true, rng });
+    const level = makeLevel({ durationS: 180, crouch: true, rng, tune: tuneFor(i % (STEP_MAX + 1)) });
     if (!level.length) continue;
     if (level[0].at < O.firstAtS) firstTooEarly++;
 
@@ -1441,9 +1445,12 @@ group('уровень', () => {
     `их доля ${(ducks / total * 100).toFixed(0)}%`);
 
   // Выключенные приседания должны убирать их совсем, а не «пореже».
-  const flat = makeLevel({ durationS: 300, crouch: false, rng });
-  check('без приседаний верхних препятствий нет', flat.every((o) => o.kind === 'side'),
-    'настройка для взрослого обязана работать буквально');
+  for (const step of [0, STEP_MAX]) {
+    const flat = makeLevel({ durationS: 300, crouch: false, rng, tune: tuneFor(step) });
+    check(`без приседаний верхних препятствий нет (ступень ${step})`,
+      flat.every((o) => o.kind === 'side'),
+      'настройка для взрослого обязана работать буквально — и на любой ступени');
+  }
 });
 
 /* ───────────── волны ─────────────
@@ -2254,6 +2261,217 @@ group('небо меняется вместе с зоной', () => {
     'один файл на две зоны вернул бы ровно ту жалобу, с которой всё началось');
 });
 
+/* ───────────── ступень сложности ─────────────
+
+   «Тихая адаптация» — последнее несделанное из этапа 5 плана. Ступень живёт у
+   игрока, читается один раз на забег и двигается после него на один шаг.
+
+   Проверяется здесь не то, что ступени «работают», а три вещи, каждая из
+   которых молча ломается обратной правкой:
+
+   1. ступень не трогает время на решение — это несущая конструкция всей
+      затеи, и держится она структурой ответа `tuneFor`, а не обещанием;
+   2. ступень 0 — сегодняшняя игра побайтово, иначе все замеры до 11 октября
+      перестают быть сравнимыми, а журнал будет говорить «ступень 0» и значить
+      другую игру;
+   3. ни на одной ступени уклоняемость не сломана, и нарисованное совпадает с
+      приговором. */
+group('ступень', () => {
+  const full = Math.abs(cameraX(1));
+
+  // ── ступень 0 — это сегодняшние числа ──
+  {
+    const t = tuneFor(0);
+    check('ступень 0 повторяет конфиг', t.blockFrac === O.blockFrac
+      && t.duckShare === O.duckShare && t.seriesMin === O.seriesMin
+      && t.seriesMax === O.seriesMax && t.breatherS === O.breatherS,
+      JSON.stringify(t));
+    check('и край препятствия на ней прежний',
+      obstacleEdge(t.blockFrac) === obstacleEdge(),
+      'иначе замеры до тихой адаптации перестают быть сравнимыми');
+  }
+
+  /* ── ступени не трогают время на решение ──
+
+     Это главный инвариант, и проверяется он СТРУКТУРОЙ ответа, а не чтением
+     кода. Худший ответ ребёнка на телеграф — 4.72 с при окне 5.0, четвёртая
+     сессия подряд у границы; `minGapS > signalS` держит плотность. Появление
+     любого из этих ключей в «ручках» означало бы, что сложность растёт за
+     счёт времени на решение, то есть за счёт того единственного запаса,
+     которого у ребёнка нет. */
+  {
+    const запрещено = ['signalS', 'visibleS', 'railS', 'lastCallS', 'minGapS',
+      'minLeadS', 'lateForgiveMs', 'speed', 'starX', 'starReach', 'starGuardS'];
+    for (let s = 0; s <= STEP_MAX; s++) {
+      const ключи = Object.keys(tuneFor(s));
+      check(`ступень ${s} не трогает время на решение`,
+        ключи.every((k) => !запрещено.includes(k)), ключи.join(', '));
+    }
+  }
+
+  // ── каждая ступень труднее предыдущей ──
+  for (let s = 1; s <= STEP_MAX; s++) {
+    const a = tuneFor(s - 1);
+    const b = tuneFor(s);
+    check(`ступень ${s} не легче ${s - 1}`,
+      b.blockFrac >= a.blockFrac && b.duckShare >= a.duckShare
+      && b.seriesMin >= a.seriesMin && b.seriesMax >= a.seriesMax,
+      `${JSON.stringify(a)} → ${JSON.stringify(b)}`);
+    check(`и чем-то отличается от неё`,
+      JSON.stringify(a) !== JSON.stringify(b),
+      'ступень-близнец не видна ни ребёнку, ни журналу');
+  }
+
+  /* ── уклоняемость не сломана ни на одной ступени ──
+
+     Сверху ступень ограничена не вкусом, а размахом ребёнка: при `blockFrac`
+     0.60 требуемое смещение — 0.61 единицы поля при измеренной медиане
+     0.41–0.53 и p95 1.13–1.40. Выше начинается область, где уклониться можно
+     только у самой кромки кадра, а это паузы `edge` из журналов 6 октября. */
+  for (let s = 0; s <= STEP_MAX; s++) {
+    const edge = obstacleEdge(tuneFor(s).blockFrac);
+    check(`ступень ${s}: уйти можно`, edge < full,
+      `край ${edge.toFixed(3)} при ходе ${full.toFixed(3)}`);
+    check(`ступень ${s}: но уйти надо заметно`, edge > full * 0.2);
+
+    /* И кольцо открытой стороны обязано доставаться при МИНИМАЛЬНОМ уходе.
+
+       Это и есть нижняя граница `blockFrac`, и она не умозрительная: уход
+       вправо ровно на край даёт `u`, при котором боковое кольцо той же
+       стороны должно попасть в окно сбора. Понизь порог ухода — и награда за
+       правильное движение станет недостижимой, то есть ребёнок будет уходить
+       и терять кольцо за то, что ушёл. */
+    const uNeed = edge / full;
+    /* Без запасного `|| canReach(starX, 1)`: он не зависел от ступени вовсе и
+       делал проверку пустой — она проходила бы при любом `blockFrac`, в том
+       числе при таком, где кольцо открытой стороны при минимальном уходе уже
+       недостижимо. Поймано ревью. */
+    check(`ступень ${s}: кольцо открытой стороны достаётся`,
+      canReach(VIEW.starX, uNeed + 0.02),
+      `нужно u ≥ ${uNeed.toFixed(2)}, а кольцо на ${VIEW.starX} при окне ${VIEW.starReach}`);
+  }
+
+  /* ── ступень доезжает И до приговора, и до картинки ──
+
+     Край препятствия теперь едет В САМОМ препятствии, потому что уровень
+     построен на ступени, а конфиг про неё не знает. Две копии этого числа
+     расходились бы ровно так, как уже было однажды: ребёнок бьётся о то,
+     чего не видит. */
+  {
+    const tune = tuneFor(STEP_MAX);
+    const level = makeLevel({ durationS: 120, rng: seeded(5), tune });
+    const edge = obstacleEdge(tune.blockFrac);
+    check('у каждого препятствия записан край',
+      level.every((o) => o.edge === edge), 'одна ступень — одна кромка на забег');
+    const side = level.find((o) => o.kind === 'side');
+    check('приговор судит по краю препятствия, а не по конфигу',
+      side && !isSafe(side, { camX: side.side > 0 ? -obstacleEdge() : obstacleEdge() }),
+      'на верхней ступени прежнего края уже мало, и isSafe обязан это знать');
+    /* И то же число обязано быть НАРИСОВАНО. Поддельный холст ловит кромку
+       плиты, и она должна совпасть с порогом приговора. */
+    const at = 10;
+    const ob = { at, kind: 'side', look: 'plate', side: 1, edge };
+    const shapes = paintFrame({ elapsed: at - 1.5, obstacles: [ob] }).shapes;
+    const plate = shapes.find((f) => f.style === THEME.greenHill.block);
+    const z = 1.5 * VIEW.speed;
+    const cam = camera(0, 0);
+    const ожидалось = project(edge, 0, z, cam).sx;
+    check('нарисованная кромка совпадает с приговором',
+      plate && Math.abs(plate.minX - ожидалось) < 1.5,
+      `нарисовано ${plate?.minX.toFixed(1)}, судится по ${ожидалось.toFixed(1)}`);
+  }
+
+  /* ── число решений за забег не поехало ──
+
+     Ступень меняет СОСТАВ решений, а не их число. Средний разнос и число
+     препятствий сравниваются со ступенью 0 на нескольких длинах: передышка
+     выводится формулой ровно ради этого, и если формула однажды разойдётся с
+     генератором, видно будет здесь. */
+  for (const durationS of [180, 300, 720]) {
+    const среднее = (step) => {
+      let gaps = 0;
+      let n = 0;
+      for (let seed = 1; seed <= 40; seed++) {
+        const lv = makeLevel({ durationS, rng: seeded(seed * 7), tune: tuneFor(step) });
+        n += lv.length;
+        for (let i = 1; i < lv.length; i++) gaps += lv[i].at - lv[i - 1].at;
+      }
+      return { gap: gaps / (n - 40), n: n / 40 };
+    };
+    const база = среднее(0);
+    const верх = среднее(STEP_MAX);
+    check(`на ${durationS} с средний разнос не поехал`,
+      Math.abs(верх.gap - база.gap) / база.gap < 0.03,
+      `${база.gap.toFixed(2)} с против ${верх.gap.toFixed(2)} с`);
+    check(`и число препятствий тоже`,
+      Math.abs(верх.n - база.n) / база.n < 0.03,
+      `${база.n.toFixed(1)} против ${верх.n.toFixed(1)}`);
+  }
+
+  /* ── переход: вверх только по безупречному, вниз по любому ──
+
+     Случаи взяты ИЗ ЖУРНАЛОВ, а не придуманы. Асимметрия — не осторожность:
+     данных «ребёнку трудно» у проекта нет вовсе, а «не понял, почему
+     проиграл» здесь худший класс дефекта. */
+  {
+    const чисто = { finished: true, faced: 53, late: 0, pauses: 0, ringPct: 98 };
+    check('безупречный забег поднимает ступень', nextStep(0, чисто) === 1,
+      '11 октября: 53 препятствия чисто, ноль пауз, 98% колец');
+    check('холодный забег не поднимает',
+      nextStep(1, { finished: true, faced: 26, late: 0, pauses: 0, ringPct: 81 }) === 1,
+      '81% — первый забег сразу после калибровки, ребёнок был занят, а не скучал');
+    check('забег с паузой не поднимает',
+      nextStep(1, { finished: true, faced: 26, late: 0, pauses: 1, ringPct: 93 }) === 1,
+      'усложнять по журналу с дефектами запрещено: так и появилось единственное задетое');
+    check('короткий отладочный не поднимает',
+      nextStep(1, { finished: true, faced: 3, late: 0, pauses: 0, ringPct: 100 }) === 1,
+      '?run=20 и «забег 30 с» не вправе двигать ступень');
+    check('брошенный не поднимает',
+      nextStep(1, { finished: false, faced: 53, late: 0, pauses: 0, ringPct: 98 }) === 1);
+
+    const трудно = { finished: true, faced: 26, late: 3, pauses: 0, ringPct: 90 };
+    check('три «не успел» понижают', nextStep(2, трудно) === 1);
+    check('и понижают даже брошенный',
+      nextStep(2, { ...трудно, finished: false }) === 1,
+      'ребёнок, бросивший забег на третьем промахе, — ровно тот случай, ради которого понижение и есть');
+    check('и даже с паузами', nextStep(2, { ...трудно, pauses: 4 }) === 1,
+      'послабление не требует чистого журнала: оно отвечает на «ребёнку плохо»');
+    check('один промах не понижает',
+      nextStep(2, { ...трудно, late: 1 }) === 2, 'один из 26 — шум одного шага');
+
+    check('ниже нуля ступень не уходит', nextStep(0, трудно) === 0);
+    check('выше потолка не уходит', nextStep(STEP_MAX, чисто) === STEP_MAX);
+    check('больше шага за забег не бывает',
+      Math.abs(nextStep(2, чисто) - 2) <= 1 && Math.abs(nextStep(2, трудно) - 2) <= 1);
+    check('мусор ступень не двигает',
+      nextStep(2, {}) === 2 && nextStep(2, { faced: NaN, late: 5, pauses: 0, ringPct: 0 }) === 2,
+      'решение принимается только по числам, которые есть');
+    check('нечисловая ступень читается как нулевая', nextStep(undefined, чисто) === 1);
+  }
+
+  /* ── кольца от ступени не зависят ──
+
+     Таблица рекордов бьётся по длине, а не по ступени, и делить её по
+     ступеням нельзя: таблица текущей ступени будет пустой. Значит слабая
+     связь принимается — но она обязана остаться слабой, иначе рекорды разных
+     ступеней перестанут быть сравнимыми молча. */
+  {
+    const колец = (step) => {
+      let n = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const obstacles = makeLevel({ durationS: 300, rng: seeded(seed * 3), tune: tuneFor(step) });
+        n += makeStars({ durationS: 300, obstacles, rng: seeded(seed * 11) }).length;
+      }
+      return n / 20;
+    };
+    const низ = колец(0);
+    const верх = колец(STEP_MAX);
+    check('колец на верхней ступени столько же',
+      Math.abs(верх - низ) / низ < 0.05,
+      `${низ.toFixed(1)} против ${верх.toFixed(1)} — иначе рекорды ступеней несравнимы`);
+  }
+});
+
 group('уклонение', () => {
   const edge = obstacleEdge();
   const full = Math.abs(cameraX(1));
@@ -2884,9 +3102,14 @@ group('бюджет кадра', () => {
   let worst = 0;
   let worstAt = 0;
   let worstSeed = 0;
+  /* По посевам И по ступеням сложности: на верхней ступени плита уже, а
+     приседов больше, то есть состав кадра другой. Считать бюджет по одной
+     ступени значило бы мерить игру, в которую ребёнок будет играть не всегда. */
+  let worstStep = 0;
   for (const seed of [1, 7, 13, 29]) {
+   for (const step of [0, STEP_MAX]) {
     const rng = seeded(seed);
-    const obstacles = makeLevel({ durationS: 300, rng });
+    const obstacles = makeLevel({ durationS: 300, rng, tune: tuneFor(step) });
     const stars = makeStars({ durationS: 300, obstacles, rng });
     const decor = makeDecor({ durationS: 300, rng });
 
@@ -2905,12 +3128,13 @@ group('бюджет кадра', () => {
         zone: zoneAt(t, 300),
         finishIn: 300 - t, safe: true, pulse: 0.5,
       });
-      if (fills.length > worst) { worst = fills.length; worstAt = t; worstSeed = seed; }
+      if (fills.length > worst) { worst = fills.length; worstAt = t; worstSeed = seed; worstStep = step; }
     }
+   }
   }
 
   console.log(`  худший кадр: ${worst} заливок при потолке ${CEILING}`
-    + ` (посев ${worstSeed}, ${worstAt.toFixed(1)} с)`);
+    + ` (посев ${worstSeed}, ступень ${worstStep}, ${worstAt.toFixed(1)} с)`);
   check(`худший кадр укладывается в потолок ${CEILING}`, worst <= CEILING,
     `${worst} заливок на ${worstAt.toFixed(1)} с`);
   check('и запас ещё остаётся', worst <= CEILING * 0.8,
@@ -3591,6 +3815,10 @@ group('звёзды и препятствия', () => {
     `minGapS ${O.minGapS} против удвоенного окна ${2 * VIEW.starGuardS}: `
     + 'при меньшем кольцо вытолкнется в следующее окно и ряд выродится');
 
+  /* По ступеням: на верхней приседов больше, а значит больше и запретных
+     окон (под приседом не висит ничего). Ряд колец от этого не вправе
+     выродиться — иначе сложность молча отняла бы награду. */
+  for (const step of [0, STEP_MAX]) {
   for (const crouch of [true, false]) {
     let bad = 0;
     let total = 0;
@@ -3602,7 +3830,7 @@ group('звёзды и препятствия', () => {
          обходит заметно меньше случаев, чем кажется. Дефект размещения,
          который виден только когда две случайности расходятся, такой перебор
          пропустил бы. */
-      const obstacles = makeLevel({ durationS: 300, crouch, rng: seeded(seed * 7919) });
+      const obstacles = makeLevel({ durationS: 300, crouch, rng: seeded(seed * 7919), tune: tuneFor(step) });
       const stars = makeStars({ durationS: 300, obstacles, rng: seeded(seed * 104729) });
       total += stars.length;
       for (const s of stars) {
@@ -3611,12 +3839,13 @@ group('звёзды и препятствия', () => {
         worst ??= `сид ${seed}: кольцо на ${s.at.toFixed(2)} с, сторона ${s.side}`;
       }
     }
-    check(`${crouch ? 'с приседами' : 'без приседов'}: ни одно кольцо не спорит с препятствием`,
+    check(`ступень ${step}, ${crouch ? 'с приседами' : 'без приседов'}: ни одно кольцо не спорит с препятствием`,
       bad === 0, `${bad} нарушений, первое — ${worst}`);
     const free = makeStars({ durationS: 300, obstacles: [], rng: seeded(1) }).length;
-    check(`${crouch ? 'с приседами' : 'без приседов'}: ряд колец не выродился`,
+    check(`ступень ${step}, ${crouch ? 'с приседами' : 'без приседов'}: ряд колец не выродился`,
       total / 100 > free * 0.7,
       `осталось ${(total / 100).toFixed(1)} из ${free} — развязка не должна стоить треть колец`);
+  }
   }
 
   // Само правило, поштучно: оно важнее числа прогонов.
@@ -3701,10 +3930,26 @@ group('кольца и очки', () => {
   check('журнал 7 октября сходится', real.collected === 90 && real.score === 88,
     `получилось ${real.collected} и ${real.score}`);
 
+  /* Прощённые — ЧЕТВЁРТОЕ число, и оно ничего не трогает в первых трёх.
+
+     Для ребёнка прощённое препятствие пройдено: очки целы, вспышки нет. Для
+     ступени сложности это единственный датчик того, что запас времени
+     кончился, и перепутать его с ударом значило бы наказывать дважды. */
+  const пр = makeTally({ starsLost: 2 });
+  пр.star();
+  пр.forgive();
+  check('прощённое не трогает ни очки, ни собранное',
+    пр.score === 1 && пр.collected === 1);
+  check('и задетым не считается', пр.hits === 0);
+  check('но считается отдельно', пр.grace === 1);
+
   const r = makeTally({ starsLost: 2 });
   for (let i = 0; i < 3; i++) r.star();
   r.hit();
+  r.forgive();
   r.reset();
+  check('сброс обнуляет все четыре числа',
+    r.collected === 0 && r.score === 0 && r.hits === 0 && r.grace === 0);
   /* ─── большое кольцо ───
 
      Вес уходит в ОЧКИ, а собранное считается штуками, и это не мелочь:
@@ -3920,6 +4165,38 @@ group('игроки', () => {
     check('копилка видна в карточке игрока',
       players.all().every((p) => Number.isFinite(p.bank)),
       'экран «кто играет» показывает её рядом с числом забегов');
+
+    /* ── ступень сложности у игрока ──
+
+       У каждого своя, как калибровка и рекорды, и по той же причине: взрослый
+       173 см проходит забег чисто, ребёнок учится. Общая ступень означала бы,
+       что один вечер игры взрослого делает игру ребёнка труднее. */
+    check('у нового игрока ступень нулевая', players.step() === 0);
+    players.setStep(2);
+    check('ступень сохраняется', players.step() === 2);
+    players.setStep(-1);
+    players.setStep(1.5);
+    players.setStep('три');
+    check('и не принимает мусор', players.step() === 2,
+      'отрицательное, дробное и строка обязаны оставить ступень как есть');
+    players.select(me);
+    check('ступень соседа не видна', players.step() === 0);
+    /* Потолка хранилище не знает нарочно: длина таблицы ступеней — дело
+       js/difficulty.js, и зажим живёт там. Здесь проверяется только, что
+       хранилище не выдумывает своего. */
+    players.setStep(99);
+    check('хранилище своего потолка не выдумывает', players.step() === 99);
+    check('а зажимает его difficulty.js', clampStep(99) === STEP_MAX);
+    players.setStep(0);
+
+    /* Запись рекорда помнит ступень, а старая запись НЕ получает нуль:
+       отсутствие поля значит «сделана до тихой адаптации», и нулём это
+       значило бы, что прошлые рекорды поставлены на самой лёгкой. */
+    const сступенью = players.addRecord({ durationS: 300, stars: 10, starsTotal: 20, hits: 0, step: 3 });
+    check('рекорд помнит ступень', сступенью?.step === 3);
+    const без = players.addRecord({ durationS: 300, stars: 10, starsTotal: 20, hits: 0 });
+    check('а запись без ступени не получает нуль', без && без.step === undefined,
+      'ноль значил бы «поставлен на лёгкой», а он поставлен неизвестно на какой');
     /* А что копилка переживает ПЕРЕЧИТЫВАНИЕ хранилища, отсюда проверить
        нечем: в node хранилища нет вовсе, и `reload()` там честно возвращает
        пустое состояние. Профиль в `read()` собирается полями поимённо, и
@@ -4452,6 +4729,68 @@ group('разбор журнала', () => {
   });
   check('разбираются все сессии файла', обе.length === 2,
     'выгрузка несёт до двадцати сессий, и нужная — не обязательно первая');
+
+  /* ── расход окна прощения ──
+
+     Раньше «прощено» в сводке считало удары, поглощённые неуязвимостью от
+     предыдущего удара, — случай, невозможный при `invulnMs` 1500 мс и
+     `minGapS` 5500. Настоящий расход окна (ушёл уже после прихода, в те
+     350 мс, что ему прощают) не мерился вовсе. Теперь мерится, и печатается
+     только когда случался: ноль двусмыслен — он значит и «журнал снят до
+     того, как это стали мерить». */
+  const сПрощением = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 3, stars: 10 },
+    { t: 1000, type: 'obstacle', kind: 'side', side: 1, result: 'clear', camX: 0.3 },
+    { t: 2000, type: 'obstacle', kind: 'side', side: 1, result: 'clear', camX: 0.3, forgiven: true },
+    { t: 3000, type: 'obstacle', kind: 'duck', side: 0, result: 'hit', camX: 0 },
+    { t: 300000, type: 'run.finish', stars: 9, score: 9, starsTotal: 10, hits: 1, durationS: 300 },
+  ]));
+  check('проход в окне прощения считается отдельно',
+    сПрощением.run.obstacles.forgiven === 1
+    && сПрощением.run.obstacles.clear === 2,
+    'для ребёнка это пройденное препятствие, для ступени — «запаса не осталось»');
+  check('и печатается',
+    /в окне прощения: 1/.test(format(сПрощением)));
+  check('а при нуле не печатается', !/в окне прощения/.test(format(полный)),
+    'ноль здесь значит и «тогда это не мерили», и «успевал всегда»');
+
+  /* ── ступень сложности в журнале ──
+
+     Событие `difficulty` пишется ВСЕГДА, в том числе когда ступень осталась
+     на месте: отсутствие события неотличимо от «код не выполнился», и это
+     ровно то различие, ради которого разбор существует. */
+  const соСтупенью = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 2,
+      tune: { blockFrac: 0.48, duckShare: 0.34, seriesMin: 3, seriesMax: 5, breatherS: 8.8 } },
+    { t: 300000, type: 'run.finish', stars: 95, score: 95, starsTotal: 100, hits: 0, durationS: 300 },
+    { t: 300100, type: 'difficulty', from: 2, to: 3, why: 'easy', finished: true,
+      faced: 43, late: 0, hits: 0, grace: 0, pauses: 0, ringPct: 95 },
+  ]));
+  check('ступень забега прочитана', соСтупенью.runs[0].step === 2);
+  check('и её числа тоже', соСтупенью.runs[0].tune?.blockFrac === 0.48,
+    'номер без чисел бесполезен: таблицу ступеней однажды перепишут');
+  check('переход прочитан', соСтупенью.steps.length === 1
+    && соСтупенью.steps[0].to === 3 && соСтупенью.steps[0].why === 'easy');
+  const текстСтупени = format(соСтупенью);
+  check('ступень напечатана с числами',
+    /ступень 2 \(размах 0\.48/.test(текстСтупени),
+    текстСтупени.split('\n').filter((l) => /ступень/.test(l)).join(' // '));
+  check('и переход напечатан', /ступень: 2 → 3 \(легко\)/.test(текстСтупени));
+
+  const держится = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 1, tune: null },
+    { t: 300000, type: 'run.finish', stars: 80, score: 80, starsTotal: 100, hits: 0, durationS: 300 },
+    { t: 300100, type: 'difficulty', from: 1, to: 1, why: 'held', finished: true,
+      faced: 43, late: 0, hits: 0, grace: 0, pauses: 0, ringPct: 80 },
+  ]));
+  check('«держится» тоже печатается', /ступень: 1 держится/.test(format(держится)),
+    'молчание здесь означало бы, что код не выполнился');
+
+  /* А журнал ДО тихой адаптации не получает ступень нулевой: это выдумка про
+     игру, которой тогда не было. То же правило, что у panSpan и очков. */
+  check('журнал без ступени называет это отсутствием',
+    полный.runs[0].step === null && /ступени в журнале нет/.test(format(полный)),
+    'ноль значил бы «забег шёл на лёгкой», а он шёл до того, как ступени завелись');
 
   // ── отчёт не выносит наружу записи о ребёнке ──
   const текст = format(полный);

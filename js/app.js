@@ -984,7 +984,6 @@ $('soonBack').onclick = BACK.soon = () => show('menu');
 
 const PARENT_ROWS = [
   ['setLen', 'lenV', 'runLength'],
-  ['setSpeed', 'speedV', 'speed'],
   ['setCrouch', 'crouchV', 'crouch'],
   ['setSound', 'soundV', 'sound'],
   ['setPreview', 'previewV', 'preview'],
@@ -1299,6 +1298,9 @@ function saveRecord(playerId) {
     playerId,
     durationS: r.durationS, stars: r.stars, score: r.score,
     starsTotal: r.starsTotal, hits: r.hits,
+    // Ступень, на которой забег шёл. Без неё рекорд нечем объяснить: два
+    // забега одной длины на разных ступенях — разная игра.
+    step: r.step,
   });
   /* Записалось ли на самом деле. players.addRecord отдаёт null, если запись
      не приняли, а сохранение в localStorage молчит при любом отказе — игра
@@ -1317,6 +1319,7 @@ function saveRecord(playerId) {
   recordsFrom = 'run';
   log.event('record.save', {
     stars: r.stars, score: r.score, hits: r.hits, durationS: Math.round(r.durationS),
+    step: r.step ?? null,
   });
   recLen = Math.round(r.durationS);
   renderRecords();

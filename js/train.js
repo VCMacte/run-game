@@ -19,6 +19,8 @@ import {
 import { framing, frameAspect } from './camera.js';
 import { drawSkeleton, updateField } from './preview.js';
 import { makeLevel, isSafe, telegraph } from './level.js';
+import { tuneFor, nextStep, whyStep, clampStep } from './difficulty.js';
+import { players } from './players.js';
 import * as audio from './audio.js';
 import { settings, runDurationS } from './settings.js';
 import { cameraX } from './view.js';
@@ -50,10 +52,24 @@ export function makeTally({ starsLost = 0 } = {}) {
   let collected = 0;
   let score = 0;
   let hits = 0;
+  let grace = 0;
   return {
     get collected() { return collected; },
     get score() { return score; },
     get hits() { return hits; },
+    /* Прошедшие ТОЛЬКО благодаря окну прощения — отдельное, четвёртое число.
+
+       Для ребёнка такое препятствие пройдено: очки целы, вспышки нет. Для
+       тихой адаптации это единственный честный датчик того, что запаса не
+       осталось: ушёл он уже после прихода, в те 350 мс, которые ему прощают.
+
+       Числа «за 105 препятствий прощение не израсходовано ни разу» у проекта
+       НЕТ и никогда не было: то, что печаталось как «прощено», считало удары,
+       поглощённые неуязвимостью от предыдущего удара, а при `invulnMs` 1500
+       против `minGapS` 5500 такого случиться не может вовсе. Настоящий расход
+       окна прощения меряется с 11 октября, и первый журнал с ним покажет, был
+       ли он нулевым на самом деле. */
+    get grace() { return grace; },
     /* Вес уходит в ОЧКИ, а собранное считается штуками.
 
        Это не мелочь: `collected` идёт в «X из Y колец» на экране результата и
@@ -67,7 +83,10 @@ export function makeTally({ starsLost = 0 } = {}) {
       // нечем и незачем — оно только растёт.
       score = Math.max(0, score - starsLost);
     },
-    reset() { collected = 0; score = 0; hits = 0; },
+    // Имя `forgive`, а не `grace`: рядом стоит геттер того же счёта, и
+    // объект с двумя одинаковыми именами молча потерял бы одно из них.
+    forgive() { grace++; },
+    reset() { collected = 0; score = 0; hits = 0; grace = 0; },
   };
 }
 
@@ -119,6 +138,16 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   let lastZone = null;
   let durationS = 240;
   let result = null;
+  /* Ступень сложности этого забега и её числа. Читаются один раз, при входе
+     в забег, и до финиша не меняются. */
+  let step = 0;
+  let tune = tuneFor(0);
+  /* Сколько раз забег уходил в паузу. Нужен ступени: усложнять по забегу с
+     паузами нельзя — 7 октября единственное задетое препятствие за всю
+     историю объясняется ложной паузой, а 9 октября восемь пауз сделали забег
+     несуществующим. Считается ЗАБЕГ, а не сессия, поэтому сброс там же, где
+     tally.reset(). */
+  let pauses = 0;
   let lastFrame = 0;
   let pauseWhy = null;
   let countdownUntil = 0;
@@ -220,12 +249,20 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
          полного забега одиннадцать колец оказались ближе 0.35 с к
          препятствию. Поменять эти две строки местами — значит вернуть кольца,
          которые нельзя собрать, не ударившись. */
-      obstacles = makeLevel({ durationS, crouch: settings.get('crouch') });
+      /* Ступень читается ОДИН раз, здесь, и до финиша не меняется.
+
+         Расписание строится один раз на забег, и край препятствия уезжает в
+         само препятствие — поменять ступень посередине значило бы развести
+         картинку с приговором на тех препятствиях, что уже расставлены. */
+      step = clampStep(players.step());
+      tune = tuneFor(step);
+      obstacles = makeLevel({ durationS, crouch: settings.get('crouch'), tune });
       stars = makeStars({ durationS, obstacles });
       decor = makeDecor({ durationS });
       travel = 0;
       elapsed = 0;
       tally.reset();
+      pauses = 0;
       result = null;
       invulnUntil = 0;
       run = RUN.running;
@@ -236,6 +273,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       log.event('run.start', {
         durationS, obstacles: obstacles.length, stars: stars.length,
         screenRun: settings.get('screenRun'),
+        /* Ступень И её числа. Номер без чисел бесполезен: таблицу ступеней
+           однажды перепишут, и прошлый журнал перестанет читаться — ровно та
+           же причина, по которой рядом с `u` в health едет `panSpan`. */
+        step, tune,
       });
     }
     hud();
@@ -403,6 +444,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function pause(rec) {
     if (run === RUN.paused) return;
     run = RUN.paused;
+    if (stage === 'free') pauses++;
     pauseWhy = rec.why;
     /* `ratio` и `shW` — не для полноты. Три журнала подряд `profile` был
        главной причиной пауз (7, 8 и ещё 8 эпизодов), и ни один из них не мог
@@ -607,8 +649,28 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // Пришло. Либо сразу засчитываем проход, либо открываем окно прощения.
       if (safe) {
         ob.passed = true;
+        /* Ушёл ли ребёнок ВОВРЕМЯ или успел уже в окне прощения. Для него
+           разницы нет — проход и есть проход, — а для ступени сложности это
+           единственный честный датчик того, что запаса не осталось.
+
+           Считалось это раньше не здесь, и считалось неправильно: `forgive()`
+           стоял в ветке неуязвимости, то есть срабатывал, только если удар
+           поглотила неуязвимость от ПРЕДЫДУЩЕГО удара. А `invulnMs` 1500 мс
+           против `minGapS` 5500 — два препятствия в это окно не помещаются
+           никогда, значит ветка была недостижима по построению. Отсюда и
+           «прощение не израсходовано ни разу» в замерах: ноль был не
+           наблюдением, а свойством кода. Поймано ревью. */
+        const вОкне = ob.verdictAt !== null;
+        if (вОкне) tally.forgive();
         audio.play('clear');
-        log.event('obstacle', { kind: ob.kind, look: ob.look ?? null, side: ob.side, result: 'clear', camX: round(camX) });
+        log.event('obstacle', {
+          kind: ob.kind, look: ob.look ?? null, side: ob.side, result: 'clear',
+          camX: round(camX),
+          // Поле есть только когда окном воспользовались: иначе каждая
+          // запись несла бы `forgiven: false`, а журнал и так самый большой
+          // расход места в проекте.
+          ...(вОкне ? { forgiven: true } : {}),
+        });
       } else if (ob.verdictAt === null) {
         ob.verdictAt = now + O.lateForgiveMs;
       } else if (now >= ob.verdictAt) {
@@ -631,6 +693,69 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         });
       }
     }
+  }
+
+  /* Итог забега для ступени сложности.
+
+     Считается и на финише, и на брошенном забеге: вверх ступень идёт только
+     по доведённому до конца, а ВНИЗ — по любому. Асимметрия намеренная, и
+     разбор её в js/difficulty.js: данных «ребёнку трудно» у проекта нет
+     вовсе, а цена ошибки несимметрична.
+
+     `faced` — препятствия, ДОШЕДШИЕ до приговора, а не все расставленные: у
+     брошенного забега их сильно меньше, и считать по расписанию значило бы
+     судить о том, чего ребёнок не видел. */
+  function outcomeOf(finished) {
+    const faced = obstacles.filter((o) => o.passed).length;
+    /* Знаменатель у брошенного забега — кольца, которые ребёнок УСПЕЛ
+       увидеть, а не всё расписание. Иначе забег, брошенный на середине,
+       пишет в журнал «колец 45%» при всех собранных: на решение это не
+       влияет (вверх пускает только доведённый до конца), но число печатается
+       как оценка игры, и читать его так было бы неверно. */
+    const total = finished ? stars.length : stars.filter((s) => s.at <= elapsed).length;
+    return {
+      finished,
+      faced,
+      late: tally.hits + tally.grace,
+      pauses,
+      ringPct: total ? Math.round((tally.collected / total) * 100) : 0,
+    };
+  }
+
+  /* Ступень двигается ОДИН раз за забег, здесь.
+
+     Событие пишется ВСЕГДА, в том числе когда ступень осталась на месте
+     (`why: 'held'`): отсутствие события неотличимо от «код не выполнился» —
+     ровно та же причина, по которой починка офлайн-кэша обязана сообщать
+     исход, а не только просьбу. */
+  function applyStep(finished) {
+    const outcome = outcomeOf(finished);
+    /* Синтетический забег ступень НЕ двигает — ни вверх, ни вниз.
+
+       Вверх его не пускал бы и сам порог (24 препятствия), а вот ВНИЗ он
+       уезжал свободно: отладочный забег на полную длину даёт за сорок
+       препятствий, синтетический ребёнок валит почти все, и каждый прогон
+       разработчика молча понижал ступень настоящего игрока. Отката у неё нет.
+       Поймано ревью — ровно та же дыра, что была у копилки колец.
+
+       Событие при этом пишется: «ступень не двинулась, потому что синтетика»
+       — это наблюдение, а молчание неотличимо от «код не выполнился». */
+    /* Вид источника спрашивается у НЕГО САМОГО (`source.kind`), а не
+       сравнением со строкой: в этом модуле `source` — объект, который вернул
+       pose.start(), и сравнение его со строкой не истинно никогда. Ровно
+       так сторож и оказался мёртвым при первой попытке: тесты его не ловили
+       (они текстовые), а браузер показал `why: 'held'` там, где ожидалось
+       `'fake'`. Поймано проверкой живьём. */
+    const фейк = source?.kind === 'fake';
+    const to = фейк ? step : nextStep(step, outcome);
+    if (to !== step) players.setStep(to);
+    log.event('difficulty', {
+      from: step, to, why: фейк ? 'fake' : whyStep(step, to),
+      finished, faced: outcome.faced, late: outcome.late,
+      hits: tally.hits, grace: tally.grace,
+      pauses, ringPct: outcome.ringPct,
+    });
+    return to;
   }
 
   /* Финиш. Забег кончается по времени, а не по числу препятствий: ребёнку
@@ -666,6 +791,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       stars: collected, score: tally.score, starsTotal: stars.length, hits,
       durationS: Math.round(durationS),
     });
+    /* Ступень двигается ПОСЛЕ записи финиша: в журнале сначала итог забега,
+       потом решение по нему, и читается это сверху вниз. Номер ступени
+       уезжает и в результат — оттуда его берёт запись рекорда. */
+    result.step = applyStep(true);
     audio.play('finish');
     // Без аргумента намеренно: result теперь уходит из hud() всегда, и
     // передавать его здесь ещё раз значило бы намекать, что это единственный
@@ -739,6 +868,13 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       manual = true;
       run = RUN.paused;
       pauseWhy = null;
+      /* Ручная пауза считается ступенью наравне с автоматической, хотя
+         дефектом не является. Условие «ноль пауз» означает «забег прошёл
+         подряд», а не «не было ошибок распознавания»: забег с пятиминутным
+         перерывом посередине легче того же забега без перерыва, и повышать
+         по нему нельзя. Считать только автопаузы значило бы ещё и развести
+         журнал с самим собой — `pause why:"manual"` рядом с `pauses: 0`. */
+      pauses++;
       log.event('pause', { why: 'manual', elapsed: round(elapsed, 1) });
       hud();
     },
@@ -831,7 +967,23 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     },
 
     async stop() {
+      /* Прошлое состояние флага нужно ДО того, как мы его взведём: `stop()`
+         зовётся дважды легко — `abortRun` обнуляет ссылку на тренировку уже
+         после `await`, и второе нажатие «В главное меню» успевает войти сюда
+         снова. Без этой памяти ступень уезжала бы на два шага за один забег,
+         а в журнал попадали бы два события об одном. Поймано ревью. */
+      const ужеОстановлен = stopped;
       stopped = true;
+      /* Брошенный забег тоже может ПОНИЗИТЬ ступень, и это не щедрость.
+         Ребёнок, бросивший забег на третьем задетом препятствии, — ровно тот
+         случай, ради которого понижение и сделано; требовать от него дойти до
+         финиша значило бы требовать доиграть то, что уже не получается.
+         Повысить брошенный забег не может: `nextStep` смотрит на `finished`.
+
+         Только из самого забега: на штативе и калибровке препятствий нет,
+         `faced` там ноль, и ступень не двинется по построению — но лишнее
+         событие в журнале завелось бы на каждом входе в меню. */
+      if (!ужеОстановлен && stage === 'free') applyStep(false);
       cancelAnimationFrame(raf);
       raf = 0;
       if (batch.length) { log.event('skeleton', { n: batch.length, rows: batch }); batch = []; }

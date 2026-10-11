@@ -7,6 +7,7 @@
 
 import { OBSTACLES as O } from './config.js';
 import { obstacleEdge } from './view.js';
+import { tuneFor } from './difficulty.js';
 
 /* Край препятствия берётся из view, а не считается заново: отрисовка и
    проверка столкновения обязаны пользоваться одним числом. Две копии
@@ -45,7 +46,12 @@ export const LOOKS = {
  * `rng` принимается снаружи, чтобы тесты могли прогнать тысячу разных
  * уровней, а не один и тот же.
  */
-export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } = {}) {
+export function makeLevel({ durationS = 180, crouch = true, rng = Math.random, tune = tuneFor(0) } = {}) {
+  /* Числа ступени приходят СНАРУЖИ одним объектом, а не читаются отсюда из
+     конфига. Так генератор остаётся чистым: тест прогоняет все ступени, не
+     трогая глобального состояния, а забег читает ступень игрока один раз и
+     больше её не спрашивает. */
+  const edge = obstacleEdge(tune.blockFrac);
   const out = [];
   let t = O.firstAtS;
   let lastSide = 0;
@@ -58,7 +64,7 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
   /* Длина серии и сколько в ней осталось. Волна — это форма забега, и она
      живёт здесь, в расписании, а не в отрисовке: расписание строится один раз
      на забег и дальше только читается. */
-  const series = () => O.seriesMin + Math.floor(rng() * (O.seriesMax - O.seriesMin + 1));
+  const series = () => tune.seriesMin + Math.floor(rng() * (tune.seriesMax - tune.seriesMin + 1));
   let left = series();
   /* Сколько препятствий уже выдано в текущей серии. Нужен отдельно от `left`
      ради хвоста забега: там серия продлевается по одному, и без этого счётчика
@@ -68,7 +74,7 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
   while (t < durationS) {
     // Вид препятствия. Присед реже бокового: он утомительнее, и ребёнок
     // быстрее устаёт, если приседать приходится каждый раз.
-    const wantDuck = crouch && rng() < 0.3;
+    const wantDuck = crouch && rng() < tune.duckShare;
 
     let side = 0;
     if (!wantDuck) {
@@ -94,6 +100,11 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
       kind,
       look,                        // только внешность: isSafe его не читает
       side,                        // какая сторона закрыта
+      /* Край едет С ПРЕПЯТСТВИЕМ, а не берётся из конфига в момент вопроса.
+         Иначе ступень, прочитанная на старте забега, разошлась бы с тем, по
+         чему судит isSafe и что рисует view, — то есть ребёнок бился бы о то,
+         чего не видит. Одно число на отрисовку и на приговор, как и было. */
+      edge,
       passed: false,
       hit: false,
       verdictAt: null,             // окно прощения опоздания
@@ -113,12 +124,12 @@ export function makeLevel({ durationS = 180, crouch = true, rng = Math.random } 
     if (left > 0) {
       t += O.minGapS + rng() * O.seriesJitterS;
     } else {
-      const breather = O.breatherS + rng() * O.breatherJitterS;
+      const breather = tune.breatherS + rng() * O.breatherJitterS;
       if (durationS - t > breather + O.minGapS) {
         t += breather;
         left = series();
         вСерии = 0;
-      } else if (вСерии < O.seriesMax) {
+      } else if (вСерии < tune.seriesMax) {
         /* На полную передышку места уже нет, но серия ещё не выбрала потолок —
            продлеваем её по одному. Укоротить передышку нельзя: промежуток
            между полосами («серия ≤ 6.1 с, передышка ≥ 8.8 с») и есть то, чем
@@ -167,7 +178,10 @@ export function isSafe(obstacle, { camX, crouching }) {
   if (obstacle.kind === 'duck') return !!crouching;
   // Закрыта сторона `side`, уходить надо в противоположную и зайти за край
   // препятствия, а не просто качнуться в её сторону.
-  const edge = obstacleEdge();
+  // Край берётся У ПРЕПЯТСТВИЯ: он записан в него генератором вместе со
+  // ступенью, на которой построен уровень. Запасной путь — для препятствий,
+  // собранных руками в тестах и в tools/frame.html.
+  const edge = obstacle.edge ?? obstacleEdge();
   return obstacle.side > 0 ? camX < -edge : camX > edge;
 }
 
