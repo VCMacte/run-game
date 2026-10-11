@@ -488,6 +488,12 @@ export function report(session) {
       usageMb: est?.usageMb ?? null,
       quotaMb: est?.quotaMb ?? null,
       pct: est?.pct ?? null,
+      /* Сколько попыток ушло на замер. Поле появилось 11 октября вместе с
+         перечитыванием нуля: замер на 11-й миллисекунде сказал «занято 0 МБ»
+         при целом кэше, и сводка повторила это как факт. Молчать о
+         перечитывании нельзя — иначе починка неотличима от «получилось сразу».
+         У журналов до правки поля нет, и выдумывать единицу тоже нельзя. */
+      tries: typeof est?.tries === 'number' ? est.tries : null,
     };
   })();
 
@@ -615,7 +621,8 @@ export function format(rep) {
         : 'неизвестно';
     const занято = st.usageMb == null ? ''
       : `, занято ${st.usageMb} МБ` + (st.quotaMb ? ` из ${st.quotaMb}` : '')
-        + (st.pct == null ? '' : ` (${st.pct}%)`);
+        + (st.pct == null ? '' : ` (${st.pct}%)`)
+        + (st.tries > 1 ? `, с ${st.tries}-й попытки` : '');
     const просьба = st.granted === null ? ''
       : st.granted ? ', просьбу удовлетворили' : ', в просьбе отказали';
     L.push(`  хранилище: ${режим}${занято}${просьба}`);
