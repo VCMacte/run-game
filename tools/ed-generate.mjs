@@ -19,6 +19,8 @@
 // Запуск:
 //   node tools/ed-generate.mjs --prompt "..." --out assets/test.png
 //   node tools/ed-generate.mjs --prompt "..." --w 768 --h 448 --steps 30 --seed 7
+//
+// Разбор: docs/sky-and-art.md
 
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

@@ -15,6 +15,8 @@
 //   * ощущение скорости несут поперечные линии пола. В первом лице с
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
+//
+// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/rings.md, docs/sky-and-art.md, docs/view-and-zones.md
 
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';

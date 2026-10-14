@@ -1,3 +1,5 @@
+// Разбор: docs/log-and-storage.md, docs/menu-and-navigation.md
+
 import { flag } from './util.js';
 
 // Настройки, которые крутит взрослый. Живут в localStorage, потому что

@@ -14,7 +14,10 @@
    Хранилище — localStorage, как у настроек: записи крошечные, а IndexedDB
    здесь был бы нужен только журналу, который пишет на каждом кадре. Всё в
    try/catch, поэтому модуль импортируется в node без браузера и проверяется
-   обычным скриптом. */
+   обычным скриптом.
+
+   Разбор: docs/calibration.md, docs/log-and-storage.md,
+   docs/menu-and-navigation.md. */
 
 import { STORAGE } from './config.js';
 

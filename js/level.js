@@ -4,6 +4,8 @@
 // уровней в node, и проверяется не «похоже на правду», а инварианты, которые
 // обязаны держаться на любом уровне. Непроходимый уровень на глаз не заметен
 // — он заметен ребёнку, который не понимает, почему проиграл.
+//
+// Разбор: docs/difficulty.md, docs/obstacles.md, docs/presence-and-pause.md, docs/rings.md
 
 import { OBSTACLES as O } from './config.js';
 import { obstacleEdge } from './view.js';

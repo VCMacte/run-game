@@ -14,6 +14,8 @@
 // шапке sw.js.
 //
 // Запуск: node tools/make-sw.mjs [--keep-version]
+//
+// Разбор: docs/offline-and-build.md
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';

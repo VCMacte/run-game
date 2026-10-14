@@ -6,6 +6,8 @@
 //
 // Почему ручек ровно три и почему остальные заперты — разобрано в js/config.js
 // рядом с таблицей STEPS. Здесь — то, чего в таблице не видно.
+//
+// Разбор: docs/difficulty.md
 
 import { OBSTACLES as O, DIFFICULTY as D, STEPS, VIEW } from './config.js';
 

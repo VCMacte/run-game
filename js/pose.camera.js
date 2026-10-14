@@ -15,6 +15,8 @@
 // Запасной путь, который проверяется только на телефоне ребёнка, — это
 // запасной путь, который не работает. Поэтому любой из трёх включается
 // принудительно через ?pipeline=.
+//
+// Разбор: docs/camera-and-frame.md
 
 import { POSE, VENDOR } from './config.js';
 import { flag, withTimeout } from './util.js';

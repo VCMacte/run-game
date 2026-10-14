@@ -12,6 +12,8 @@
 //
 // Крупные плоские формы: иконка должна читаться и в списке приложений, и
 // после сжатия трансляции.
+//
+// Разбор: docs/identity-and-icons.md
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';

@@ -8,6 +8,8 @@
 //
 // Автомат без DOM: стадии и числа здесь, показ — в train.js. Поэтому всё
 // проверяется обычным скриптом node.
+//
+// Разбор: docs/calibration.md
 
 import { SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
