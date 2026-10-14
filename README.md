@@ -28,22 +28,28 @@ node serve.js                     # http://localhost:8099 + POST /save для и
 node tools/ed-generate.mjs --init tools/init/band-sunsetDunes.png --strength 0.55 \
   --w 1024 --h 576 --steps 28 --out tools/painted/sky-sunset.png --prompt "..."
 # затем в tools/frame.html:
-#   await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82, 0.704)
+#   await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82,
+#                skyClamp('sunsetDunes'))
 ```
 
 Последний аргумент — потолок светлоты, и он обязателен: без него облака
-остаются чисто белыми и начинают спорить с проёмом. У дневных зон это 0.704
-(граница `GAP_GUARD`), **у ночной — 0.30**: при общем потолке её облака вышли
-бы вчетверо светлее самого светлого цвета её же палитры. Зажим считается до
-кодирования, а WebP выталкивает отдельные пиксели обратно вверх — на нынешнем
-ночном растре максимум 0.347 при заданных 0.30.
+остаются чисто белыми и начинают спорить с проёмом. **Числом его не писать** —
+`skyClamp(зона)` берёт его из `js/theme.js`, где он и живёт: у дневных зон
+выводится границей `GAP_GUARD` от проёма (сейчас 0.704), у ночной задан
+отдельно и меньше (0.30), иначе её облака вышли бы многократно светлее самого
+светлого цвета её же палитры. Вписанное в строку запуска число было копией без
+владельца: `GAP_GUARD` изменился бы, а конвейер арта молча остался бы на
+старом зажиме. Зажим считается до кодирования, а WebP выталкивает отдельные
+пиксели обратно вверх — на нынешнем ночном растре максимум 0.347 при заданных
+0.30.
 
 **Ночная зона собирается БЕЗ Easy Diffusion** — прямо из полосы, без img2img:
 
 ```
 # в браузере http://localhost:8099/tools/frame.html?band=nightHills
 #   -> await saveFrame('tools/init/band-nightHills.png')
-#   -> await toWebp('tools/init/band-nightHills.png', 'assets/sky-night.webp', 0.82, 0.30)
+#   -> await toWebp('tools/init/band-nightHills.png', 'assets/sky-night.webp', 0.82,
+#                    skyClamp('nightHills'))
 ```
 
 Нейросеть здесь не нужна и вредна: две тональности холмов с резкой границей

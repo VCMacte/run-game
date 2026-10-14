@@ -28,7 +28,7 @@ import {
   players, normalizeName, rankRecords, capRecords, migrateRecord, NAME_MAX,
 } from './js/players.js';
 import {
-  THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS,
+  THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS, skyClamp,
   ZONES, SKY_FILES, zoneAt, luminance, motionScale,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
@@ -2493,6 +2493,48 @@ group('большое кольцо', () => {
    Проверяется здесь не красота картинок, а развязка: у каждой зоны свой
    растр, а зона без растра уходит на векторный путь СВОИХ цветов, не утаскивая
    за собой ни палитру, ни игру. */
+/* ───────────── потолок светлоты фонового растра ─────────────
+
+   Зажим светлоты при сборке арта был копией без владельца: 0.704 стояло
+   числом в README и в строке запуска `tools/frame.html`, а выводится оно из
+   `GAP_GUARD`. Изменился бы порог палитры — конвейер арта молча остался бы на
+   старом зажиме, и разошлись бы они так же, как разошёлся худший кадр. */
+group('потолок светлоты растра', () => {
+  for (const zone of ['greenHill', 'sunsetDunes']) {
+    check(`${zone}: потолок следует за GAP_GUARD`,
+      Math.abs(skyClamp(zone) - (luminance(THEME[zone].gap) - GAP_GUARD)) < 1e-12,
+      `${skyClamp(zone)} против ${luminance(THEME[zone].gap) - GAP_GUARD}`);
+  }
+
+  /* Ночной — исключение, и оно обязано оставаться исключением: выводить его
+     из палитры нечем, такого правила проект не формулировал. Проверяется не
+     значение, а смысл — что он заметно ниже дневного. */
+  check('у ночной зоны потолок ниже дневного',
+    skyClamp('nightHills') < skyClamp('greenHill') - 0.2,
+    `ночь ${skyClamp('nightHills')}, день ${skyClamp('greenHill')}`);
+  check('и он не ноль', skyClamp('nightHills') > 0.1, `${skyClamp('nightHills')}`);
+
+  /* README называет то же число. Сверка та же, что у худшего кадра: проза,
+     повторяющая число, обязана отвечать за него перед кодом. */
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+  const сказано = readme.match(/от проёма [(]сейчас ([0-9.]+)[)]/);
+  check('README называет дневной потолок в ожидаемой форме', сказано != null,
+    'строка «от проёма (сейчас N)» в README.md не найдена');
+  if (сказано) {
+    check('и это тот же потолок, что в теме',
+      Number(сказано[1]) === Math.round(skyClamp('greenHill') * 1000) / 1000,
+      `README говорит ${сказано[1]}, тема даёт ${skyClamp('greenHill')}`);
+  }
+
+  /* И в строке запуска числа больше нет: зажим берётся вызовом. */
+  const frame = readFileSync(join(ROOT, 'tools', 'frame.html'), 'utf8');
+  check('пример сборки зовёт skyClamp, а не пишет число',
+    frame.includes("skyClamp('sunsetDunes')") && !frame.includes('0.82, 0.704'),
+    'в tools/frame.html пример снова вписывает потолок числом');
+  check('инструмент отдаёт skyClamp в консоль', frame.includes('window.skyClamp = skyClamp'),
+    'без этого skyClamp() из консоли браузера не вызвать');
+});
+
 group('небо меняется вместе с зоной', () => {
   const растр = (метка) => ({ width: 1024, height: 576, метка });
   const backdrops = {

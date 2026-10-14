@@ -26,8 +26,10 @@
 
   В консоли браузера:
     await saveFrame('tools/init/band-sunsetDunes.png')
-    await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82, 0.704)
-    // последний аргумент обязателен: без него облака останутся белыми
+    await toWebp('tools/painted/sky-sunset.png', 'assets/sky-sunset.webp', 0.82,
+                 skyClamp('sunsetDunes'))
+    // последний аргумент обязателен: без него облака останутся белыми.
+    // Числом его не писать: потолок живёт в js/theme.js и у зон разный.
 
   Инструмент разработки: в офлайн-кэш не попадает, tools/ туда не берут.
 -->
@@ -46,7 +48,7 @@
 <script type="module">
   import { createView, makeDecor, makeStars } from '../js/view.js';
   import { VIEW } from '../js/config.js';
-  import { THEME, ZONES, SKY_FILES } from '../js/theme.js';
+  import { THEME, ZONES, SKY_FILES, skyClamp } from '../js/theme.js';
 
   const q = new URLSearchParams(location.search);
   const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -68,6 +70,10 @@
      графического инструмента на машине нет. Разница не косметическая — в
      соседнем проекте тот же комплект весил 8.7 МБ в PNG против 170 КБ в WebP,
      а фон целиком уходит в офлайн-кэш к ребёнку. */
+  /* Потолок светлоты по зоне — из темы, чтобы в строке запуска не оказалось
+     копии числа без владельца. Разбор — у `skyClamp` в js/theme.js. */
+  window.skyClamp = skyClamp;
+
   window.toWebp = async (src, dest, quality = 0.82, clampTo = null) => {
     const img = new Image();
     img.src = '/' + src;
