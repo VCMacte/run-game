@@ -34,9 +34,14 @@ export async function openCamera({ attempt = 1, facing = 'user' } = {}) {
       const stream = await withTimeout(
         navigator.mediaDevices.getUserMedia({ video, audio: false }),
         CAMERA.openTimeoutMs,
+        'cam.open',
       );
-      // withTimeout отдаёт undefined и по сроку, и по ошибке: для нас это
-      // одно и то же — камеры нет, пробуем ступень ниже.
+      /* withTimeout отдаёт undefined и по сроку, и по ошибке: для ЛЕСТНИЦЫ это
+         одно и то же — камеры нет, пробуем ступень ниже. А вот для журнала не
+         одно и то же, и раньше разница терялась совсем: отказ getUserMedia не
+         доходил до `catch` ниже, поэтому "запрещено пользователем" и "камера
+         занята" попадали в журнал одной строкой "нет ответа". Теперь имя
+         отказа пишет сам `withTimeout` третьим аргументом. */
       if (!stream) { lastError = new Error('нет ответа'); continue; }
 
       const track = stream.getVideoTracks()[0];

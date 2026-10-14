@@ -32,6 +32,7 @@ import {
   ZONES, SKY_FILES, zoneAt, luminance, motionScale,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
+import { withTimeout, reportWaits } from './js/util.js';
 
 
 let failed = 0;
@@ -5601,6 +5602,53 @@ group('время реакции', () => {
   check('реакция попадает в сводку', /реакция/.test(текст), текст.slice(0, 200));
   check('а у журнала без данных строки нет', !/реакция/.test(format(старый)),
     '«реакция —» читалась бы как замеренный прочерк');
+});
+
+/* ───────────────── ожидание сообщает исход ─────────────────
+
+   `withTimeout` возвращает `undefined` и когда обещание не успело, и когда
+   оно отказало. Для вызывающего это сознательно одно и то же, а для журнала
+   — нет: срок чинится сроком, отказ чинится кодом. Проверяется именно
+   различение, потому что раньше его не было вовсе.
+
+   Группа асинхронная: объявлена через `await group`, как и те, что
+   подтягивают модули динамически. */
+await group('ожидание сообщает исход', async () => {
+  const сказано = [];
+  reportWaits((...a) => сказано.push(a));
+
+  check('значение проходит насквозь', await withTimeout(Promise.resolve(7), 50, 'ок') === 7);
+  check('удача молчит', сказано.length === 0, JSON.stringify(сказано));
+
+  check('по отказу возвращается undefined',
+    await withTimeout(Promise.reject(new Error('бум')), 50, 'отказ') === undefined);
+  check('и отказ назван отказом', сказано.at(-1)?.[1] === 'fail', JSON.stringify(сказано.at(-1)));
+  check('вместе с причиной', сказано.at(-1)?.[2] === 'бум', JSON.stringify(сказано.at(-1)));
+
+  check('по сроку тоже undefined',
+    await withTimeout(new Promise(() => {}), 20, 'срок') === undefined);
+  check('и срок назван сроком', сказано.at(-1)?.[1] === 'timeout', JSON.stringify(сказано.at(-1)));
+  check('имя ожидания доезжает', сказано.at(-1)?.[0] === 'срок', JSON.stringify(сказано.at(-1)));
+
+  /* Отказ ПОСЛЕ срока. Случай не выдуманный: камера отвечает отказом позже
+     своего срока, и две записи об одном ожидании читались бы в журнале как
+     две разные неудачи. */
+  const было = сказано.length;
+  await withTimeout(new Promise((_, rej) => setTimeout(() => rej(new Error('поздно')), 40)),
+    15, 'поздний');
+  await new Promise((r) => setTimeout(r, 80));
+  check('поздний отказ не даёт второй записи', сказано.length === было + 1,
+    JSON.stringify(сказано.slice(было)));
+
+  /* Без имени не пишется ничего: так размечаются вызывающие по одному, и
+     так молчат тесты и инструменты, где приёмника нет вовсе. */
+  const доБезымянного = сказано.length;
+  await withTimeout(Promise.reject(new Error('тихо')), 50);
+  check('без имени ожидание молчит', сказано.length === доБезымянного);
+
+  reportWaits(null);
+  await withTimeout(Promise.reject(new Error('некому')), 50, 'без приёмника');
+  check('без приёмника тоже молчит и не бросает', true);
 });
 
 // ─────────────────────────── итог ───────────────────────────

@@ -51,7 +51,7 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
   video.playsInline = true;
   video.muted = true;
   video.srcObject = cam.stream;
-  await withTimeout(video.play(), 5000);
+  await withTimeout(video.play(), 5000, 'video.play');
 
   let stopped = false;
   let worker = null;
@@ -99,7 +99,7 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
       w.postMessage(init);
     }
 
-    const res = await withTimeout(ready, POSE.initTimeoutMs + 4000);
+    const res = await withTimeout(ready, POSE.initTimeoutMs + 4000, 'pose.init');
     if (!res || res.type !== 'ready') {
       w.terminate();
       return { ok: false, why: res?.message || 'нет ответа от воркера', stage: res?.stage };

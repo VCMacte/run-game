@@ -8,7 +8,7 @@ import { players } from './players.js';
 import { clear as clearCalibration } from './calibrate.js';
 import * as log from './log.js';
 import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS } from './text.js';
-import { withTimeout, isDev, flag } from './util.js';
+import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 
@@ -23,6 +23,55 @@ const $ = (id) => document.getElementById(id);
 const safeText = (s) => String(s).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
 ));
+
+// ─────────────────────── непойманные ошибки ───────────────────────
+
+/* Исключение, которое никто не поймал, обязано попасть в журнал.
+
+   Без этого оно не попадает никуда: на телефоне консоли нет, а цикл кадров
+   броском не останавливается — `requestAnimationFrame` переставлен первой
+   строкой `frame()` в js/train.js. Игра продолжает крутиться с недосчитанным
+   кадром, и снаружи это выглядит не как отказ, а как «она странно себя
+   ведёт»: ровно тот случай, против которого журнал и заведён.
+
+   Поток повторов не страшен. Бросок в кадре приходил бы шестьдесят раз в
+   секунду, но `log.event` склеивает одинаковые записи подряд в одну со
+   счётчиком `_n` — потолок журнала от этого не страдает, а по `_n` видно
+   разницу между «упало один раз» и «падает каждый кадр».
+
+   Обработчики не гасят ошибку: `preventDefault` не зовётся, и в отладке с
+   ноутбука она по-прежнему видна в консоли. Задача здесь одна — оставить
+   след на телефоне, где смотреть больше некуда. */
+addEventListener('error', (e) => {
+  log.event('error', {
+    where: 'window',
+    message: String(e.message || e.error?.message || e.error || ''),
+    // Имя файла без пути: в журнале важно, какой модуль, а не какой origin.
+    source: String(e.filename || '').split('/').pop() || null,
+    line: e.lineno || null,
+  });
+});
+
+addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  log.event('error', {
+    where: 'promise',
+    message: String(r?.message || r || ''),
+  });
+});
+
+/* Исход ожиданий — туда же.
+
+   `withTimeout` возвращает `undefined` и по сроку, и по отказу, так что
+   различить их может только тот, кто стоит внутри. Приёмник подключается
+   здесь, потому что `js/util.js` — лист и журнала не знает; разбор, почему
+   именно так, лежит в шапке `withTimeout`.
+
+   Размечены НЕ все ожидания: у просьбы о постоянном хранилище и у починки
+   офлайн-кэша исход уже пишется своим событием, и второе было бы шумом. */
+reportWaits((what, outcome, message) => {
+  log.event('wait', { what, outcome, message: message || null });
+});
 
 // ─────────────────────────── общие приёмы ───────────────────────────
 
@@ -74,13 +123,13 @@ window.visualViewport?.addEventListener('resize', layout);
    руке, его место вертикальное. Горизонталь нужна только забегу, который
    уходит на телевизор. */
 function lockOrientation(kind) {
-  return withTimeout(screen.orientation?.lock?.(kind) ?? Promise.resolve(), 1500);
+  return withTimeout(screen.orientation?.lock?.(kind) ?? Promise.resolve(), 1500, 'orientation');
 }
 
 async function requestFullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement || !el.requestFullscreen) return;
-  await withTimeout(el.requestFullscreen({ navigationUI: 'hide' }), 3000);
+  await withTimeout(el.requestFullscreen({ navigationUI: 'hide' }), 3000, 'fullscreen');
 }
 
 /* Ребёнок телефон не трогает, поэтому приём комикса «вернуть полный экран
@@ -439,6 +488,7 @@ $('start').onclick = () => {
 function askPersistentStorage() {
   const ask = navigator.storage?.persist?.();
   if (!ask) return;
+  // Без `why`: исход пишется следующей же строкой, своим событием.
   withTimeout(ask, 3000)
     .then((granted) => log.event('storage.persist', { granted: granted === true }))
     .catch(() => log.event('storage.persist', { granted: null }));
@@ -567,7 +617,7 @@ async function repairOffline() {
     // Проверка упала — чинить по её молчанию нельзя: `prime` атомарен и дорог.
     if (v.unknown) return;
 
-    const reg = await withTimeout(navigator.serviceWorker.ready, 5000).catch(() => null);
+    const reg = await withTimeout(navigator.serviceWorker.ready, 5000, 'sw.ready').catch(() => null);
     const worker = reg?.active || navigator.serviceWorker.controller;
     // Воркера нет вовсе — значит это и правда первое открытие: кэш наполнит
     // `install`, и просить некого.
@@ -582,6 +632,7 @@ async function repairOffline() {
       ch.port1.onmessage = (e) => done(e.data);
       worker.postMessage({ type: 'prime' }, [ch.port2]);
     });
+    // Без `why`: исход пишется событием `offline.repair` ниже.
     withTimeout(answer, 60000)
       .then((r) => log.event('offline.repair', {
         asked: true,
