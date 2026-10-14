@@ -204,7 +204,16 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
      Эти записи проверяют всё, что происходит ПОСЛЕ MediaPipe, и это
      единственный способ тестировать распознавание, не держа ребёнка и камеру
      в цикле. */
-  const recording = flag('record') !== null;
+  /* Параметр адреса сильнее настройки — он осознанный и на один раз, — но
+     вычисляется один раз: адрес посреди забега не меняется, а `flag()`
+     разбирает строку запроса на каждом вызове. Настройка читается живо: она
+     лежит в памяти, и включить запись можно посреди забега, не перезагружаясь.
+
+     Прерывистая запись — законный случай, и читатель о нём знает: частота в
+     `tools/replay.mjs` считается по медиане промежутка, а не по размаху,
+     иначе дыра посреди потока занизила бы её молча. */
+  const recordForced = flag('record') !== null;
+  const recording = () => recordForced || settings.get('record') === 'on';
   let batch = [];
 
   function recordSkeleton(sample, now) {
@@ -335,7 +344,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     health.poses++;
     health.dropped += sample.dropped || 0;
     if (sample.inferMs) health.infer.push(sample.inferMs);
-    if (recording) recordSkeleton(sample, now);
+    if (recording()) recordSkeleton(sample, now);
 
     lastLm = sample.lm;
     if (stage === 'setup') return onSetup(sample, now);
