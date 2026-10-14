@@ -636,6 +636,9 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function stepObstacles(now, u) {
     const camX = cameraX(u);
     const crouching = tracker?.crouch ?? false;
+    /* Знает ли игра, где ребёнок по горизонтали. В приседе не знает — и тогда
+       боковой приговор не выносится вовсе (разбор — в isSafe). */
+    const lateralKnown = !(tracker?.lateralHeld ?? false);
     lastSafe = true;
 
     for (const ob of obstacles) {
@@ -643,7 +646,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       const dt = ob.at - elapsed;
       if (dt > O.signalS) break; // список по времени — дальше смотреть незачем
 
-      const safe = isSafe(ob, { camX, crouching });
+      const safe = isSafe(ob, { camX, crouching, lateralKnown });
       // Стадии телеграфа считает level.js — та же функция, что проверяется
       // тестами. Повторять её условия здесь значило бы завести вторую копию
       // расписания, которая однажды разойдётся с проверенной.
@@ -699,6 +702,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           // запись несла бы `forgiven: false`, а журнал и так самый большой
           // расход места в проекте.
           ...(вОкне ? { forgiven: true } : {}),
+          /* Проход, доставшийся незнанием, обязан быть виден в журнале. Без
+             поля он неотличим от заработанного, и «140 препятствий чисто»
+             однажды будет значить «часть из них ребёнок пролежал». По той же
+             причине поле только у таких записей: журнал и так дорог. */
+          ...(ob.kind === 'side' && !lateralKnown ? { lateralUnknown: true } : {}),
         });
       } else if (ob.verdictAt === null) {
         ob.verdictAt = now + O.lateForgiveMs;
