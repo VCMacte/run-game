@@ -33,6 +33,7 @@ import {
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
 import { withTimeout, reportWaits } from './js/util.js';
+import { replay, rowsOf, format as formatReplay } from './tools/replay.mjs';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -5721,6 +5722,88 @@ await group('ожидание сообщает исход', async () => {
   reportWaits(null);
   await withTimeout(Promise.reject(new Error('некому')), 50, 'без приёмника');
   check('без приёмника тоже молчит и не бросает', true);
+});
+
+/* ───────────────── повторный прогон записи ─────────────────
+
+   `tools/replay.mjs` гонит записанный скелет через нынешний `makeTracker` —
+   тот самый, что работает в забеге. Проверяется на синтетических сессиях, как
+   и разбор журнала: настоящая запись сюда не попадёт никогда (репозиторий
+   публичный, а это движения ребёнка в его комнате), и привязывать проверку к
+   ней значило бы не иметь её вовсе.
+
+   Инструмент уже сверен с настоящим прогоном: на записи из браузера он дал
+   24 смены дорожки при 24 в журнале той же сессии. Числа совпали ТОЛЬКО
+   после окна забега — см. ниже. */
+group('повторный прогон записи', () => {
+  /* Сессия из синтетики: формат тот же, что выгружает телефон. */
+  const сессия = ({ script = 'walk', n = 200, hz = 20, стадии = true } = {}) => {
+    const log = [];
+    if (стадии) log.push({ t: 0, type: 'train.stage', from: 'setup', to: 'free' });
+    log.push({ t: 0, type: 'cam.aspect', aspect: 1.78 });
+    let rows = [];
+    for (let i = 0; i < n; i++) {
+      const t = Math.round((i * 1000) / hz);
+      const lm = fakeLandmarks(SCRIPTS[script](t / 1000));
+      rows.push([t, ...lm]);
+      if (rows.length === 20) { log.push({ t, type: 'skeleton', n: 20, rows }); rows = []; }
+    }
+    if (rows.length) log.push({ t: rows[0][0], type: 'skeleton', n: rows.length, rows });
+    log.push({ t: Math.round(((n - 1) * 1000) / hz), type: 'run.finish', stars: 0, hits: 0 });
+    return { startedAt: '2026-10-14T00:00:00.000Z', log };
+  };
+
+  const r = replay(сессия());
+  check('отсчёты дошли все', r.n === 200, `${r.n}`);
+  check('частота восстановлена', r.hz === 20, `${r.hz}`);
+  check('отношение сторон взято из журнала', r.aspect === 1.78, `${r.aspect}`);
+  check('калибровка названа умолчаниями', r.from === 'умолчания', r.from);
+  check('окно забега найдено', r.whole === false);
+  check('качающийся ребёнок меняет дорожку', r.lanes > 0, `${r.lanes} смен`);
+  check('и остаётся в кадре', r.notPresent === 0, JSON.stringify(r.why));
+
+  const стоит = replay(сессия({ script: 'still' }));
+  check('неподвижный дорожку не меняет', стоит.lanes === 0, `${стоит.lanes}`);
+
+  /* ОКНО ЗАБЕГА. Главная ловушка инструмента: запись идёт со всех стадий, а
+     трекер на телефоне ведётся только в забеге. Без окна прогон дал 42 смены
+     против 24 в журнале — разница методик, которую легко принять за
+     расхождение кода. Проверяется именно отсечение. */
+  const сЗаписьюДоЗабега = сессия();
+  сЗаписьюДоЗабега.log[0] = { t: 5000, type: 'train.stage', from: 'setup', to: 'free' };
+  const окно = replay(сЗаписьюДоЗабега);
+  check('строки до входа в забег отсечены', окно.n < 200 && окно.n > 0, `${окно.n}`);
+  check('и отсечены ровно по отметке', окно.n === 100, `${окно.n} при 20 Гц и 5 с`);
+
+  const безСтадий = replay(сессия({ стадии: false }));
+  check('без отметки стадии берутся все строки', безСтадий.n === 200, `${безСтадий.n}`);
+  check('и отчёт об этом говорит', безСтадий.whole === true
+    && formatReplay(безСтадий).includes('взяты все строки'));
+
+  /* Строка не той длины — признак сменившегося формата записи. Молча
+     пропустить её нельзя: прогон тогда считал бы по части отсчётов и выдавал
+     бы правдоподобные числа. */
+  const битая = сессия({ n: 40 });
+  битая.log.find((e) => e.type === 'skeleton').rows[0] = [0, 1, 2, 3];
+  check('строка не той длины не считается', rowsOf(битая, { from: -Infinity, to: Infinity }).length === 39,
+    `${rowsOf(битая, { from: -Infinity, to: Infinity }).length}`);
+
+  const пустая = replay({ log: [{ t: 0, type: 'run.start' }] });
+  check('сессия без записи даёт ноль, а не выдумку', пустая.n === 0);
+  check('и говорит, чего не хватает',
+    formatReplay(пустая).includes('?record=1'), formatReplay(пустая));
+
+  /* Сверка с журналом. Числа рядом — то, что код решил тогда; расхождение и
+     есть повод смотреть. Здесь журнал синтетический и жестов в нём нет, так
+     что проверяется сама подстановка, а не совпадение. */
+  const сЖестами = сессия();
+  сЖестами.log.push({ t: 100, type: 'gesture', kind: 'left', _n: 3 });
+  сЖестами.log.push({ t: 200, type: 'gesture', kind: 'crouchIn' });
+  сЖестами.log.push({ t: 300, type: 'pause', why: 'edge', _n: 2 });
+  const сж = replay(сЖестами);
+  check('склеенные жесты считаются по _n', сж.журнал.lanes === 3, `${сж.журнал.lanes}`);
+  check('приседы журнала считаются отдельно', сж.журнал.crouches === 1);
+  check('причины пауз журнала доезжают', сж.журнал.why.edge === 2, JSON.stringify(сж.журнал.why));
 });
 
 // ─────────────────────────── итог ───────────────────────────

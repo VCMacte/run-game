@@ -4,7 +4,8 @@
 заморозки бокового положения и опознания тела.
 
 Родитель: [`../CLAUDE.md`](../CLAUDE.md).
-Код: `js/signals.js`, `js/train.js`, `js/level.js`, `js/app.js`.
+Код: `js/signals.js`, `js/train.js`, `js/level.js`, `js/app.js`,
+`tools/replay.mjs`.
 Замысел и обоснование чисел: [`concept-and-plan.md`](concept-and-plan.md).
 
 ## Границы присутствия

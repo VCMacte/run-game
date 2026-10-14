@@ -27,6 +27,7 @@ node serve.js                    # http://localhost:8099 + POST /save
 node tests-shell.mjs             # оболочка: манифест, разметка, кэш, настройки
 node tests-control.mjs           # математика: сигналы, вид, уровень, звук
 node tools/log-report.mjs <файл>  # числа забега из журнала с телефона
+node tools/replay.mjs <файл>      # запись скелета через нынешний код
 node tools/make-sw.mjs           # пересобрать список кэша и поднять версию
 node tools/make-icons.mjs        # перерисовать иконки
 node tools/ed-generate.mjs ...   # картинка от Easy Diffusion (нужен его сервер)
@@ -263,6 +264,7 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 | `tools/ed-generate.mjs` | клиент к Easy Diffusion; перенесён из комикса |
 | `assets/sky*.webp` | фон неба, по одному на зону; необязателен — без него полосы |
 | `tools/log-report.mjs` | журнал с телефона → числа забега; разбор проверяется тестом |
+| `tools/replay.mjs` | запись скелета (`?record=1`) → что видит нынешний код; сверка с журналом |
 | `.claude/skills/take-measurements/` | ритуал снятия замеров: откуда журнал, что значат числа, куда ведут |
 | `tools/make-sw.mjs`, `tools/make-icons.mjs` | детерминированные генераторы |
 | `js/version.js` | **генерируется**; номер сборки для строки состояния |
@@ -308,7 +310,7 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 | `?fake=walk` | синтетический ребёнок вместо камеры (`demo`, `still`, `walk`, `step-left`, `step-right`, `crouch`, `leave-frame`, `profile`, `jitter`, `drift`) |
 | `?pipeline=bitmap` | принудительный конвейер кадров: `stream`, `bitmap`, `main` |
 | `?stage=calibrate` | начать тренировку с этой стадии |
-| `?record=1` | писать сырые точки скелета в журнал (≈0.5 МБ за полминуты) |
+| `?record=1` | писать сырые точки скелета в журнал (≈0.5 МБ за полминуты); читает их `tools/replay.mjs` |
 | `?run=20` | длина забега в секундах, в обход родительского меню |
 | `?nocache=1` | снять service worker и удалить кэши; сильнее настройки |
 
