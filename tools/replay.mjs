@@ -100,10 +100,44 @@ function calibrationOf(log) {
   return { from: load ? 'calib.load (неполная)' : 'умолчания', calibration: {} };
 }
 
-/** Сколько раз случилось событие такого вида. */
-function countEvents(log, type, pick = () => true) {
+/* Куски, которые запись реально покрывает.
+
+   Нужны для сверки с журналом. Запись теперь бывает не сплошной, а всплесками
+   по две секунды вокруг паузы и удара: три всплеска за сорокасекундный забег —
+   это шесть секунд из сорока. Сравнивать девять смен дорожки, найденных в этих
+   шести секундах, с сорока восемью из журнала всего забега — значит выдать
+   разницу методик за расхождение кода. Ровно на этом инструмент уже попался
+   однажды, когда прогонял все стадии против журнала одного забега.
+
+   Кусок кончается там, где промежуток втрое больше обычного шага: тем же
+   правилом, по которому считаются перерывы. */
+function coverOf(rows, шаг) {
+  if (!rows.length) return [];
+  const куски = [[rows[0][0], rows[0][0]]];
+  for (let i = 1; i < rows.length; i++) {
+    const d = rows[i][0] - rows[i - 1][0];
+    if (шаг > 0 && d > шаг * 3) куски.push([rows[i][0], rows[i][0]]);
+    else куски[куски.length - 1][1] = rows[i][0];
+  }
+  return куски;
+}
+
+/* Попадает ли событие в покрытое запись время.
+
+   У склеенных событий (`_n`) все повторы приписываются куску, в котором лежит
+   ПЕРВОЕ: распределить их точнее нечем, `_lastT` говорит только о конце
+   потока. Для жестов это почти безразлично — у них разная полезная нагрузка,
+   и склеиваются они редко. */
+const covered = (куски, t) => куски.some(([a, b]) => t >= a && t <= b);
+
+/** Сколько раз случилось событие такого вида в покрытое записью время. */
+function countEvents(log, куски, type, pick = () => true) {
   let n = 0;
-  for (const e of log) if (e.type === type && pick(e)) n += occurrences(e);
+  for (const e of log) {
+    if (e.type !== type || !pick(e)) continue;
+    if (!covered(куски, e.t)) continue;
+    n += occurrences(e);
+  }
   return n;
 }
 
@@ -123,7 +157,7 @@ export function replay(session) {
   const { from, calibration } = calibrationOf(log);
 
   const пусто = {
-    n: 0, from, aspect, hz: null, перерывы: 0, whole: окно.whole,
+    n: 0, from, aspect, hz: null, перерывы: 0, покрытоС: 0, поводы: {}, whole: окно.whole,
     u: { med: null, p95: null, max: null },
     lanes: 0, crouches: 0, notPresent: 0, why: {},
     журнал: { lanes: 0, crouches: 0, pauses: 0, why: {} },
@@ -168,13 +202,28 @@ export function replay(session) {
   for (let i = 1; i < rows.length; i++) интервалы.push(rows[i][0] - rows[i - 1][0]);
   const шаг = интервалы.length ? quantile(интервалы, 0.5) : 0;
   const перерывы = интервалы.filter((d) => шаг > 0 && d > шаг * 3).length;
+  const куски = coverOf(rows, шаг);
+  const покрытоС = куски.reduce((s, [a, b]) => s + (b - a), 0) / 1000;
+
+  /* Чем вызван каждый всплеск. Берётся с самого события, а не выводится.
+
+     Нужно потому, что происшествие случается ПОСЛЕ записи, а не внутри неё:
+     всплеск — это две секунды ПЕРЕД паузой, и сама пауза в покрытое время не
+     попадает. Сверка «паузы тогда» честно показывает ноль, и читается это как
+     «пауз не было» — ровно наоборот. Поводы снимают вопрос: их не надо
+     угадывать, игра их записала. */
+  const поводы = {};
+  for (const e of log) {
+    if (e.type !== 'skeleton' || !e.why) continue;
+    поводы[e.why] = (поводы[e.why] || 0) + 1;
+  }
 
   /* Причины пауз из журнала — для сверки с `why` выше. Это НЕ одно и то же
      число: пауза наступает, когда отсчёты не проходят дольше `lostMs`, а
      здесь считаются сами отсчёты. Сравнивать надо состав причин, а не счёт. */
   const журналWhy = {};
   for (const e of log) {
-    if (e.type !== 'pause' || !e.why) continue;
+    if (e.type !== 'pause' || !e.why || !covered(куски, e.t)) continue;
     журналWhy[e.why] = (журналWhy[e.why] || 0) + occurrences(e);
   }
 
@@ -196,10 +245,12 @@ export function replay(session) {
     crouches,
     notPresent,
     why,
+    покрытоС: round(покрытоС, 1),
+    поводы,
     журнал: {
-      lanes: countEvents(log, 'gesture', (e) => ['left', 'right', 'center'].includes(e.kind)),
-      crouches: countEvents(log, 'gesture', (e) => e.kind === 'crouchIn'),
-      pauses: countEvents(log, 'pause'),
+      lanes: countEvents(log, куски, 'gesture', (e) => ['left', 'right', 'center'].includes(e.kind)),
+      crouches: countEvents(log, куски, 'gesture', (e) => e.kind === 'crouchIn'),
+      pauses: countEvents(log, куски, 'pause'),
       why: журналWhy,
     },
   };
@@ -214,16 +265,23 @@ export function format(rep) {
     : '—');
 
   return [
-    `отсчётов      ${rep.n} за ${rep.spanS} с, ${rep.hz} Гц`
-      + (rep.перерывы ? `, запись прерывалась ${rep.перерывы} раз` : '')
+    `отсчётов      ${rep.n} за ${rep.покрытоС} с записи, ${rep.hz} Гц`
+      + (rep.перерывы
+        ? `; ${rep.перерывы + 1} куска на отрезке ${rep.spanS} с — запись всплесками`
+        : '')
       + (rep.whole ? '  (стадии забега в журнале нет — взяты все строки)' : ''),
     `кадр          отношение сторон ${rep.aspect ?? '— (в журнале нет)'}`,
     `калибровка    ${rep.from}`,
     `смещение |u|  медиана ${rep.u.med}, p95 ${rep.u.p95}, максимум ${rep.u.max}`,
-    `дорожка       ${rep.lanes} смен · в журнале тогда ${rep.журнал.lanes}`,
+    `дорожка       ${rep.lanes} смен · в журнале тогда ${rep.журнал.lanes}`
+      + (rep.перерывы ? ' (и там, и там — только по покрытым кускам)' : ''),
     `присед        ${rep.crouches} · в журнале тогда ${rep.журнал.crouches}`,
     `не в кадре    ${доля(rep.notPresent)}: ${причины(rep.why)}`,
-    `паузы тогда   ${rep.журнал.pauses}: ${причины(rep.журнал.why)}`,
+    ...(Object.keys(rep.поводы).length
+      // Происшествие случается ПОСЛЕ своих двух секунд, поэтому в покрытое
+      // время не попадает, и строка ниже о нём молчит. Поводы — попадают.
+      ? [`всплески      ${причины(rep.поводы)}`]
+      : [`паузы тогда   ${rep.журнал.pauses}: ${причины(rep.журнал.why)}`]),
   ].join('\n');
 }
 

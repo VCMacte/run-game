@@ -330,6 +330,41 @@ export async function save() {
   return { name, bytes: blob.size, saved, shared, sessions: data.sessions.length };
 }
 
+/**
+ * Удаляет всё, что уже выгружено, кроме текущей сессии.
+ *
+ * Зовётся после удачной выгрузки. Повод простой: журнал — единственный
+ * свидетель забега, и копить его до потолка значит однажды потерять начало
+ * истории молча, вытеснением. Выгруженное лежит файлом, то есть уже в
+ * безопасности, и держать второй экземпляр в телефоне незачем.
+ *
+ * Текущая сессия не удаляется — по той же причине, что и в `trim()`: в неё
+ * прямо сейчас пишут, и удалять то, что пополняется, значит получить дыру в
+ * середине записи. Поэтому следующая выгрузка вынесет её ещё раз; перекрытие
+ * в одну сессию дешевле пропуска.
+ *
+ * Отдельная функция, а не `clear()`: тот стирает всё подчистую и остаётся
+ * кнопкой «забыть вообще», которую нажимает человек.
+ */
+export async function dropSaved() {
+  const db = await open();
+  const tx = db.transaction(['sessions', 'events'], 'readwrite');
+  const sessions = tx.objectStore('sessions');
+  const all = await ask(sessions.getAll());
+  const doomed = all.filter((s) => s.id !== sessionId);
+
+  const store = tx.objectStore('events');
+  const index = store.index('session');
+  let bytes = 0;
+  for (const s of doomed) {
+    bytes += s.bytes || 0;
+    sessions.delete(s.id);
+    await dropEvents(store, index, s.id);
+  }
+  await done(tx);
+  return { sessions: doomed.length, bytes };
+}
+
 export async function clear() {
   queue = [];
   prevKey = null;

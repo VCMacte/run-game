@@ -1127,7 +1127,9 @@ $('saveLogs').onclick = async () => {
   b.textContent = 'Собираю…';
   try {
     const r = await log.save();
-    b.textContent = r.shared === 'shared' ? 'Отправлено' : 'Сохранено в «Загрузки»';
+    const свободно = await sweepSaved(r);
+    b.textContent = (r.shared === 'shared' ? 'Отправлено' : 'Сохранено в «Загрузки»')
+      + свободно;
   } catch (e) {
     b.textContent = 'Не получилось';
     log.event('error', { where: 'saveLogs', message: String(e?.message || e) });
@@ -1136,6 +1138,33 @@ $('saveLogs').onclick = async () => {
     setTimeout(() => { b.textContent = было; }, 4000);
   }
 };
+
+/* Выгруженное удаляется само, и это не вольность.
+
+   Журнал — единственный свидетель забега, а потолок у него 25 МБ и двадцать
+   сессий. Доросший до потолка журнал теряет НАЧАЛО истории молча,
+   вытеснением, — то есть ровно то, с чем хочется сравнивать. Выгруженное при
+   этом уже лежит файлом в «Загрузках», и второй экземпляр в телефоне не
+   страхует ни от чего.
+
+   Удаляется только при удачной записи файла (`r.saved`). Отменённая отправка
+   удалению не мешает: файл на телефоне остался, так и написано на экране.
+   Текущую сессию `dropSaved` не трогает — в неё сейчас пишут.
+
+   Сам факт уборки уходит в журнал: сессии, исчезнувшие без следа, в
+   следующем разборе выглядели бы потерей записей, а не уборкой. */
+async function sweepSaved(r) {
+  if (!r.saved) return '';
+  try {
+    const { sessions, bytes } = await log.dropSaved();
+    if (!sessions) return '';
+    log.event('log.swept', { sessions, bytes });
+    return `, журнал очищен (${count(sessions, SESSIONS)}, ${fmtMB(bytes)} МБ)`;
+  } catch {
+    // Уборка — подсобное дело: не вышло, значит выгрузка всё равно состоялась.
+    return '';
+  }
+}
 
 $('parentBack').onclick = BACK.parent = () => show(previous);
 
@@ -1462,7 +1491,10 @@ $('logSave').onclick = async () => {
       failed: 'Поделиться не получилось, но файл сохранён.',
       unavailable: 'Телефон не предложил «Поделиться» — возьмите файл из «Загрузок».',
     }[r.shared];
-    $('logMsg').textContent = `${file} ${sent}`;
+    const свободно = await sweepSaved(r);
+    $('logMsg').textContent = `${file} ${sent}`
+      + (свободно ? ` Место освобождено${свободно.replace(', журнал очищен', '')}.` : '');
+    renderLogs();
   } catch (e) {
     $('logMsg').textContent = 'Не получилось выгрузить: ' + (e?.message || e);
   }

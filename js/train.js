@@ -216,16 +216,66 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   const recording = () => recordForced || settings.get('record') === 'on';
   let batch = [];
 
-  function recordSkeleton(sample, now) {
-    if (!sample.lm) return;
+  /* Кольцо сырых строк. Пишется ВСЕГДА, и в этом вся мысль.
+
+     Сплошная запись стоит мегабайт в минуту и поэтому требует, чтобы о ней
+     подумали заранее: включи, пробеги, не забудь выключить. Ритуал из
+     четырёх шагов не исполняется — ровно так `?record=1` и прожил тринадцать
+     журналов без единого срабатывания. А интересна запись не вся: интересны
+     две секунды ПЕРЕД тем, как что-то случилось.
+
+     Поэтому строки копятся в кольце даром, а в журнал уходят только вокруг
+     происшествия — там же, где уже уходит `samples` с выводами трекера.
+     Включать ничего не надо, потолок журнала цел, а разбор получает ровно те
+     мгновения, из-за которых его и заводят. */
+  const rawRing = [];
+  let rawBursts = 0;
+  let lastRawT = 0;
+
+  /** Строка для журнала: отметка времени и 132 числа, округлённые до тысячных. */
+  function rawRow(lm, now) {
     const row = new Array(133);
     row[0] = Math.round(now);
-    for (let i = 0; i < 132; i++) row[i + 1] = Math.round(sample.lm[i] * 1000) / 1000;
+    for (let i = 0; i < 132; i++) row[i + 1] = Math.round(lm[i] * 1000) / 1000;
+    return row;
+  }
+
+  function recordSkeleton(sample, now) {
+    if (!sample.lm) return;
+    const row = rawRow(sample.lm, now);
+
+    rawRing.push(row);
+    if (rawRing.length > S.rawRing) rawRing.shift();
+
+    if (!recording()) return;
     batch.push(row);
     if (batch.length >= 20) {
       log.event('skeleton', { n: batch.length, rows: batch });
       batch = [];
     }
+  }
+
+  /**
+   * Сбросить в журнал последние две секунды сырых строк.
+   *
+   * Зовётся там, где случилось то, что потом будут разбирать: пауза и удар.
+   * При сплошной записи молчит — те же строки уже уходят потоком, и второй
+   * экземпляр только раздувал бы журнал.
+   *
+   * `lastRawT` не даёт выслать одну строку дважды: у двух происшествий
+   * подряд общее прошлое, и без него перекрытие уехало бы в журнал дважды, а
+   * в разборе выглядело бы удвоенной частотой.
+   */
+  function flushRaw(why, now) {
+    if (recording() || rawBursts >= S.rawBursts) return;
+    const rows = rawRing.filter((r) => r[0] > lastRawT && now - r[0] <= 2000);
+    if (!rows.length) return;
+    rawBursts++;
+    lastRawT = rows[rows.length - 1][0];
+    log.event('skeleton', { n: rows.length, why, rows });
+    /* Исчерпанный потолок обязан быть виден. Молча прекратившаяся запись
+       неотличима от «больше ничего не случилось». */
+    if (rawBursts === S.rawBursts) log.event('skeleton.cap', { bursts: rawBursts });
   }
 
   /* Полезная нагрузка HUD.
@@ -344,7 +394,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     health.poses++;
     health.dropped += sample.dropped || 0;
     if (sample.inferMs) health.infer.push(sample.inferMs);
-    if (recording()) recordSkeleton(sample, now);
+    /* Зовётся ВСЕГДА, а не под условием: кольцо сырых строк копится даром и
+       нужно именно в тот момент, когда о записи никто заранее не подумал.
+       Сплошную запись решает сам recordSkeleton. */
+    recordSkeleton(sample, now);
 
     lastLm = sample.lm;
     if (stage === 'setup') return onSetup(sample, now);
@@ -488,6 +541,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       sHi: sHi != null ? round(sHi) : null,
       aspect: round(aspect, 2),
     });
+    /* И те же две секунды СЫРЫМИ строками — их можно прогнать заново через
+       нынешний код (tools/replay.mjs), а выводы ниже нельзя: по ним видно,
+       что игра решила, но не что она решила бы после правки порога. */
+    flushRaw('pause', rec.t);
+
     // Две секунды отсчётов вокруг происшествия — одним событием. Именно по ним
     // потом разбирается жалоба «встало на паузу само».
     const burst = tracker.burst(2000);
@@ -743,6 +801,14 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           result: counted ? 'hit' : 'grace',
           camX: round(camX), crouch: crouching,
         });
+        /* Сырые строки перед задетым препятствием. Это второй случай, ради
+           которого кольцо и заведено: открытый вопрос №1 — «к моменту прихода
+           препятствия ничто не говорит стой где стоишь» — виден как раз
+           здесь, в том, где было тело за две секунды до приговора.
+
+           Прощённый удар (grace) тоже пишется: он отличается от задетого
+           только неуязвимостью от прошлого, а телом ребёнка — ничем. */
+        flushRaw('hit', now);
       }
     }
   }
