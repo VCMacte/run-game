@@ -1395,7 +1395,7 @@ function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, stil
        Это третье место, где он нарисован, и синхронизировать три среды —
        байтовый PNG, SVG в разметке и четырёхугольники здесь — нечем. Цвета
        общие (`critter`, `badnikMouth` из js/theme.js), форму держим руками:
-       правило записано в CLAUDE.md. */
+       правило записано в docs/identity-and-icons.md. */
     for (const d of [-1, 1]) {
       quad(
         project(sx + d * 0.085, sy + 0.15, z, cam), project(sx + d * 0.035, sy + 0.15, z, cam),
