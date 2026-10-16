@@ -2538,8 +2538,29 @@ group('потолок светлоты растра', () => {
       `README говорит ${сказано[1]}, тема даёт ${skyClamp('greenHill')}`);
   }
 
+  /* Потолок берётся у ПОЛЯ зоны, а не по её имени. Имя работало, пока тёмная
+     зона была одна; со вторым миром «ночь с сиянием» молча получила бы дневной
+     потолок 0.704, и белое сияние читалось бы дырой в ночном небе — ровно тот
+     отказ, от которого зажим и ставился. */
+  check('ночной потолок задан полем зоны, а не её именем',
+    THEME.nightHills.skyClampTo === skyClamp('nightHills'),
+    `поле ${THEME.nightHills.skyClampTo}, функция ${skyClamp('nightHills')}`);
+  check('и в коде не осталось сравнения с именем зоны',
+    !readFileSync(join(ROOT, 'js/theme.js'), 'utf8').includes("zone === 'nightHills'"),
+    'вторая тёмная зона потребовала бы второго if, и его забыли бы');
+  /* У зоны без поля потолок по-прежнему выводится из проёма. */
+  check('у дневной зоны поля нет', THEME.greenHill.skyClampTo === undefined);
+
   /* И в строке запуска числа больше нет: зажим берётся вызовом. */
   const frame = readFileSync(join(ROOT, 'tools', 'frame.html'), 'utf8');
+  /* init-полосу можно сделать для ЛЮБОЙ зоны, а не только первого мира.
+     Проверка текстовая, как и соседняя про `skyClamp` в примере сборки: HTML
+     в node не исполняется. Без этого арт нового мира нечем начать — и
+     выяснилось бы это в середине этапа, с уже написанными палитрами. */
+  check('полосу можно снять с любой зоны палитры',
+    frame.includes('Object.keys(THEME)') && !frame.includes("const ZONES = zonesOf('hills')"),
+    'иначе ?band= знает только зоны первого мира');
+
   check('пример сборки зовёт skyClamp, а не пишет число',
     frame.includes("skyClamp('sunsetDunes')") && !frame.includes('0.82, 0.704'),
     'в tools/frame.html пример снова вписывает потолок числом');
@@ -3876,6 +3897,12 @@ group('бюджет кадра', () => {
      Пустой профиль не увидел бы ни одного нового приза вовсе, то есть счётчик
      мерил бы игру, в которую через месяц играть не будут. */
   const prizes = unlockedAt(1200);
+  /* И по КАЖДОМУ собранному миру. Счётчик брал зоны первого мира умолчанием,
+     то есть зоны нового мира в бюджет не попадали вовсе — перебор в них был
+     бы не виден. Берутся только миры с собранным артом: у остальных зон нет,
+     мерить нечего. */
+  let worstWorld = WORLDS.hills.id;
+  for (const мир of Object.keys(WORLDS).filter((w) => worldReady(w))) {
   for (const seed of [1, 7, 13, 29]) {
    for (const step of [0, STEP_MAX]) {
     const rng = seeded(seed);
@@ -3885,7 +3912,7 @@ group('бюджет кадра', () => {
        цветущего приза, то есть состав, в который ребёнок с полной копилкой
        уже не играет. Ровно эта дыра была у искр на этапе 1: бюджет считал
        приз, которого не видит. */
-    const decor = makeDecor({ durationS: 300, rng, world: 'hills', prizes });
+    const decor = makeDecor({ durationS: 300, rng, world: мир, prizes });
 
     const { canvas, fills } = recorder();
     const view = createView(canvas);
@@ -3917,16 +3944,19 @@ group('бюджет кадра', () => {
         obstacles, stars, decor, speed: 0.5, prizes,
         // Зона — та же, что была бы в игре: формы обочины у зон свои, и считать
         // бюджет по одной зоне значило бы не проверить остальные.
-        zone: zoneAt(t, 300),
+        zone: zoneAt(t, 300, мир),
         finishIn: 300 - t, safe: true, pulse: 0.5,
       });
-      if (fills.length > worst) { worst = fills.length; worstAt = t; worstSeed = seed; worstStep = step; }
+      if (fills.length > worst) {
+        worst = fills.length; worstAt = t; worstSeed = seed; worstStep = step; worstWorld = мир;
+      }
     }
    }
   }
+  }
 
   console.log(`  худший кадр: ${worst} заливок при потолке ${CEILING}`
-    + ` (посев ${worstSeed}, ступень ${worstStep}, ${worstAt.toFixed(1)} с)`);
+    + ` (мир ${worstWorld}, посев ${worstSeed}, ступень ${worstStep}, ${worstAt.toFixed(1)} с)`);
   check(`худший кадр укладывается в потолок ${CEILING}`, worst <= CEILING,
     `${worst} заливок на ${worstAt.toFixed(1)} с`);
   check('и запас ещё остаётся', worst <= CEILING * 0.8,
@@ -4199,8 +4229,12 @@ group('тема', () => {
      набрано небо, звёздами или облаками. Поэтому стоит среди неокрашиваемых
      ключей, а не в наборах ролей — иначе проверка «цвет задан» потребовала бы
      от него вида `#rrggbb`. */
+  /* `skyClampTo` — не цвет, а потолок светлоты РАСТРА этой зоны (число). В
+     набор ролей он попадает по той же причине, что `skyStars`: роль «цвета» у
+     него нет и быть не может, а молчаливый пропуск неотнесённого ключа — это
+     ровно та дыра, ради которой проверка и стоит. */
   const classified = new Set([...DECISION_KEYS, ...BACKGROUND_KEYS, 'badnikEye',
-    'id', 'name', 'decor', 'skyStars']);
+    'id', 'name', 'decor', 'skyStars', 'skyClampTo']);
 
   check('темы вообще есть', Object.keys(THEME).length > 0);
 
