@@ -24,7 +24,7 @@ import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
-  makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap,
+  makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
   skyGaps, CORRIDOR_HALF, CLIFF_TOP, decorYMask,
 } from './js/view.js';
 import {
@@ -3920,6 +3920,22 @@ group('кубок', () => {
   check('без приза спутника нет', сПтицей({}) === сПтицей({ buddy: false }));
   check('с призом ровно две заливки', сПтицей({ buddy: true }) === сПтицей({}) + 2,
     `${сПтицей({ buddy: true })} против ${сПтицей({})}`);
+
+  /* Птица обязана лететь В ОТКРЫТОМ НЕБЕ, а не за обрывом.
+
+     Поймано кадром в браузере: при `x = 0.78 W` спутник давал РОВНО НОЛЬ
+     пикселей — обрыв закрывал его целиком, хотя счётчик исправно считал две
+     заливки. Третий случай за прогон, когда счётчик видит приз, а экран нет.
+
+     Небо открыто клином вокруг точки схода и тем шире, чем выше. Поэтому
+     инвариант простой и проверяемый из node: птица держится у середины кадра
+     по горизонтали и заметно выше горизонта. */
+  for (let t = 0; t < 3; t += 0.1) {
+    const п = buddyPos(t);
+    check(`спутник на ${t.toFixed(1)} с держится открытого неба`,
+      Math.abs(п.x - VIEW.width / 2) < VIEW.width * 0.12 && п.y < VIEW.height * 0.3,
+      `x ${п.x.toFixed(0)} при середине ${VIEW.width / 2}, y ${п.y.toFixed(0)}`);
+  }
 
   /* Он летит — то есть его положение меняется со временем, а число заливок
      НЕТ. Мерцающий спутник читался бы дефектом картинки. */
