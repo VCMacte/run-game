@@ -582,6 +582,85 @@ reefShallow: {
       ],
     },
   },
+
+  /* ───────── Мир «Звёздная дорога» (приз уровня 9, 900 колец) ─────────
+
+     Последний мир лестницы. Новых форм обочины снова ни одной.
+
+     Туманность — четвёртая тёмная зона, пояс комет — промежуточная: темнее
+     дневных, светлее ночи, и потолок растра у неё свой, 0.45. Это первый
+     случай, когда зажим не «дневной или ночной», а именно свой: шкала
+     оказалась непрерывной, как только зон стало двенадцать. */
+cloudTop: {
+    id: 'cloudTop',
+    name: 'Над облаками',
+    ...DECISION,
+    sky: '#6a7fd4', skyLow: '#a3b0e6', hills: '#7f8fd0', cloud: '#c6cff0',
+    starSky: '#d2daf2', grass: '#8f9ad6', grassDark: '#5f6bb0', earthL: '#5a63a8',
+    earthR: '#3f4780', earthDeep: '#242a4e', floorA: '#b0bce8', floorB: '#4f5a9e',
+    floorMid: '#8e9bd4', floorFar: '#6e7bbc', shadow: '#3f4880', palmTrunk: '#6b5a4a',
+    palmLeaf: '#5a8f7a', flower: '#e08ac0', totem: '#b4bce0', post: '#8f98cc',
+    postMark: '#cdd4ee', cactus: '#5f9e86', rock: '#9aa3d0', spruce: '#3f6b8a',
+    firefly: '#8a9a4a', buddy: '#2f3566', badnik: '#4a2f6b', badnikMouth: '#241735',
+    spike: '#b6c0e4', critter: '#e8b05a', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'bush', weight: 0.34, bloomWeight: 0.40, height: 0.7, out: 0.12 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'totem', weight: 0.22, height: 1.1, out: 0.35 },
+        { kind: 'flower', weight: 0.14, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+      ],
+    },
+  },
+
+
+  cometBelt: {
+    id: 'cometBelt',
+    name: 'Пояс комет',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.45,
+    sky: '#2a2f66', skyLow: '#454d8f', hills: '#333a73', cloud: '#5a63a3',
+    starSky: '#cdd4f2', grass: '#3f4580', grassDark: '#262b56', earthL: '#333a6b',
+    earthR: '#1f2447', earthDeep: '#12152b', floorA: '#7f88c4', floorB: '#333a73',
+    floorMid: '#646ea8', floorFar: '#4e5790', shadow: '#242a52', palmTrunk: '#4a3a2a',
+    palmLeaf: '#4a7f6a', flower: '#c77aa8', totem: '#8f97c8', post: '#6f78b4',
+    postMark: '#b4bce0', cactus: '#4f8f76', rock: '#6a73a8', spruce: '#2f5f7a',
+    firefly: '#8a9a4a', buddy: '#a8b0dc', badnik: '#3f2359', badnikMouth: '#1f112c',
+    spike: '#c2c9ea', critter: '#e0a04f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.34, height: 2.6 },
+        { kind: 'totem', weight: 0.26, height: 1.1, out: 0.35 },
+      ],
+    },
+  },
+
+
+  nebula: {
+    id: 'nebula',
+    name: 'Туманность',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.30,
+    sky: '#1a0e2e', skyLow: '#331a4a', hills: '#2a1540', cloud: '#4a2a66',
+    starSky: '#d6c2ea', grass: '#33204a', grassDark: '#1f122e', earthL: '#3a2456',
+    earthR: '#1a0f28', earthDeep: '#0d0718', floorA: '#7a5aa3', floorB: '#281840',
+    floorMid: '#553f73', floorFar: '#43305c', shadow: '#241433', palmTrunk: '#3a2c20',
+    palmLeaf: '#3f6b5a', flower: '#b06a9a', totem: '#7f66a3', post: '#8f73b4',
+    postMark: '#bfa8d6', cactus: '#3f7f66', rock: '#6a5290', spruce: '#2f5f7a',
+    firefly: '#b48ad6', buddy: '#c2a8e0', badnik: '#4a1f3a', badnikMouth: '#240f1c',
+    spike: '#d6c2ea', critter: '#e0a04f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'rock', weight: 0.32, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
+        { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
+      ],
+    },
+  },
 };
 
 /* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
@@ -602,7 +681,8 @@ export const WORLDS = {
            zones: ['iceMorning', 'snowField', 'auroraNight'] },
   deep: { id: 'deep', name: 'Подводная долина',
            zones: ['reefShallow', 'kelpDeep', 'abyssGlow'] },
-  stars: { id: 'stars', name: 'Звёздная дорога',  zones: null },
+  stars: { id: 'stars', name: 'Звёздная дорога',
+           zones: ['cloudTop', 'cometBelt', 'nebula'] },
 };
 
 /** Собран ли арт этого мира. Открытый, но несобранный мир показывает «скоро». */
@@ -690,6 +770,9 @@ export const SKY_FILES = {
   reefShallow: 'sky-reef.webp',
   kelpDeep: 'sky-kelp.webp',
   abyssGlow: 'sky-abyss.webp',
+  cloudTop: 'sky-cloudtop.webp',
+  cometBelt: 'sky-comet.webp',
+  nebula: 'sky-nebula.webp',
 };
 
 /**
