@@ -43,6 +43,25 @@ node tools/ed-generate.mjs --init tools/init/band-sunsetDunes.png --strength 0.5
 пиксели обратно вверх — на нынешнем ночном растре максимум 0.347 при заданных
 0.30.
 
+Ледяной мир собран тем же путём. Две светлые зоны идут через img2img:
+
+```
+# в браузере http://localhost:8099/tools/frame.html?band=iceMorning
+#   -> await saveFrame('tools/init/band-iceMorning.png')
+node tools/ed-generate.mjs --init tools/init/band-iceMorning.png --strength 0.55   --w 1024 --h 576 --steps 28 --out tools/painted/sky-ice-morning.png   --prompt "frosty winter morning sky over distant snowy mountain ridge, soft pale blue and rose clouds, flat vector poster style, clean horizon line, no text"
+# затем в tools/frame.html:
+#   await toWebp('tools/painted/sky-ice-morning.png', 'assets/sky-ice-morning.webp',
+#                0.82, skyClamp('iceMorning'))
+```
+
+Снежное поле — так же, с `band=snowField`, `sky-snow.webp` и промптом про
+пасмурное зимнее небо. А ночь с сиянием — БЕЗ нейросети, прямо из полосы.
+
+**Если генерация падает с `[WinError 233]`, смотреть надо на видеопамять, а не
+на промпт.** Рендер-процесс Easy Diffusion умирает молча, когда VRAM занята
+чужими приложениями: `nvidia-smi --query-gpu=memory.free --format=csv` покажет
+правду за секунду. На свободной RTX 3060 небо рисуется за 10–13 секунд.
+
 **Ночная зона собирается БЕЗ Easy Diffusion** — прямо из полосы, без img2img:
 
 ```

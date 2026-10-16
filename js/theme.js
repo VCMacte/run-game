@@ -254,6 +254,18 @@ export const THEME = {
        второе место, где зоны перечислены, и четвёртая зона однажды приехала бы
        с облаками молча. Цвет звёзд — `starSky`, он задан во всех зонах. */
     skyStars: true,
+
+    /* Явный потолок светлоты для РАСТРА неба этой зоны. Общий потолок
+       (граница GAP_GUARD от проёма, 0.704) ночи не годится вовсе: белые
+       облака при нём оказались бы многократно светлее самого светлого цвета
+       её палитры и читались бы дырой в ночи. Вывести это из палитры нечем —
+       честное исключение лучше выдуманной формулы.
+
+       ПОЛЕМ, а не именем зоны в `skyClamp`: имя работало, пока тёмная зона
+       была одна. Со вторым миром такая же зона появляется снова, и второй
+       `if` просто забыли бы — а молчаливый дневной потолок в тёмной зоне
+       виден только на телевизоре. */
+    skyClampTo: 0.30,
     ...DECISION,
 
     sky: '#101a33',
@@ -322,6 +334,113 @@ export const THEME = {
       ],
     },
   },
+
+  /* ───────── Мир «Ледяные горы» (приз уровня 3, 300 колец) ─────────
+
+     Три зоны одного мира идут тем же порядком, что и в холмах: светлое утро →
+     день → ночь. Новых ФОРМ обочины здесь нет ни одной — ель, камень и столб
+     те же, что в холмах, — поэтому мир не стоит кадру ничего, и новой
+     отрисовки не появилось.
+
+     Главное ограничение этих палитр названо прямо: снег обязан быть ТЕМНЕЕ
+     проёма. Потолок фона 0.704 (проём 0.954 минус GAP_GUARD), а белый снег
+     #e8f0f8 — это 0.83. Поэтому снег здесь голубовато-серый: пять цветов
+     пришлось притушить, и проверено это контрактом, а не глазом. */
+  iceMorning: {
+    id: 'iceMorning',
+    name: 'Морозное утро',
+    ...DECISION,
+    sky: '#6f9fc8', skyLow: '#a8c6dc', hills: '#8fa6bb', cloud: '#c3d6e4',
+    starSky: '#c2d6e6', grass: '#b9cfdd', grassDark: '#93aec1',
+    earthL: '#7f94a6', earthR: '#6b8192', earthDeep: '#4e606e',
+    floorA: '#b3c9d8', floorB: '#9db5c6', floorMid: '#8aa2b3', floorFar: '#6f8698',
+    shadow: '#5a6e7e', palmTrunk: '#6b5a4a', palmLeaf: '#5a8f7a', flower: '#d08fa8',
+    totem: '#b0bcc6', post: '#8d9aa6', postMark: '#c6d2dc',
+    cactus: '#5f9e86', rock: '#9fb0bd', spruce: '#2f6b5a', firefly: '#6b7a3a',
+    /* Бадник ТЕМНЕЕ лица плиты минимум вдвое — иначе под сжатием Miracast
+       они сливаются в одну заливку, и ребёнок не видит, что на плите кто-то
+       сидит. Холодный тёмно-фиолетовый вместо светлого: 0.041 против 0.160 у
+       плиты, то есть 3.9×. Светлый вариант (#7a5f8f, 0.143) дал 1.12× и был
+       пойман контрактом. */
+    badnik: '#3d3456', badnikMouth: '#231d33', badnikEye: '#f2e9ff',
+    spike: '#9aa7b2', critter: '#8f7a5f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'spruce', weight: 0.42, bloomWeight: 0.32, height: 2.4 },
+        { kind: 'rock', weight: 0.30, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.28, height: 2.6 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+      ],
+    },
+  },
+
+  snowField: {
+    id: 'snowField',
+    name: 'Снежное поле',
+    ...DECISION,
+    sky: '#9ec3dd', skyLow: '#c6dced', hills: '#a9bccb', cloud: '#c4dbea',
+    starSky: '#bcd4e6', grass: '#c3d5e0', grassDark: '#a3b8c6',
+    earthL: '#90a4b2', earthR: '#7c909e', earthDeep: '#5c6d79',
+    floorA: '#c8dae6', floorB: '#aec4d3', floorMid: '#9ab0bf', floorFar: '#7f95a4',
+    shadow: '#67798a', palmTrunk: '#6b5a4a', palmLeaf: '#5a8f7a', flower: '#d08fa8',
+    totem: '#bcc8d2', post: '#98a5b1', postMark: '#c6d5e2',
+    cactus: '#5f9e86', rock: '#aebccb', spruce: '#35705f', firefly: '#6b7a3a',
+    badnik: '#433a5e', badnikMouth: '#262036', badnikEye: '#f2e9ff',
+    spike: '#a6b3be', critter: '#8f7a5f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.32, height: 2.6 },
+        { kind: 'spruce', weight: 0.28, bloomWeight: 0.20, height: 2.4 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
+      ],
+    },
+  },
+
+  /* Ночь с сиянием — ВТОРАЯ тёмная зона проекта, и потолок растра у неё свой
+     (`skyClampTo`), как у ночных холмов. Общий дневной потолок 0.704 сделал бы
+     её небо дырой: белое сияние оказалось бы светлее всего в её палитре. */
+  auroraNight: {
+    id: 'auroraNight',
+    name: 'Ночь с сиянием',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.30,
+    sky: '#0e1c33', skyLow: '#1b3350', hills: '#22384f', cloud: '#2d4a66',
+    starSky: '#c2d9ec', grass: '#2b4257', grassDark: '#1d3043',
+    /* Левый и правый обрыв различаются светлотой: разница подсказывает, в
+       какую сторону уехал взгляд. Было 0.030 против 0.019 — 0.011 при пороге
+       0.02, то есть подсказки не было. */
+    earthL: '#32465a', earthR: '#1b2733', earthDeep: '#0e141b',
+    /* Пол ночной ледяной зоны поднят по светлоте целиком. Прежний был слишком
+       тёмным: шахматка давала разницу 0.030 при пороге 0.1, то есть пол
+       сливался в одно пятно и скорость переставала читаться — а скорость в
+       первом лице сообщают только шахматка и обочина. Ориентир — ночные
+       холмы, где разница 0.110.
+
+       Пятно под кольцом зажато с двух сторон: темнее самой тёмной клетки
+       (иначе не видно) и светлее глубины обрыва (иначе читается дыркой в
+       полу). Прежде оно совпадало с глубиной ровно. */
+    floorA: '#5e7f99', floorB: '#36506a', floorMid: '#4e6c85', floorFar: '#415b72',
+    shadow: '#22323f', palmTrunk: '#3f2e22', palmLeaf: '#245c33', flower: '#7a4a5e',
+    totem: '#4a5a66', post: '#3d4a55', postMark: '#5e6f7d',
+    cactus: '#2f5e4e', rock: '#3f4e5b', spruce: '#1a4a3c', firefly: '#8a9a4a',
+    badnik: '#4a3a5a', badnikMouth: '#241b2c', badnikEye: '#f2e9ff',
+    /* Шип СВЕТЛЕЕ лица плиты вдвое — как в ночных холмах. Тёмный вариант
+       (#49555f, 0.087) давал 1.83× и сливался с плитой под сжатием: шип
+       сообщает «сюда нельзя», и различим он обязан быть всегда. */
+    spike: '#96a3af', critter: '#5a4a3a', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'spruce', weight: 0.46, bloomWeight: 0.36, height: 2.4 },
+        { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.28, height: 2.6 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+        // Светлячки — приз уровня 7; в ледяной ночи они тоже уместны.
+        { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
+      ],
+    },
+  },
 };
 
 /* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
@@ -338,14 +457,20 @@ export const THEME = {
    которая их открывает, — docs/trophy-and-worlds.md. */
 export const WORLDS = {
   hills: { id: 'hills', name: 'Холмы', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
-  ice:   { id: 'ice',   name: 'Ледяные горы',     zones: null },
+  ice:   { id: 'ice',   name: 'Ледяные горы',
+           zones: ['iceMorning', 'snowField', 'auroraNight'] },
   deep:  { id: 'deep',  name: 'Подводная долина', zones: null },
   stars: { id: 'stars', name: 'Звёздная дорога',  zones: null },
 };
 
 /** Собран ли арт этого мира. Открытый, но несобранный мир показывает «скоро». */
 export function worldReady(world) {
-  return Array.isArray(WORLDS[world]?.zones) && WORLDS[world].zones.length === 3;
+  const zones = WORLDS[world]?.zones;
+  /* Не только «три штуки», но и «все три существуют в палитре». Без второй
+     половины мир с опечаткой в имени зоны считался бы собранным, и `zonesOf`
+     отдал бы его список как есть — а `undefined` в палитре кадра Canvas
+     проглатывает молча, оставляя цвет соседней фигуры. */
+  return Array.isArray(zones) && zones.length === 3 && zones.every((z) => !!THEME[z]);
 }
 
 /** Зоны мира. Неизвестный, мусорный и несобранный мир отдают первый — молча:
@@ -417,6 +542,9 @@ export const SKY_FILES = {
   greenHill: 'sky.webp',
   sunsetDunes: 'sky-sunset.webp',
   nightHills: 'sky-night.webp',
+  iceMorning: 'sky-ice-morning.webp',
+  snowField: 'sky-snow.webp',
+  auroraNight: 'sky-aurora.webp',
 };
 
 /**
@@ -497,11 +625,10 @@ export const GAP_GUARD = 0.25;
 
    Проверяется в группе «небо» (`tests-control.mjs`): дневной обязан
    следовать за `GAP_GUARD`, ночной — оставаться ниже дневного. */
-const SKY_CLAMP_NIGHT = 0.30;
 
 export function skyClamp(zone) {
-  if (zone === 'nightHills') return SKY_CLAMP_NIGHT;
-  return luminance(THEME[zone].gap) - GAP_GUARD;
+  const свой = THEME[zone]?.skyClampTo;
+  return typeof свой === 'number' ? свой : luminance(THEME[zone].gap) - GAP_GUARD;
 }
 
 /* ──────────────────────── декорации ────────────────────────

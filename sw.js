@@ -21,7 +21,7 @@
 // меняет, и перекачивать нечего.
 //
 // Разбор: docs/offline-and-build.md
-const CACHE = 'run-v139';
+const CACHE = 'run-v142';
 
 /* Имя задаётся ОТПЕЧАТКОМ содержимого vendor/, а не номером сборки, и это и
    есть весь смысл разделения: то же имя — те же байты по построению, значит
@@ -68,7 +68,10 @@ const ASSETS = [
   './js/vendor.js',
   './js/version.js',
   './js/view.js',
+  './assets/sky-aurora.webp',
+  './assets/sky-ice-morning.webp',
   './assets/sky-night.webp',
+  './assets/sky-snow.webp',
   './assets/sky-sunset.webp',
   './assets/sky.webp',
 ];
