@@ -486,6 +486,102 @@ export const THEME = {
       ],
     },
   },
+
+  /* ───────── Мир «Подводная долина» (приз уровня 6, 600 колец) ─────────
+
+     Ни одной новой ФОРМЫ обочины: камень, столб, ель и куст — те же, что в
+     холмах. Мир отличается палитрой и небом, и потому не стоит кадру ничего.
+
+     Светящаяся бездна — третья тёмная зона проекта, и потолок растра у неё
+     свой, как у обеих ночных. Механизм ввёл этап 3, и здесь он впервые
+     применён к зоне, которая не называется ночью: тёмная — это свойство
+     палитры, а не имени.
+
+     Палитры прогнаны через ПОЛНЫЙ контракт ДО написания кода: семь нарушений
+     нашлись в черновике. На этапе 3 такие же четыре вскрылись уже в работе. */
+reefShallow: {
+    id: 'reefShallow',
+    name: 'Мелководье',
+    ...DECISION,
+    sky: '#4fb3c4', skyLow: '#8fd4dc', hills: '#3f8f9e', cloud: '#a9dde3',
+    starSky: '#b0dde4', grass: '#55a88f', grassDark: '#2f7a66', earthL: '#3f7a84',
+    earthR: '#2c5d66', earthDeep: '#17323a', floorA: '#8fd0cc', floorB: '#3d7a7c',
+    floorMid: '#6bb3b2', floorFar: '#4e9496', shadow: '#2a5a5e', palmTrunk: '#6b5a4a',
+    palmLeaf: '#2f8f6f', flower: '#e07aa8', totem: '#9ec4c8', post: '#7fb0b6',
+    postMark: '#bfe0e4', cactus: '#4f9e86', rock: '#86a8ae', spruce: '#2f6b5a',
+    firefly: '#6b7a3a', buddy: '#1f4a52', badnik: '#5a2f4a', badnikMouth: '#2e1726',
+    spike: '#c9dde0', critter: '#e0a85f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        /* Сумма правимых весов не меняется (0.62): камень здесь стоит ОДНУ
+           заливку против двух у остальных, и выросшая сумма разбавила бы его
+           долю — «цветущая» обочина вышла бы ДОРОЖЕ обычной. Ровно это и
+           случилось в черновике: 1.683 против 1.620. Та же ловушка, что в
+           дюнах на этапе 2. */
+        { kind: 'rock', weight: 0.38, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, bloomWeight: 0.10, height: 2.6 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.32, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.10, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+      ],
+    },
+  },
+
+
+  kelpDeep: {
+    id: 'kelpDeep',
+    name: 'Заросли',
+    ...DECISION,
+    sky: '#1d5c66', skyLow: '#2f7f86', hills: '#1a4a52', cloud: '#3f8f94',
+    starSky: '#9ecfd4', grass: '#246b5c', grassDark: '#0f2f28', earthL: '#255259',
+    earthR: '#15353b', earthDeep: '#0c1f24', floorA: '#59a39c', floorB: '#20534f',
+    floorMid: '#44857f', floorFar: '#2f6a66', shadow: '#163c3a', palmTrunk: '#4a3a2a',
+    palmLeaf: '#2a7a5e', flower: '#c76a92', totem: '#6f9ea2', post: '#5a8a90',
+    postMark: '#9ec4c8', cactus: '#3f8f6a', rock: '#56767c', spruce: '#1f6b4a',
+    firefly: '#7a8a3a', buddy: '#8fc2c8', badnik: '#4a2340', badnikMouth: '#261120',
+    spike: '#b4d6da', critter: '#d99a4f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
+        { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+      ],
+    },
+  },
+
+
+  abyssGlow: {
+    id: 'abyssGlow',
+    name: 'Светящаяся бездна',
+    ...DECISION,
+    skyStars: true,
+    skyAurora: true,
+    skyClampTo: 0.30,
+    sky: '#07161f', skyLow: '#0e2a36', hills: '#102b33', cloud: '#17424e',
+    /* `grassDark` светлее, чем просилось: им красится КУСТ, а куст стоит на
+       линии горизонта против силуэта хребта. В черновике было 0.015 против
+       0.021 у хребта — куст был бы невидим. Мой предпроверочный список видов
+       куста не содержал (он появляется только с призом «цветущая обочина»), а
+       контракт проверяет ВСЕ виды зоны. */
+    starSky: '#a8d2dc', grass: '#153c3a', grassDark: '#22524e', earthL: '#1b3a42',
+    earthR: '#0e2229', earthDeep: '#060f14', floorA: '#3f7a80', floorB: '#15383c',
+    floorMid: '#2f6066', floorFar: '#224a50', shadow: '#102a2e', palmTrunk: '#3a2c20',
+    palmLeaf: '#1f5c46', flower: '#8a4a68', totem: '#4a6f76', post: '#5c8a90',
+    postMark: '#86b2b8', cactus: '#2a6650', rock: '#3f6269', spruce: '#1a5c46',
+    firefly: '#9aba5a', buddy: '#7fb4bc', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    spike: '#a8ccd2', critter: '#d4913f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        /* Сумма правимых весов не меняется (0.50) — по той же причине, что в
+           мелководье: камень в одну заливку нельзя разбавлять. */
+        { kind: 'rock', weight: 0.34, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.28, bloomWeight: 0.26, height: 2.6 },
+        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
+        { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
+      ],
+    },
+  },
 };
 
 /* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
@@ -504,7 +600,8 @@ export const WORLDS = {
   hills: { id: 'hills', name: 'Холмы', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
   ice:   { id: 'ice',   name: 'Ледяные горы',
            zones: ['iceMorning', 'snowField', 'auroraNight'] },
-  deep:  { id: 'deep',  name: 'Подводная долина', zones: null },
+  deep: { id: 'deep', name: 'Подводная долина',
+           zones: ['reefShallow', 'kelpDeep', 'abyssGlow'] },
   stars: { id: 'stars', name: 'Звёздная дорога',  zones: null },
 };
 
@@ -590,6 +687,9 @@ export const SKY_FILES = {
   iceMorning: 'sky-ice-morning.webp',
   snowField: 'sky-snow.webp',
   auroraNight: 'sky-aurora.webp',
+  reefShallow: 'sky-reef.webp',
+  kelpDeep: 'sky-kelp.webp',
+  abyssGlow: 'sky-abyss.webp',
 };
 
 /**
