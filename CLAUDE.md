@@ -257,6 +257,7 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 | [`docs/ui-and-layout.md`](docs/ui-and-layout.md) | CSS, палитра экранов, прокрутка листов, кнопка «Назад», окошко камеры |
 | [`docs/menu-and-navigation.md`](docs/menu-and-navigation.md) | меню, длина забега, копилка колец, экран результата, HUD |
 | [`docs/trophy-and-worlds.md`](docs/trophy-and-worlds.md) | кубок, лестница призов, выбор мира, что открывается за кольца |
+| [`docs/prizes-and-cost.md`](docs/prizes-and-cost.md) | сами призы: внешность колец, обочины, звука, спутник и шлейф; чем каждый оплачен |
 | [`docs/status.md`](docs/status.md) | где проект стоит: этапы, что держится на журналах, открытые вопросы |
 | [`docs/concept-and-plan.md`](docs/concept-and-plan.md) | зачем всё устроено именно так; обоснование чисел |
 

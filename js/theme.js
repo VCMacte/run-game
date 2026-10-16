@@ -5,7 +5,7 @@
 // Здесь живёт покраска. Смешать значит получить правку палитры в том же diff,
 // что правка порога, и потом не знать, что из этого сломало забег.
 //
-// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
+// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/prizes-and-cost.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 /* ──────────────────────────── светлота ────────────────────────────
    Относительная светлота по WCAG. Нужна не для красоты: Miracast режет
