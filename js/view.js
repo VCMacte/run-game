@@ -409,7 +409,7 @@ export function createView(canvas, { backdrops = null } = {}) {
            Оплачен цветущей обочиной (приз уровня 2): она вернула две заливки,
            сместив вес с пальмы в три на цветок и куст в две. Порядок
            обязателен — сначала плата, потом покупка. */
-        const сОбодком = prizes.rim && Math.min(w, r) > 14;
+        const сОбодком = prizes.rim && r > MOTION.rimMinR;
         if (сОбодком) {
           ring(w, r, colDim);
           ring(w * 0.82, r * 0.82, colr);
