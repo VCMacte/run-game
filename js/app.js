@@ -20,6 +20,8 @@ import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS } from './text.js';
 import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
+import { TROPHY, levelAt, nextAt, prizeName, unlockedAt, worldsAt } from './awards.js';
+import { WORLDS, worldReady } from './theme.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -931,6 +933,18 @@ async function startRun() {
   await training?.stop();
   show('run');
   runsInRow++;
+  /* Мир выбирается в меню, но решение «можно ли в него» принимается здесь, в
+     момент старта: между выбором и забегом могла измениться копилка (сменили
+     игрока, сбросили профиль), а запирать ребёнка в недоступном мире нельзя.
+     Молча: приговор не вправе наказывать за то, чего игра не показала.
+
+     Набор призов фиксируется тем же разом и едет параметром. Ни вид, ни звук
+     не знают про хранилище и не должны: ровно поэтому их можно считать из
+     node, а tools/replay.mjs — подать любой набор. */
+  const bankNow = players.bank();
+  const хочет = players.world();
+  const world = worldsAt(bankNow).includes(хочет) && worldReady(хочет) ? хочет : 'hills';
+
   training = createTraining({
     canvas: $('runCanvas'),
     video: $('runVideo'),
@@ -938,6 +952,9 @@ async function startRun() {
     field: $('runField'),
     fieldMark: $('runFieldMark'),
     onHud: renderRunHud,
+    world,
+    level: levelAt(bankNow),
+    prizes: unlockedAt(bankNow),
   });
   renderRunHud({ stage: 'setup', score: 0 });
   await training.start({ source: want.source, script: want.script });

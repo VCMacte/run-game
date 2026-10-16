@@ -101,7 +101,7 @@ export function makeTally({ starsLost = 0 } = {}) {
    знает вовсе. Умолчания здесь не на случай ошибки, а для прогона из node:
    первый мир открыт всегда, призов у нового игрока нет. */
 export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud,
-                                 world = 'hills', prizes = {} }) {
+                                 world = 'hills', level = 0, prizes = {} }) {
   /* Фон неба растром. Грузится без ожидания: пока картинки нет, `drawSky`
      рисует плоские полосы и силуэт холмов, и игра работает полностью. Так и
      задумано — арт собирается отдельным прогоном Easy Diffusion, и забег не
@@ -350,6 +350,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
            однажды перепишут, и прошлый журнал перестанет читаться — ровно та
            же причина, по которой рядом с `u` в health едет `panSpan`. */
         step, tune,
+        /* Мир и уровень кубка. Без них два забега одной сессии в разных мирах
+           в журнале неразличимы, и ни один замер про миры снять нельзя — та же
+           причина, по которой рядом едет screenRun. */
+        world, level,
       });
     }
     hud();
