@@ -215,6 +215,38 @@ export function createView(canvas, { backdrops = null } = {}) {
       // слоёв, ровно как в комиксе того же автора.
       drawSky(ctx, cam, travel, elapsed, backdrops?.[zoneNow] ?? null, mscale);
 
+      /* Спутник — приз десятого уровня: птица, летящая рядом. Две заливки:
+         тело и крыло, и крыло машет функцией времени с фазой — состояния не
+         копит, как все анимации проекта.
+
+         Летит она ВЫСОКО и сбоку, в стороне от игровой полосы: птица поперёк
+         коридора спорила бы с препятствием, а приз не вправе соперничать с
+         решением. Рисуется сразу за небом — всё остальное её закрывает, и это
+         верно: она дальше обочины.
+
+         Оплачена порогом у пятна под кольцом (две заливки), и плата внесена
+         до покупки, как требует правило. */
+      if (prizes.buddy) {
+        const фаза = elapsed * MOTION.buddyHz * 2 * Math.PI;
+        const bx = W * (0.78 + 0.03 * Math.sin(фаза * 0.3));
+        const by = horizonY(cam) * (0.42 + 0.05 * Math.sin(фаза * 0.23));
+        const крыло = buddyFlap(elapsed, mscale);
+        const bs = W * 0.012;
+        ctx.fillStyle = COLORS.buddy;
+        ctx.beginPath();
+        ctx.moveTo(bx - bs, by);
+        ctx.lineTo(bx + bs, by);
+        ctx.lineTo(bx, by + bs * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(bx - bs * 0.3, by);
+        ctx.lineTo(bx + bs * 0.3, by);
+        ctx.lineTo(bx, by - bs * (0.3 + 1.1 * крыло));
+        ctx.closePath();
+        ctx.fill();
+      }
+
       // ── пол: шахматка ──
       drawFloor(ctx, cam, travel, { project, quad, far });
 
@@ -1707,6 +1739,13 @@ export function ringSquash(t, phase = 0, scale = 1) {
 }
 
 /** Качание пальмовой кроны, условных метров в сторону. Вокруг своего места. */
+/** Взмах крыла спутника: 0…1, функция времени с фазой. Амплитуда жмётся
+    `motionScale`, но НЕ в ноль — неисполняемый путь гниёт отдельно, а приз,
+    исчезающий от системной настройки «меньше движения», это отказ, которого
+    никто с настройкой не свяжет. */
+export const buddyFlap = (t, scale = 1) =>
+  0.5 + 0.5 * Math.sin(t * MOTION.buddyHz * 2 * Math.PI) * scale;
+
 export function palmSway(t, phase = 0, scale = 1) {
   return MOTION.palmSwayM * scale * Math.sin(2 * Math.PI * (t * MOTION.palmSwayHz + phase));
 }

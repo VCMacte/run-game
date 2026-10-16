@@ -163,6 +163,11 @@ export const THEME = {
        Виды переехали сюда из глобального DECOR; `gapS`, `firstS` и `outM` там
        остались, потому что они про РИТМ обочины, а не про её вид, и менять их
        по зонам значило бы менять ощущение скорости. */
+    /* Спутник — приз десятого уровня: птица, летящая рядом. Цвет задан во
+       ВСЕХ зонах и проверяется двумя парами: отличим от неба своей зоны и
+       ниже проёма на GAP_GUARD. В тёмных зонах птица светлее неба, в
+       светлых темнее — иначе она пропадает ровно там, где летит. */
+    buddy: '#4a3b2a',
     decor: {
       kinds: [
         /* `bloomWeight` — вес при открытом призе «цветущая обочина» (уровень
@@ -220,6 +225,7 @@ export const THEME = {
     critter: '#dfb871',
     shade: '#0b0d14',
 
+    buddy: '#3f2e22',
     decor: {
       kinds: [
         { kind: 'cactus', weight: 0.40, bloomWeight: 0.30, height: 1.6, out: 0.45 },
@@ -313,6 +319,7 @@ export const THEME = {
     critter: '#9a7f52',
     shade: '#0b0d14',
 
+    buddy: '#6a6d8c',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
@@ -365,6 +372,7 @@ export const THEME = {
        пойман контрактом. */
     badnik: '#3d3456', badnikMouth: '#231d33',
     spike: '#9aa7b2', critter: '#8f7a5f', shade: '#0b0d14',
+    buddy: '#4e606e',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.42, bloomWeight: 0.32, height: 2.4 },
@@ -399,6 +407,7 @@ export const THEME = {
     cactus: '#5f9e86', rock: '#8fa0b0', spruce: '#35705f', firefly: '#6b7a3a',
     badnik: '#433a5e', badnikMouth: '#262036',
     spike: '#a6b3be', critter: '#8f7a5f', shade: '#0b0d14',
+    buddy: '#5c6d79',
     decor: {
       kinds: [
         { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
@@ -461,6 +470,7 @@ export const THEME = {
        не видно вовсе. Ориентир — ночные холмы, где те же пары дают 0.110 и
        0.209. Поймано ревью; контракт эти пары не проверял. */
     spike: '#96a3af', critter: '#9a8463', shade: '#0b0d14',
+    buddy: '#8496a6',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.46, bloomWeight: 0.36, height: 2.4 },
@@ -615,7 +625,7 @@ export const BACKGROUND_KEYS = [
   'sky', 'skyLow', 'hills', 'cloud', 'starSky', 'grass', 'grassDark',
   'earthL', 'earthR', 'earthDeep', 'floorA', 'floorB', 'floorMid', 'floorFar',
   'palmTrunk', 'palmLeaf', 'flower', 'totem', 'post', 'postMark',
-  'cactus', 'rock', 'spruce', 'firefly',
+  'cactus', 'rock', 'spruce', 'firefly', 'buddy',
   'badnik', 'badnikMouth', 'spike', 'critter', 'shadow', 'shade',
 ];
 
@@ -730,6 +740,10 @@ export const MOTION = {
   /* Мерцание светлячка. Медленное нарочно: быстрое читается как дефект
      картинки, а не как живое. */
   fireflyHz: 0.7,
+
+  /* Взмах крыла спутника. Медленный: быстрый читается как дрожание картинки,
+     а не как полёт. */
+  buddyHz: 1.4,
 
   /* Порог видимости ОБОДКА (приз уровня 5) — в пикселях вертикальной полуоси
      кольца. Кайма занимает 0.18 радиуса, и порог 14 оставляет её не тоньше

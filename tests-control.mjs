@@ -24,7 +24,7 @@ import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
-  makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed,
+  makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap,
   skyGaps, CORRIDOR_HALF, CLIFF_TOP, decorYMask,
 } from './js/view.js';
 import {
@@ -3890,6 +3890,23 @@ group('кубок', () => {
       `пятен по фазам: ${[...поФазам].join(', ')}`);
   }
 
+  /* Спутник — птица, летящая рядом. ДВЕ заливки: тело и крыло. Оплачен
+     порогом у пятна, и порядок этот обязателен. */
+  const сПтицей = (prizes) => paintFrame({ elapsed: 1.0, prizes }).fills.length;
+  check('без приза спутника нет', сПтицей({}) === сПтицей({ buddy: false }));
+  check('с призом ровно две заливки', сПтицей({ buddy: true }) === сПтицей({}) + 2,
+    `${сПтицей({ buddy: true })} против ${сПтицей({})}`);
+
+  /* Он летит — то есть его положение меняется со временем, а число заливок
+     НЕТ. Мерцающий спутник читался бы дефектом картинки. */
+  const вкладПтицы = new Set();
+  for (let t = 0; t < 2.0; t += 0.05) {
+    вкладПтицы.add(paintFrame({ elapsed: t, prizes: { buddy: true } }).fills.length
+                 - paintFrame({ elapsed: t, prizes: {} }).fills.length);
+  }
+  check('и не мигает', вкладПтицы.size === 1,
+    `вклад по фазам: ${[...вкладПтицы].join(', ')}`);
+
   /* Ободок — третий контур кольца, и это ЕДИНСТВЕННЫЙ приз этапа, который
      добавляет заливку. Оплачен он цветущей обочиной (приз уровня 2), и
      порядок тут обязателен: сначала плата, потом покупка. */
@@ -4556,6 +4573,18 @@ group('зоны', () => {
   /* Новый цвет обязан быть отнесён к набору и задан во ВСЕХ зонах, включая
      те, где формы нет: забытый ключ даёт undefined в fillStyle, а Canvas на
      это молча не рисует. */
+  check('спутник отнесён к фоновым цветам', BACKGROUND_KEYS.includes('buddy'));
+  for (const z of ZONES_ALL) {
+    check(`${z}: цвет спутника задан`, typeof THEME[z].buddy === 'string');
+    if (typeof THEME[z].buddy !== 'string') continue;
+    check(`${z}: спутник отличим от неба`,
+      Math.abs(L(THEME[z].buddy) - L(THEME[z].sky)) >= 0.05,
+      `${L(THEME[z].buddy).toFixed(3)} против неба ${L(THEME[z].sky).toFixed(3)}`);
+    check(`${z}: и спутник не спорит с проёмом`,
+      L(THEME[z].gap) - L(THEME[z].buddy) >= GAP_GUARD,
+      'птица — украшение, и светлее «иди сюда» она быть не вправе');
+  }
+
   check('светлячок отнесён к фоновым цветам', BACKGROUND_KEYS.includes('firefly'));
   for (const z of ZONES_ALL) {
     check(`${z}: цвет светлячка задан`, typeof THEME[z].firefly === 'string',
@@ -4703,6 +4732,27 @@ group('декорации', () => {
 });
 
 group('анимации', () => {
+  /* Взмах крыла спутника. Функция времени с фазой, состояния не копит.
+     Амплитуда жмётся `motionScale`, но НЕ в ноль: нулевой путь, который никто
+     не исполняет, отдельно гниёт, а приз, исчезающий от системной настройки
+     «меньше движения», — отказ, которого никто с настройкой не свяжет. */
+  {
+    const взмахи = [];
+    for (let t = 0; t < 2; t += 0.05) взмахи.push(buddyFlap(t, 1));
+    const размах = Math.max(...взмахи) - Math.min(...взмахи);
+    check('взмах спутника колеблется', размах > 0.5, `размах ${размах.toFixed(3)}`);
+    check('и не копит состояние',
+      Math.abs(buddyFlap(0, 1) - buddyFlap(10 / MOTION.buddyHz, 1)) < 1e-9,
+      'через целое число периодов значение обязано повториться');
+    const сжатые = [];
+    for (let t = 0; t < 2; t += 0.05) сжатые.push(buddyFlap(t, motionScale(true)));
+    const размахСжатый = Math.max(...сжатые) - Math.min(...сжатые);
+    check('при «меньше движения» взмах сжимается', размахСжатый < размах * 0.2,
+      `${размахСжатый.toFixed(3)} против ${размах.toFixed(3)}`);
+    check('но не в ноль', размахСжатый > 0,
+      'неисполняемый путь гниёт отдельно — это правило проекта, а не придирка');
+  }
+
   /* Все анимации — функции времени. Это проверяемо в node ровно потому, что
      ни одна не копит состояние: при 20 Гц источника поз и просадках кадра
      накопительная анимация расходится с картинкой, а функция — нет. */
