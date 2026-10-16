@@ -684,8 +684,13 @@ group('офлайн-кэш', () => {
     const block = theme.slice(theme.indexOf('export const SKY_FILES'));
     const files = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']+\.webp)'/g)]
       .map((m) => m[1]);
-    const zones = (theme.match(/export const ZONES = \[([^\]]*)\]/) || ['', ''])[1]
-      .split(',').filter((x) => x.trim());
+    /* Зоны берутся из реестра МИРОВ, а не из прежнего `ZONES`: его больше нет,
+       и разбор текста это заметил бы не отказом, а нулём зон — то есть
+       проверка прошла бы, сравнив три файла с тремя нулями. Считаются зоны
+       всех СОБРАННЫХ миров: у несобранного стоит `zones: null`, неба ему и не
+       положено. */
+    const zones = [...theme.matchAll(/zones: \[([^\]]*)\]/g)]
+      .flatMap((m) => m[1].split(',')).filter((x) => x.trim());
     check('файл неба назван для каждой зоны', files.length === zones.length,
       `${files.length} файлов на ${zones.length} зон: ${files.join(', ')}`);
     for (const f of files) {
@@ -1115,7 +1120,7 @@ group('зона на экране результата', () => {
   check('выбор зоны нашёлся', выбор.length > 0);
   check('стадия результата держит зону забега', /'result'/.test(выбор),
     'иначе коридор за текстом результата прыгает из ночи в утро');
-  check('а стадии до забега — первую', /ZONES\[0\]/.test(выбор),
+  check('а стадии до забега — первую', /zonesOf\(world\)\[0\]/.test(выбор),
     'установка штатива и калибровка идут в понятных цветах');
 });
 

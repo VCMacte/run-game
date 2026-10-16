@@ -14,6 +14,9 @@ import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition, coverFit } from './js/preview.js';
 import { makeLevel, telegraph, isSafe, LOOKS, telegraphDebt } from './js/level.js';
 import { tuneFor, nextStep, whyStep, breatherFor, clampStep, STEP_MAX } from './js/difficulty.js';
+import {
+  TROPHY, STEP_RINGS, TOP_LEVEL, levelAt, unlockedAt, nextAt, worldsAt, prizeName,
+} from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
@@ -29,7 +32,7 @@ import {
 } from './js/players.js';
 import {
   THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS, skyClamp,
-  ZONES, SKY_FILES, zoneAt, luminance, motionScale,
+  WORLDS, zonesOf, worldReady, SKY_FILES, zoneAt, luminance, motionScale,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
 import { withTimeout, reportWaits } from './js/util.js';
@@ -39,6 +42,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+
+/* Зоны первого мира и ВСЕ зоны всех миров. Прежний единственный `ZONES`
+   отвечал на два разных вопроса сразу — в каком порядке зоны идут по забегу и
+   у каждой ли зоны полная палитра, — и со вторым миром эти вопросы
+   разъезжаются: порядок спрашивают у мира, контракт палитры — у каждой зоны,
+   в каком бы мире она ни лежала. Поэтому имён два, и они названы по смыслу. */
+const ZONES = zonesOf('hills');
+const ZONES_ALL = Object.keys(THEME);
 
 
 let failed = 0;
@@ -2462,7 +2473,7 @@ group('большое кольцо', () => {
   // проверкой светлоты. Неотнесённый цвет не проверяется ничем.
   check('starBig отнесён к цветам решения', DECISION_KEYS.includes('starBig'));
   check('starBigDim тоже', DECISION_KEYS.includes('starBigDim'));
-  for (const z of ZONES) {
+  for (const z of ZONES_ALL) {
     check(`${z}: большое кольцо того же цвета, что в первой зоне`,
       THEME[z].starBig === THEME.greenHill.starBig
       && THEME[z].starBigDim === THEME.greenHill.starBigDim,
@@ -2576,9 +2587,9 @@ group('небо меняется вместе с зоной', () => {
   // Таблица зона → файл одна на проект: по ней грузит train.js и по ней же
   // собирается список офлайн-кэша.
   check('у каждой зоны назван файл неба',
-    ZONES.every((z) => typeof SKY_FILES[z] === 'string' && SKY_FILES[z].endsWith('.webp')),
+    ZONES_ALL.every((z) => typeof SKY_FILES[z] === 'string' && SKY_FILES[z].endsWith('.webp')),
     JSON.stringify(SKY_FILES));
-  check('файлы разные', new Set(Object.values(SKY_FILES)).size === ZONES.length,
+  check('файлы разные', new Set(Object.values(SKY_FILES)).size === ZONES_ALL.length,
     'один файл на две зоны вернул бы ровно ту жалобу, с которой всё началось');
 });
 
@@ -3464,6 +3475,113 @@ group('порядок маляра', () => {
    Поэтому заливка идёт по ФАКТИЧЕСКОЙ геометрии, а не по признаку «растр
    есть». Разница не косметическая: dy зависит от наклона взгляда, в приседе
    горизонт уезжает на pitchPx, и прореха там действительно появляется. */
+/* ───────────────── кубок ─────────────────
+
+   Уровень НЕ хранится: он вычисляется из копилки. Значит проверять надо ровно
+   одно — что вычисление монотонно и на границах не врёт. Список открытого при
+   большей копилке обязан ВКЛЮЧАТЬ список при меньшей: копилка растёт и отката
+   не имеет, и приз, пропавший от прибавки колец, — худшее, что здесь может
+   случиться с ребёнком. */
+group('кубок', () => {
+  check('двенадцать ступеней', TROPHY.length === TOP_LEVEL, `${TROPHY.length}`);
+  check('шаг сотня', STEP_RINGS === 100, `${STEP_RINGS}`);
+
+  // Порог ступени — её номер, умноженный на шаг. Проверяется формулой, а не
+  // списком: список был бы второй копией таблицы.
+  TROPHY.forEach((row, i) => {
+    check(`ступень ${i + 1}: порог ${(i + 1) * STEP_RINGS}`,
+      row.at === (i + 1) * STEP_RINGS, `${row.at}`);
+    check(`ступень ${i + 1}: есть цвет`, /^#[0-9a-f]{6}$/.test(row.color || ''), row.color);
+    check(`ступень ${i + 1}: есть имя`, prizeName(row).length > 0);
+  });
+
+  // Миры стоят на каждом третьем уровне, вершина — не мир.
+  const миры = TROPHY.filter((r) => r.kind === 'world').map((r) => r.at);
+  check('миры на 300, 600, 900', String(миры) === '300,600,900', String(миры));
+
+  // Границы. Именно здесь живут все ошибки на единицу.
+  for (const [bank, lv] of [[0, 0], [1, 0], [99, 0], [100, 1], [199, 1], [200, 2],
+                            [1199, 11], [1200, 12], [5000, 12], [100000, 12]]) {
+    check(`копилка ${bank} → уровень ${lv}`, levelAt(bank) === lv, `${levelAt(bank)}`);
+  }
+  /* Мусор вместо числа даёт нулевой уровень, а не NaN. Копилка читается из
+     localStorage, и один испорченный профиль не вправе уронить кубок. */
+  for (const bad of [NaN, Infinity, -5, null, undefined, '300', {}]) {
+    check(`мусорная копилка ${String(bad)} → уровень 0`, levelAt(bad) === 0, `${levelAt(bad)}`);
+  }
+
+  /* Монотонность открытого — главная проверка этой группы. */
+  let прошлый = unlockedAt(0);
+  for (let bank = 50; bank <= 1500; bank += 50) {
+    const нынешний = unlockedAt(bank);
+    for (const [k, v] of Object.entries(прошлый)) {
+      if (k === 'worlds') {
+        for (const w of v) {
+          check(`копилка ${bank}: мир ${w} не отобран`, нынешний.worlds.includes(w));
+        }
+      } else if (v) {
+        check(`копилка ${bank}: приз ${k} не отобран`, нынешний[k] === true);
+      }
+    }
+    прошлый = нынешний;
+  }
+
+  check('у нового игрока открыт только первый мир',
+    String(worldsAt(0)) === 'hills', String(worldsAt(0)));
+  check('и на 900 открыты все четыре', worldsAt(900).length === 4, String(worldsAt(900)));
+  check('искры открываются ровно на сотне',
+    unlockedAt(99).sparks === false && unlockedAt(100).sparks === true);
+
+  check('на вершине следующего уровня нет', nextAt(1200) === null);
+  check('и выше вершины тоже нет', nextAt(9999) === null);
+  const n0 = nextAt(0);
+  check('у нового игрока следующий — первый уровень',
+    n0 && n0.level === 1 && n0.at === 100 && n0.left === 100, JSON.stringify(n0));
+  check('остаток считается от копилки', nextAt(150)?.left === 50, `${nextAt(150)?.left}`);
+
+  /* Светлота цветов кубка строго возрастает — кубок читается как
+     «наливается» даже когда Miracast съел цветность. Проверяется той же
+     функцией, что и палитра коридора, и с зазором: слипшиеся по светлоте
+     полосы на телевизоре неразличимы, хотя формально «возрастают». */
+  let прошлая = -1;
+  for (const row of TROPHY) {
+    const l = luminance(row.color);
+    check(`${row.id}: светлее предыдущей полосы минимум на 0.04`, l - прошлая >= 0.04,
+      `${l.toFixed(4)} после ${прошлая.toFixed(4)}`);
+    прошлая = l;
+  }
+
+  /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
+     зоны; мир без арта честно говорит это полем zones: null, а не пустым
+     списком — пустой список неотличим от забытого. */
+  check('четыре мира', Object.keys(WORLDS).length === 4, String(Object.keys(WORLDS)));
+  check('первый мир собран', worldReady('hills'));
+  for (const [id, w] of Object.entries(WORLDS)) {
+    check(`мир ${id}: есть имя`, typeof w.name === 'string' && w.name.length > 0);
+    if (!worldReady(id)) continue;
+    check(`мир ${id}: ровно три зоны`, w.zones.length === 3, String(w.zones));
+    for (const z of w.zones) check(`мир ${id}: зона ${z} есть в THEME`, !!THEME[z]);
+  }
+
+  /* Обратная сторона: зона из THEME, не попавшая ни в один мир, не покажется
+     ребёнку никогда, а палитру её при этом проверяет группа «тема» — то есть
+     мёртвый код выглядел бы живым. Сличение двустороннее, как у документации. */
+  const вМирах = new Set(Object.values(WORLDS).flatMap((w) => w.zones || []));
+  for (const z of Object.keys(THEME)) {
+    check(`зона ${z} принадлежит какому-то миру`, вМирах.has(z));
+  }
+
+  /* Несобранный и мусорный мир отдают зоны первого — молча. Экран выбора может
+     и обязан показать «скоро», но отрисовка кадра не вправе получить undefined
+     вместо имени зоны. */
+  for (const bad of ['ice', 'нет такого', '', null, undefined, 42]) {
+    check(`мир ${String(bad)} отдаёт три зоны первого мира`,
+      String(zonesOf(bad)) === String(WORLDS.hills.zones), String(zonesOf(bad)));
+  }
+  check('zoneAt без мира берёт первый', zoneAt(0, 300) === WORLDS.hills.zones[0]);
+  check('zoneAt делит забег на три', zoneAt(299, 300, 'hills') === WORLDS.hills.zones[2]);
+});
+
 /* ───────────────── бюджет кадра ─────────────────
 
    «Потянет телефон» до сих пор было словами: число заливок считали в браузере
@@ -3908,16 +4026,24 @@ group('тема', () => {
 group('зоны', () => {
   const L = luminance;
 
-  check('зон больше одной', ZONES.length > 1);
-  check('все зоны есть в палитре', ZONES.every((z) => THEME[z]), ZONES.join(', '));
-  check('и лишних тем не осталось', Object.keys(THEME).length === ZONES.length,
-    'тема вне ZONES не покажется никогда, то есть не проверится ни глазами, ни забегом');
+  check('зон больше одной', ZONES_ALL.length > 1);
+  check('все зоны первого мира есть в палитре', ZONES.every((z) => THEME[z]), ZONES.join(', '));
+  /* «Лишних тем не осталось» раньше спрашивалось у длины: зон столько же,
+     сколько тем. С миров этого мало — зоны лежат по мирам, и тема, не попавшая
+     ни в один мир, не покажется ребёнку никогда, то есть не проверится ни
+     глазами, ни забегом, зато будет выглядеть живой. Вопрос поэтому задаётся
+     прямо, а сличение идёт в обе стороны — как у документации. */
+  const вМирах = new Set(Object.values(WORLDS).flatMap((w) => w.zones || []));
+  for (const z of ZONES_ALL) {
+    check(`тема ${z} принадлежит какому-то миру`, вМирах.has(z),
+      'тема вне миров не покажется никогда, то есть не проверится ничем');
+  }
 
   /* Решающие цвета совпадают во всех зонах — побайтово. Это не стиль, а
      запрет: ребёнок читает «куда идти» светлотой проёма, и менять её посреди
      забега нельзя. */
   for (const k of DECISION_KEYS) {
-    const значения = new Set(ZONES.map((z) => THEME[z][k]));
+    const значения = new Set(ZONES_ALL.map((z) => THEME[z][k]));
     check(`цвет решения «${k}» одинаков во всех зонах`, значения.size === 1,
       [...значения].join(' / '));
   }
@@ -3927,8 +4053,8 @@ group('зоны', () => {
      увидит никто. */
   for (const k of ['sky', 'floorA']) {
     check(`фоновый «${k}» различается между зонами`,
-      new Set(ZONES.map((z) => THEME[z][k])).size === ZONES.length,
-      ZONES.map((z) => THEME[z][k]).join(' / '));
+      new Set(ZONES_ALL.map((z) => THEME[z][k])).size === ZONES_ALL.length,
+      ZONES_ALL.map((z) => THEME[z][k]).join(' / '));
   }
 
   /* Границы по долям забега. Отладочный забег на минуту обязан показать все
@@ -3968,7 +4094,7 @@ group('зоны', () => {
     return fills;
   };
 
-  for (const z of ZONES) {
+  for (const z of ZONES_ALL) {
     const f = кадр(z);
     check(`кадр зоны ${z} красится её полом`, f.includes(THEME[z].floorA),
       'иначе зона пришла полем, но до заливок не дошла');
@@ -3987,7 +4113,7 @@ group('зоны', () => {
      одновременно активна одна зона, и если каждая её форма не дороже пальмы,
      кадр не может стать тяжелее сегодняшнего. Проверяется, а не обещается. */
   const формы = new Map();
-  for (const z of ZONES) {
+  for (const z of ZONES_ALL) {
     for (const k of THEME[z].decor.kinds) {
       if (!формы.has(k.kind)) формы.set(k.kind, { zone: z, height: k.height, out: k.out ?? DECOR.outM });
     }
@@ -5503,7 +5629,7 @@ group('что чем перекрыто', () => {
      общем отступе 0.55 — а куст высотой 0.7 и цветок 0.45 после такого просто
      исчезли бы, и заметить это в node было бы нечем. Поэтому у низких видов
      свой отступ, и порог здесь — треть высоты. */
-  for (const z of ZONES) {
+  for (const z of ZONES_ALL) {
     for (const k of THEME[z].decor.kinds) {
       const out = k.out ?? DECOR.outM;
       const m = mask(CORRIDOR_HALF + out, cam0, 1);

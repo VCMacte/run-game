@@ -21,7 +21,7 @@
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
-import { THEME, DECOR, MOTION, ZONES, zoneAt, motionScale, rgba } from './theme.js';
+import { THEME, DECOR, MOTION, zonesOf, zoneAt, motionScale, rgba } from './theme.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
 const WALL = 2.6;         // высота стен
@@ -173,7 +173,7 @@ export function createView(canvas, { backdrops = null } = {}) {
      в одних, а половину в других. Без этой памяти неизвестная зона оставляла
      бы палитру, но роняла растр — то есть небо прыгало бы с картинки на
      вектор, а всё остальное нет. */
-  let zoneNow = ZONES[0];
+  let zoneNow = zonesOf()[0];
 
   function quad(p1, p2, p3, p4, fill) {
     ctx.fillStyle = fill;
@@ -196,7 +196,7 @@ export function createView(canvas, { backdrops = null } = {}) {
      */
     render({ u = 0, v = 0, travel = 0, stars = [], dim = 0, obstacles = [],
              elapsed = 0, safe = true, pulse = 0, finishIn = null, decor = [],
-             speed = 0, zone = ZONES[0] }) {
+             speed = 0, zone = zonesOf()[0], prizes = {} }) {
       /* Палитра кадра. Приходит ПОЛЕМ, а решает её train.js — там же, где
          живут стадии, пауза и отсчёт: вид остаётся глупым, и это то же
          разделение, по которому вид не знает ни про камеру, ни про калибровку.
@@ -1673,7 +1673,7 @@ export function badnikJump(t, phase = 0, scale = 1) {
  * Ни одна декорация не участвует в игре — не меняет `isSafe`, не попадает в
  * игровую полосу, не даёт очков. Проверяется группой «декорации».
  */
-export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
+export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills' } = {}) {
   /* Виды берутся из ЗОНЫ, в которую элемент попадает по времени, а зона — из
      той же `zoneAt`, по которой выбирается палитра кадра. Один источник: две
      копии расписания разошлись бы, и кактус оказался бы в зелёной зоне. */
@@ -1691,7 +1691,7 @@ export function makeDecor({ durationS = 300, rng = Math.random } = {}) {
   let t = DECOR.firstS;
   while (t < durationS) {
     const side = rng() < 0.5 ? -1 : 1;
-    const zone = zoneAt(t, durationS);
+    const zone = zoneAt(t, durationS, world);
     const k = pickFrom(THEME[zone].decor.kinds, rng());
     out.push({
       kind: k.kind,
