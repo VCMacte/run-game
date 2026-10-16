@@ -50,7 +50,7 @@
 <script type="module">
   import { createView, makeDecor, makeStars } from '../js/view.js';
   import { VIEW } from '../js/config.js';
-  import { THEME, zonesOf, SKY_FILES, skyClamp } from '../js/theme.js';
+  import { THEME, WORLDS, zonesOf, SKY_FILES, skyClamp } from '../js/theme.js';
 
   const q = new URLSearchParams(location.search);
   const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -231,6 +231,10 @@
        вывод этапа 2, где счётчик заливок двух отказов не увидел. */
     const ZONES = Object.keys(THEME);
     const zone = ZONES.includes(q.get('zone')) ? q.get('zone') : zonesOf('hills')[0];
+    /* Мир зоны — чтобы обочина пришла из него же. Реестр один, искать по нему
+       дешевле, чем заводить второй список «зона → мир». */
+    const мирЗоны = Object.values(WORLDS)
+      .find((w) => (w.zones || []).includes(zone))?.id || 'hills';
     const backdrops = {};
     if (!bare) {
       const im = new Image();
@@ -276,7 +280,11 @@
       obstacles,
       prizes,
       stars: bare ? [] : makeStars({ durationS: 40 }),
-      decor: bare ? [] : makeDecor({ durationS: 40, prizes }),
+      /* Обочина берётся из МИРА, которому принадлежит зона кадра. Без этого
+         `?zone=snowField` показывал снежную палитру с пальмами и кактусом: сам
+         декор генерировался для первого мира, а зона меняла только цвета
+         кадра. Поймано глазами на первом же ледяном кадре. */
+      decor: bare ? [] : makeDecor({ durationS: 40, prizes, world: мирЗоны }),
       safe: q.get('safe') !== '0',
       pulse: num('pulse', 1),
       finishIn: q.has('finishIn') ? num('finishIn', 1.2) : null,
