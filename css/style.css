@@ -679,3 +679,12 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
 @media (prefers-reduced-motion: reduce) {
   button:active { transform: none; }
 }
+
+/* Кубок. Высота от --vh, а не от --u: --u привязана к меньшей стороне, и на
+   широком экране «сто двадцать единиц» оказываются выше всего окна — ровно
+   так уже не сработал потолок у списка рекордов. Кнопка «Назад» обязана быть
+   видна БЕЗ прокрутки. */
+.cup { width: auto; height: calc(var(--vh) * 46); display: block; margin: 0 auto; }
+/* Запертая полоса — приглушённой заливкой, а не контуром: контур Miracast
+   съедает первым, и полоса читалась бы пустотой. */
+.cup rect[data-lv] { fill: var(--dim); }

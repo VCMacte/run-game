@@ -16,6 +16,9 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEME, luminance } from './js/theme.js';
+import { TROPHY } from './js/awards.js';
+
+const TROPHY_LEN = TROPHY.length;
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -651,6 +654,33 @@ group('экран результата', () => {
 });
 
 // ───────────────────────────── офлайн-кэш ─────────────────────────────
+
+/* ───────────────── кубок на экране ─────────────────
+
+   Проверяется не красота, а три вещи, которые эта правка ломает молча:
+   полос ровно столько, сколько ступеней в таблице (тринадцатая ступень
+   осталась бы без полосы и пропала бы незаметно); экран попал во все три
+   списка app.js (забыть ORIENTATION — открыть кубок горизонтально на
+   телефоне, забыть ADULT — сломать «вернуться» с родительских экранов);
+   у экрана есть выход. */
+group('кубок на экране', () => {
+  const app = read('js/app.js');
+  const полосы = [...html.matchAll(/data-lv="(\d+)"/g)].map((m) => Number(m[1]));
+  check('полос столько же, сколько ступеней', полосы.length === TROPHY_LEN,
+    `${полосы.length} полос при ${TROPHY_LEN} ступенях`);
+  check('полосы пронумерованы подряд с единицы',
+    String(полосы.slice().sort((a, b) => a - b)) === String(
+      Array.from({ length: TROPHY_LEN }, (_, i) => i + 1)),
+    String(полосы));
+
+  check('экран в списке экранов', /SCREENS = \[[^\]]*'trophy'/.test(app));
+  check('и в списке ориентаций', /ORIENTATION = \{[\s\S]{0,300}trophy: 'portrait'/.test(app));
+  check('и в списке «не возвращаются»', /ADULT = new Set\(\[[^\]]*'trophy'/.test(app),
+    'иначе previous станет кубком, и «вернуться» с настроек приведёт в кубок');
+  check('у кубка есть выход', /BACK\.trophy\s*=/.test(app));
+  check('кнопка кубка несёт уровень на себе', /trophyLv/.test(app) && html.includes('id="trophyLv"'),
+    'ребёнок видит рост, не заходя внутрь');
+});
 
 group('офлайн-кэш', () => {
   const sw = read('sw.js');

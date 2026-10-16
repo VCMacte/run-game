@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
@@ -295,7 +295,8 @@ addEventListener('fullscreenchange', updateStatus);
 
 // ─────────────────────────────── экраны ───────────────────────────────
 
-const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name'];
+const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name',
+  'trophy'];
 
 /* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
    телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
@@ -305,6 +306,7 @@ const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
   players: 'portrait', records: 'portrait', name: 'portrait',
+  trophy: 'portrait',
   run: 'landscape',
 };
 
@@ -314,7 +316,7 @@ const ORIENTATION = {
    свой выход, и он знает, куда именно. Экран имени вызывается и из меню
    игроков, и прямо с финиша — поэтому цель возврата у него своя переменная, а
    не общий previous, который к моменту возврата успел бы стать другим. */
-const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name']);
+const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy']);
 let previous = 'menu';
 
 let currentScreen = null;
@@ -1235,6 +1237,9 @@ function runLengthLabel(seconds) {
 
 function renderWho() {
   $('whoV').textContent = players.name();
+  // Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
+  // по которой длина забега показана в двух местах сразу.
+  $('trophyLv').textContent = String(levelAt(players.bank()));
 }
 
 // ── экран «кто играет» ──
@@ -1416,6 +1421,32 @@ let recordsFrom = 'menu';
    пробежал их, зашёл в «Рекорды» и увидел пустую таблицу пяти минут. Выглядит
    это как «рекорд не записался», то есть как потеря ровно того, ради чего
    таблица существует. Путь с финиша переставляет `recLen` сам. */
+/* Кубок. Полосы красятся по таблице, а не по списку в разметке: тринадцатая
+   ступень иначе осталась бы без полосы молча — именно это и сторожит тест,
+   сверяя число полос с длиной таблицы.
+
+   Копилка выше вершины заливает все полосы и не ищет тринадцатую. */
+function renderTrophy() {
+  const bank = players.bank();
+  const lv = levelAt(bank);
+  for (const el of document.querySelectorAll('#trophyBars rect[data-lv]')) {
+    const n = Number(el.dataset.lv);
+    // Взятая полоса — своим цветом; запертая оставлена стилю, где она --dim.
+    if (n <= lv) el.setAttribute('fill', TROPHY[n - 1].color);
+    else el.removeAttribute('fill');
+  }
+  $('trophyNow').textContent = lv > 0
+    ? `Собрано ${bank} ${plural(bank, RINGS)}, уровень ${lv}`
+    : `Собрано ${bank} ${plural(bank, RINGS)}`;
+  const next = nextAt(bank);
+  $('trophyNext').textContent = next
+    ? `Следующий: ${next.name} — ещё ${next.left} ${plural(next.left, RINGS)}`
+    : 'Кубок собран целиком!';
+}
+
+$('goTrophy').onclick = () => { renderTrophy(); show('trophy'); };
+$('trophyBack').onclick = BACK.trophy = () => show('menu');
+
 $('goRecords').onclick = () => {
   recLen = settings.get('runLength') || recLen;
   recordsFrom = 'menu';
