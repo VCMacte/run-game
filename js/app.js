@@ -296,7 +296,7 @@ addEventListener('fullscreenchange', updateStatus);
 // ─────────────────────────────── экраны ───────────────────────────────
 
 const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name',
-  'trophy'];
+  'trophy', 'worlds'];
 
 /* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
    телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
@@ -306,7 +306,7 @@ const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
   players: 'portrait', records: 'portrait', name: 'portrait',
-  trophy: 'portrait',
+  trophy: 'portrait', worlds: 'portrait',
   run: 'landscape',
 };
 
@@ -316,7 +316,7 @@ const ORIENTATION = {
    свой выход, и он знает, куда именно. Экран имени вызывается и из меню
    игроков, и прямо с финиша — поэтому цель возврата у него своя переменная, а
    не общий previous, который к моменту возврата успел бы стать другим. */
-const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy']);
+const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy', 'worlds']);
 let previous = 'menu';
 
 let currentScreen = null;
@@ -1240,6 +1240,7 @@ function renderWho() {
   // Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
   // по которой длина забега показана в двух местах сразу.
   $('trophyLv').textContent = String(levelAt(players.bank()));
+  refreshMenuWorld();
 }
 
 // ── экран «кто играет» ──
@@ -1443,6 +1444,55 @@ function renderTrophy() {
     ? `Следующий: ${next.name} — ещё ${next.left} ${plural(next.left, RINGS)}`
     : 'Кубок собран целиком!';
 }
+
+/* Список миров. Строится по реестру WORLDS, а порог берётся из таблицы
+   призов: имя живёт в одном месте, порог — в другом, и копий ни у того, ни у
+   другого нет.
+
+   Три состояния у кнопки, и все три видны:
+     — открыт и собран: нажимается, выбирает;
+     — открыт, но арт не собран: нажимается и честно говорит «скоро»;
+     — не открыт: гаснет и показывает, сколько колец осталось. */
+function renderWorlds() {
+  const bank = players.bank();
+  const открыты = worldsAt(bank);
+  const выбран = players.world();
+  const list = $('worldList');
+  list.innerHTML = '';
+  for (const w of Object.values(WORLDS)) {
+    const порог = TROPHY.find((r) => r.world === w.id)?.at ?? 0;
+    const открыт = открыты.includes(w.id);
+    const b = document.createElement('button');
+    if (открыт) {
+      b.innerHTML = `${w.name}${worldReady(w.id) ? '' : '<small>скоро</small>'}`;
+      if (w.id === выбран) b.className = 'chosen';
+      b.onclick = () => {
+        if (!worldReady(w.id)) {
+          showSoon(w.name, 'Этот мир ещё рисуется. Пока побегаем в открытых.');
+          return;
+        }
+        players.setWorld(w.id);
+        renderWorlds();
+        refreshMenuWorld();
+      };
+    } else {
+      const left = порог - Math.max(0, bank);
+      b.innerHTML = `${w.name}<small>ещё ${left} ${plural(left, RINGS)}</small>`;
+      b.disabled = true;
+    }
+    list.appendChild(b);
+  }
+}
+
+/* Имя мира на кнопке меню. Отдельной функцией, потому что зовут её двое:
+   открытие меню и сам выбор. */
+function refreshMenuWorld() {
+  const id = players.world();
+  $('worldV').textContent = WORLDS[id]?.name || WORLDS.hills.name;
+}
+
+$('goWorld').onclick = () => { renderWorlds(); show('worlds'); };
+$('worldsBack').onclick = BACK.worlds = () => show('menu');
 
 $('goTrophy').onclick = () => { renderTrophy(); show('trophy'); };
 $('trophyBack').onclick = BACK.trophy = () => show('menu');

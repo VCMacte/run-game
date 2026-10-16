@@ -87,6 +87,7 @@
       <button id="goPlayers" class="ghost">Кто играет: <span id="whoV">—</span></button>
       <button id="goRecords" class="ghost">Рекорды</button>
       <button id="goTrophy" class="ghost">Кубок: <span id="trophyLv">—</span></button>
+      <button id="goWorld" class="ghost">Мир: <span id="worldV">—</span></button>
     </div>
     <!-- Настройки отдельной кнопкой: прежде они открывались долгим удержанием
          невидимого угла, то есть не открывались никак — найти это, не зная
@@ -285,6 +286,14 @@
     <div id="trophyNow" class="when">—</div>
     <div id="trophyNext" class="when">—</div>
     <div class="row center"><button id="trophyBack" class="ghost">Назад</button></div>
+  </section>
+
+  <!-- Выбор мира. Кнопки собирает код: их число задаёт реестр WORLDS, и
+       второй список в разметке разъехался бы с ним. -->
+  <section id="worlds" class="sheet screen" hidden>
+    <h1>Куда побежим</h1>
+    <div id="worldList"></div>
+    <div class="row center"><button id="worldsBack" class="ghost">Назад</button></div>
   </section>
 
   <!-- Ввод имени. Единственное текстовое поле в приложении, и оно вертикальное:

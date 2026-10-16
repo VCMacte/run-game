@@ -688,3 +688,13 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
 /* Запертая полоса — приглушённой заливкой, а не контуром: контур Miracast
    съедает первым, и полоса читалась бы пустотой. */
 .cup rect[data-lv] { fill: var(--dim); }
+
+/* Четыре мира столбиком, кнопка «Назад» под ними и без прокрутки. Потолок от
+   --vh, как у списков рекордов и игроков, и по той же причине. */
+#worldList { display: flex; flex-direction: column; gap: calc(var(--u) * 2.2);
+             max-height: calc(var(--vh) * 0.5); overflow-y: auto; }
+/* Запертый мир гаснет, но остаётся читаемым: ребёнок должен видеть, за что
+   бежит. Заливкой, не контуром — контур Miracast съедает первым. */
+#worldList button[disabled] { background: var(--dim); color: var(--fg); opacity: 1; }
+/* Выбранный помечен заливкой, а не галочкой — по той же причине. */
+#worldList button.chosen { background: var(--ok); }
