@@ -162,9 +162,13 @@ export const THEME = {
        по зонам значило бы менять ощущение скорости. */
     decor: {
       kinds: [
-        { kind: 'palm', weight: 0.34, height: 2.2 },
-        { kind: 'bush', weight: 0.22, height: 0.7, out: 0.12 },
-        { kind: 'flower', weight: 0.18, height: 0.45, out: 0.22 },
+        /* `bloomWeight` — вес при открытом призе «цветущая обочина» (уровень
+           2). Пальма стоит 3 заливки, цветок и куст по 2, поэтому цветущая
+           обочина не просто красивее — она ДЕШЕВЛЕ, и ею платится ободок.
+           Порядок правила обязателен: сначала плата, потом покупка. */
+        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
         { kind: 'post', weight: 0.19, height: 2.6 },
         { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
       ],
@@ -213,10 +217,21 @@ export const THEME = {
 
     decor: {
       kinds: [
-        { kind: 'cactus', weight: 0.40, height: 1.6, out: 0.45 },
+        { kind: 'cactus', weight: 0.40, bloomWeight: 0.30, height: 1.6, out: 0.45 },
         { kind: 'rock', weight: 0.28, height: 0.6, out: 0.10 },
-        { kind: 'post', weight: 0.24, height: 2.6 },
+        { kind: 'post', weight: 0.24, bloomWeight: 0.10, height: 2.6 },
         { kind: 'totem', weight: 0.08, height: 1.1, out: 0.35 },
+        /* Куст и цветок в дюнах есть только с призом: `weight: 0` держит их
+           вне состава, пока он закрыт. Цвета их в этой зоне уже заданы — зона
+           задаёт и те цвета форм, которых в ней нет.
+
+           Веса подобраны так, чтобы СУММА состава не изменилась (0.64 на
+           четыре правимых вида). Это не придирка: камень стоит 1 заливку, а
+           все прочие виды дюн по 2, и выросшая сумма разбавила бы долю самого
+           дешёвого вида — обочина вышла бы ДОРОЖЕ обычной на 0.02 заливки.
+           Поймано собственным тестом этой задачи, который сравнивает цены. */
+        { kind: 'bush', weight: 0, bloomWeight: 0.12, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0, bloomWeight: 0.12, height: 0.45, out: 0.22 },
       ],
     },
   },
@@ -276,9 +291,11 @@ export const THEME = {
 
     decor: {
       kinds: [
-        { kind: 'spruce', weight: 0.44, height: 2.4 },
+        { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
         { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
         { kind: 'post', weight: 0.30, height: 2.6 },
+        // Обмен ровный: ель и куст по 2 заливки.
+        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
       ],
     },
   },
@@ -312,6 +329,31 @@ export function worldReady(world) {
     отрисовка кадра не вправе получить undefined вместо имени зоны. */
 export function zonesOf(world) {
   return worldReady(world) ? WORLDS[world].zones : WORLDS.hills.zones;
+}
+
+/* Состав видов обочины для зоны — с учётом открытых призов. Единственный
+   владелец: `makeDecor` берёт виды только отсюда.
+
+   Приз правит ВЕС, а не список: второй список («цветущий состав») разъехался
+   бы с основным молча, и зона получила бы кактус там, где его нарисовать
+   нечем. Поэтому у вида есть необязательное поле `bloomWeight` — вес при
+   открытом призе «цветущая обочина», — и необязательное `needs`: имя приза,
+   без которого вида в составе нет вовсе.
+
+   Безусловный вид в зоне обязан остаться хотя бы один: `pickFrom` делит на
+   сумму весов, и при нуле отдаёт последний вид списка — то есть обочина из
+   одного вида, без всякого отказа. Это проверяется тестом по каждой зоне и
+   каждому набору призов. */
+export function kindsFor(zone, prizes = {}) {
+  const kinds = THEME[zone]?.decor?.kinds || THEME[WORLDS.hills.zones[0]].decor.kinds;
+  const out = [];
+  for (const k of kinds) {
+    if (k.needs && !prizes[k.needs]) continue;
+    const weight = prizes.bloom && k.bloomWeight != null ? k.bloomWeight : k.weight;
+    if (!(weight > 0)) continue;
+    out.push({ ...k, weight });
+  }
+  return out;
 }
 
 /* Растр неба у каждой зоны свой.

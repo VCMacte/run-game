@@ -21,7 +21,7 @@
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
-import { THEME, DECOR, MOTION, zonesOf, zoneAt, motionScale, rgba } from './theme.js';
+import { THEME, DECOR, MOTION, zonesOf, zoneAt, kindsFor, motionScale, rgba } from './theme.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
 const WALL = 2.6;         // высота стен
@@ -1696,7 +1696,8 @@ export function badnikJump(t, phase = 0, scale = 1) {
  * Ни одна декорация не участвует в игре — не меняет `isSafe`, не попадает в
  * игровую полосу, не даёт очков. Проверяется группой «декорации».
  */
-export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills' } = {}) {
+export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills',
+                            prizes = {} } = {}) {
   /* Виды берутся из ЗОНЫ, в которую элемент попадает по времени, а зона — из
      той же `zoneAt`, по которой выбирается палитра кадра. Один источник: две
      копии расписания разошлись бы, и кактус оказался бы в зелёной зоне. */
@@ -1715,7 +1716,7 @@ export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills' 
   while (t < durationS) {
     const side = rng() < 0.5 ? -1 : 1;
     const zone = zoneAt(t, durationS, world);
-    const k = pickFrom(THEME[zone].decor.kinds, rng());
+    const k = pickFrom(kindsFor(zone, prizes), rng());
     out.push({
       kind: k.kind,
       /* Зона хранится у элемента, и рисуется он ЕЙ, а не палитрой кадра.

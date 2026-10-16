@@ -32,7 +32,7 @@ import {
 } from './js/players.js';
 import {
   THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS, skyClamp,
-  WORLDS, zonesOf, worldReady, SKY_FILES, zoneAt, luminance, motionScale,
+  WORLDS, zonesOf, worldReady, kindsFor, SKY_FILES, zoneAt, luminance, motionScale,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
 import { withTimeout, reportWaits } from './js/util.js';
@@ -3659,6 +3659,48 @@ group('кубок', () => {
   }).fills.length;
   check('у несобранного кольца искр нет', кадрЦелого({ sparks: true }) === кадрЦелого({}),
     'иначе приз горит весь забег и платит за себя каждым кадром');
+
+  /* ── Состав обочины: единственный владелец ──
+
+     Виды обочины у зон свои, а приз «цветущая обочина» смещает веса. Второй
+     список видов (отдельный «цветущий») разъехался бы с основным молча,
+     поэтому владелец один — `kindsFor(zone, prizes)`, а приз правит ВЕС, а не
+     состав. */
+  check('без приза состав тот же, что в теме',
+    kindsFor('greenHill').length === THEME.greenHill.decor.kinds.length);
+  check('приз не добавляет и не убирает видов в зелёной зоне',
+    kindsFor('greenHill', { bloom: true }).length === kindsFor('greenHill').length,
+    'цветущая обочина — это ВЕСА, а не новые формы');
+
+  /* Цветок и куст дешевле пальмы (2 заливки против 3), поэтому цветущая
+     обочина кадр не утяжеляет, а облегчает. Проверяется это не на глаз:
+     суммарная «цена» состава при призе обязана быть не выше, чем без него. */
+  const ЦЕНА = { palm: 3, bush: 2, flower: 2, cactus: 2, spruce: 2, post: 2, totem: 2, rock: 1 };
+  const средняя = (zone, prizes) => {
+    const ks = kindsFor(zone, prizes);
+    const сумма = ks.reduce((acc, k) => acc + k.weight, 0);
+    return ks.reduce((acc, k) => acc + (ЦЕНА[k.kind] ?? 2) * k.weight, 0) / сумма;
+  };
+  for (const z of ZONES_ALL) {
+    check(`зона ${z}: цветущая обочина не дороже обычной`,
+      средняя(z, { bloom: true }) <= средняя(z) + 1e-9,
+      `${средняя(z, { bloom: true }).toFixed(3)} против ${средняя(z).toFixed(3)} заливок на вид`);
+  }
+  check('и в зелёной зоне она ощутимо дешевле',
+    средняя('greenHill', { bloom: true }) < средняя('greenHill') - 0.05,
+    'именно этим и платится ободок — приз пятого уровня');
+
+  /* Пустой состав невозможен ни при каком наборе призов. `pickFrom` делит на
+     сумму весов: при нуле выходит NaN, возвращается последний вид списка — то
+     есть обочина не падает, а ВРЁТ, и поймать это глазами нечем. */
+  for (const z of ZONES_ALL) {
+    for (const prizes of [{}, { bloom: true }, unlockedAt(1200)]) {
+      const ks = kindsFor(z, prizes);
+      check(`зона ${z}: состав не пуст при наборе ${Object.keys(prizes).length} призов`,
+        ks.length > 0 && ks.reduce((acc, k) => acc + k.weight, 0) > 0,
+        'нулевая сумма весов даёт NaN в pickFrom и обочину из одного вида');
+    }
+  }
 });
 
 /* ───────────────── бюджет кадра ─────────────────
@@ -3709,7 +3751,11 @@ group('бюджет кадра', () => {
     const rng = seeded(seed);
     const obstacles = makeLevel({ durationS: 300, rng, tune: tuneFor(step) });
     const stars = makeStars({ durationS: 300, obstacles, rng });
-    const decor = makeDecor({ durationS: 300, rng });
+    /* Мир и ПРИЗЫ — как в игре. Без `prizes` счётчик мерил бы обочину без
+       цветущего приза, то есть состав, в который ребёнок с полной копилкой
+       уже не играет. Ровно эта дыра была у искр на этапе 1: бюджет считал
+       приз, которого не видит. */
+    const decor = makeDecor({ durationS: 300, rng, world: 'hills', prizes });
 
     const { canvas, fills } = recorder();
     const view = createView(canvas);
