@@ -17,7 +17,7 @@
 import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
 import { createView, makeStars, makeDecor, canReach } from './view.js';
-import { MOTION, ZONES, SKY_FILES, zoneAt } from './theme.js';
+import { MOTION, zonesOf, SKY_FILES, zoneAt } from './theme.js';
 import {
   makeCalibration, load as loadCalibration, save as saveCalibration, isStale, panSpanOf,
   forReuse,
@@ -96,7 +96,12 @@ export function makeTally({ starsLost = 0 } = {}) {
   };
 }
 
-export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud }) {
+/* `world` и `prizes` приходят снаружи, из js/app.js: какой мир открыт и какие
+   призы взяты — дело копилки и js/awards.js, а дирижёр забега про хранилище не
+   знает вовсе. Умолчания здесь не на случай ошибки, а для прогона из node:
+   первый мир открыт всегда, призов у нового игрока нет. */
+export function createTraining({ canvas, video, skeleton, field, fieldMark, onHud,
+                                 world = 'hills', level = 0, prizes = {} }) {
   /* Фон неба растром. Грузится без ожидания: пока картинки нет, `drawSky`
      рисует плоские полосы и силуэт холмов, и игра работает полностью. Так и
      задумано — арт собирается отдельным прогоном Easy Diffusion, и забег не
@@ -326,7 +331,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
          то есть ступень 0 получала бы ряд ступеней 1…4 — с кольцом в окне
          уклонения и переходом впритык. Ровно то, что правка и убирает. */
       stars = makeStars({ durationS, obstacles, tune });
-      decor = makeDecor({ durationS });
+      decor = makeDecor({ durationS, world });
       travel = 0;
       elapsed = 0;
       tally.reset();
@@ -345,6 +350,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
            однажды перепишут, и прошлый журнал перестанет читаться — ровно та
            же причина, по которой рядом с `u` в health едет `panSpan`. */
         step, tune,
+        /* Мир и уровень кубка. Без них два забега одной сессии в разных мирах
+           в журнале неразличимы, и ни один замер про миры снять нельзя — та же
+           причина, по которой рядом едет screenRun. */
+        world, level,
       });
     }
     hud();
@@ -669,8 +678,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
        `greenHill` — а она описана как «в том порядке, в котором их видел
        ребёнок». */
     const zone = stage === 'free' || stage === 'result'
-      ? zoneAt(elapsed, durationS)
-      : ZONES[0];
+      ? zoneAt(elapsed, durationS, world)
+      : zonesOf(world)[0];
     if (zone !== lastZone) {
       lastZone = zone;
       log.event('zone', { zone, at: round(elapsed, 1) });
@@ -680,6 +689,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       decor,
       speed: lastSpeed,
       u, v, travel, stars, obstacles, elapsed, zone,
+      /* Набор призов фиксирован на старте забега и едет ПАРАМЕТРОМ: вид про
+         хранилище не знает, поэтому его и можно считать из node, а
+         tools/replay.mjs — подать любой набор. */
+      prizes,
       finishIn: stage === 'free' ? durationS - elapsed : null,
       safe: lastSafe,
       pulse: (now / 220) % 2 < 1 ? 1 : 0,

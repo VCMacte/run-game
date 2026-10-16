@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
@@ -20,6 +20,8 @@ import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS } from './text.js';
 import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
+import { TROPHY, levelAt, nextAt, prizeName, unlockedAt, worldsAt } from './awards.js';
+import { WORLDS, worldReady } from './theme.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -293,7 +295,8 @@ addEventListener('fullscreenchange', updateStatus);
 
 // ─────────────────────────────── экраны ───────────────────────────────
 
-const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name'];
+const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name',
+  'trophy', 'worlds'];
 
 /* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
    телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
@@ -303,6 +306,7 @@ const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
   players: 'portrait', records: 'portrait', name: 'portrait',
+  trophy: 'portrait', worlds: 'portrait',
   run: 'landscape',
 };
 
@@ -312,7 +316,7 @@ const ORIENTATION = {
    свой выход, и он знает, куда именно. Экран имени вызывается и из меню
    игроков, и прямо с финиша — поэтому цель возврата у него своя переменная, а
    не общий previous, который к моменту возврата успел бы стать другим. */
-const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name']);
+const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy', 'worlds']);
 let previous = 'menu';
 
 let currentScreen = null;
@@ -413,6 +417,11 @@ function show(name) {
   log.event('screen', { name });
   // Возврат в игру из родительского меню: показать то, что настроили.
   if (name === 'run') refreshHud();
+  /* А в меню — пересобрать кнопки, несущие состояние на себе: уровень кубка и
+     выбранный мир. Раньше это делали только пути экрана игроков, и ребёнок,
+     перешедший 300 колец, возвращался в меню к кнопке «Кубок: 2», которая
+     спорила с кубком, открывающимся за ней. Поймано ревью. */
+  if (name === 'menu') renderWho();
   // Ушли с экрана забега — экран телефона снова нужен: меню держат в руке.
   if (name !== 'run') applyScreenPolicy(false);
 }
@@ -808,8 +817,21 @@ function renderRunHud(h = {}) {
        профиле ребёнка обессмыслил бы её навсегда. */
     if (result && result !== bankedResult && source !== 'fake') {
       bankedResult = result;
+      /* Копилка ДО прибавки — единственный способ отличить «взял уровень
+         сейчас» от «уровень просто высокий». Флага тут мало: стадия
+         результата рисуется много раз, и флаг здесь уже подводил. */
+      const bankБыло = players.bank();
       const bank = players.addToBank(st);
       log.event('bank', { added: st, bank, player: players.name() });
+      /* Забег может взять ДВА уровня сразу: собрал 220 колец при копилке 90.
+         Событий уходит столько, сколько взято — журнал обязан знать про
+         каждый, — а ребёнку показывается ПОСЛЕДНИЙ: одна строка читается,
+         две нет. */
+      for (let lv = levelAt(bankБыло) + 1; lv <= levelAt(bank); lv++) {
+        const row = TROPHY[lv - 1];
+        взят = { level: lv, name: prizeName(row) };
+        log.event('trophy.level', { level: lv, at: row.at, id: row.id, bank });
+      }
     }
     $('runResult').innerHTML = [
       /* Когда известно, сколько колец было, существительное уходит совсем:
@@ -828,7 +850,17 @@ function renderRunHud(h = {}) {
       // неё результат не прочитать: пять минут и одна минута дают разные
       // числа колец, и сравнивать их глазами бессмысленно.
       `<div class="when">${runLengthLabel(result?.durationS)}</div>`,
-    ].join('');
+      /* Здесь было «Числом, без значков и ступеней: решение заказчика», и это
+         РАЗВОРОТ той строки. Опровергнута она не вкусом, а появлением кубка:
+         момент открытия уровня — единственный, когда награда заметна сама,
+         кубок ребёнок откроет не всегда. Само «всего собрано» осталось
+         числом, как и было: ступень добавляется строкой РЯДОМ, а не вместо.
+
+         И отсюда же `filter(Boolean)` ниже: строка про уровень появляется не
+         в каждом забеге, а без фильтра `null` напечатался бы ребёнку словом
+         «null» — ровно в обычном забеге, где уровень не взят. */
+      взят ? `<div class="stars">Новый уровень! Открылось: ${взят.name}</div>` : null,
+    ].filter(Boolean).join('');
     /* Записать результат можно один раз, и только пока есть что записывать.
 
        Две кнопки, а не одна: обычный случай — одно нажатие, имя уже выбрано
@@ -894,6 +926,8 @@ async function startRun() {
   // блокировать запись следующей.
   recorded = false;
   recordError = false;
+  // Прошлая награда не должна объявиться на результате следующего забега.
+  взят = null;
   const { wantedSource } = await import('./pose.js');
   const want = wantedSource();
 
@@ -931,6 +965,18 @@ async function startRun() {
   await training?.stop();
   show('run');
   runsInRow++;
+  /* Мир выбирается в меню, но решение «можно ли в него» принимается здесь, в
+     момент старта: между выбором и забегом могла измениться копилка (сменили
+     игрока, сбросили профиль), а запирать ребёнка в недоступном мире нельзя.
+     Молча: приговор не вправе наказывать за то, чего игра не показала.
+
+     Набор призов фиксируется тем же разом и едет параметром. Ни вид, ни звук
+     не знают про хранилище и не должны: ровно поэтому их можно считать из
+     node, а tools/replay.mjs — подать любой набор. */
+  const bankNow = players.bank();
+  const хочет = players.world();
+  const world = worldsAt(bankNow).includes(хочет) && worldReady(хочет) ? хочет : 'hills';
+
   training = createTraining({
     canvas: $('runCanvas'),
     video: $('runVideo'),
@@ -938,6 +984,9 @@ async function startRun() {
     field: $('runField'),
     fieldMark: $('runFieldMark'),
     onHud: renderRunHud,
+    world,
+    level: levelAt(bankNow),
+    prizes: unlockedAt(bankNow),
   });
   renderRunHud({ stage: 'setup', score: 0 });
   await training.start({ source: want.source, script: want.script });
@@ -1209,6 +1258,18 @@ let recordError = false;
    «был ли какой-нибудь». */
 let bankedResult = null;
 
+/* Взятый уровень живёт РЯДОМ и тоже вне перерисовки. Локальной переменной
+   здесь не хватило, и поймано это ревью: блок выше закрыт сравнением с
+   `bankedResult`, то есть исполняется один раз за забег, — а экран результата
+   рисуется много раз (запись рекорда, возврат с экрана имени, возврат из
+   таблицы рекордов). Ребёнок переходил 300 колец, видел «Новый уровень!»,
+   нажимал «Записать», возвращался — и объявления больше не было.
+
+   Сбрасывается в startRun, вместе с `recorded`: в отличие от `bankedResult`,
+   который сравнением по ссылке обходится без сброса, эта строка обязана
+   исчезнуть к следующему забегу. */
+let взят = null;
+
 /** Длина забега словами. Берётся из тех же вариантов, что в настройках. */
 function runLengthLabel(seconds) {
   const s = Math.round(seconds || 0);
@@ -1218,6 +1279,10 @@ function runLengthLabel(seconds) {
 
 function renderWho() {
   $('whoV').textContent = players.name();
+  // Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
+  // по которой длина забега показана в двух местах сразу.
+  $('trophyLv').textContent = String(levelAt(players.bank()));
+  refreshMenuWorld();
 }
 
 // ── экран «кто играет» ──
@@ -1399,6 +1464,86 @@ let recordsFrom = 'menu';
    пробежал их, зашёл в «Рекорды» и увидел пустую таблицу пяти минут. Выглядит
    это как «рекорд не записался», то есть как потеря ровно того, ради чего
    таблица существует. Путь с финиша переставляет `recLen` сам. */
+/* Кубок. Полосы красятся по таблице, а не по списку в разметке: тринадцатая
+   ступень иначе осталась бы без полосы молча — именно это и сторожит тест,
+   сверяя число полос с длиной таблицы.
+
+   Копилка выше вершины заливает все полосы и не ищет тринадцатую. */
+function renderTrophy() {
+  const bank = players.bank();
+  const lv = levelAt(bank);
+  for (const el of document.querySelectorAll('#trophyBars rect[data-lv]')) {
+    const n = Number(el.dataset.lv);
+    // Взятая полоса — своим цветом; запертая оставлена стилю, где она --dim.
+    /* Стилем, а не атрибутом: презентационный атрибут SVG входит в каскад с
+       нулевой специфичностью и проигрывает правилу `.cup rect[data-lv]`,
+       которое красит запертую полосу. Проверено в браузере — полосы
+       оставались серыми при любой копилке, а ножка с подставкой, которых код
+       не трогает, рисовались верно. Отказ самомаскирующийся. */
+    if (n <= lv) el.style.fill = TROPHY[n - 1].color;
+    else el.style.removeProperty('fill');
+  }
+  $('trophyNow').textContent = lv > 0
+    ? `Собрано ${bank} ${plural(bank, RINGS)}, уровень ${lv}`
+    : `Собрано ${bank} ${plural(bank, RINGS)}`;
+  const next = nextAt(bank);
+  $('trophyNext').textContent = next
+    ? `Следующий: ${next.name} — ещё ${next.left} ${plural(next.left, RINGS)}`
+    : 'Кубок собран целиком!';
+}
+
+/* Список миров. Строится по реестру WORLDS, а порог берётся из таблицы
+   призов: имя живёт в одном месте, порог — в другом, и копий ни у того, ни у
+   другого нет.
+
+   Три состояния у кнопки, и все три видны:
+     — открыт и собран: нажимается, выбирает;
+     — открыт, но арт не собран: нажимается и честно говорит «скоро»;
+     — не открыт: гаснет и показывает, сколько колец осталось. */
+function renderWorlds() {
+  const bank = players.bank();
+  const открыты = worldsAt(bank);
+  const выбран = players.world();
+  const list = $('worldList');
+  list.innerHTML = '';
+  for (const w of Object.values(WORLDS)) {
+    const порог = TROPHY.find((r) => r.world === w.id)?.at ?? 0;
+    const открыт = открыты.includes(w.id);
+    const b = document.createElement('button');
+    if (открыт) {
+      b.innerHTML = `${w.name}${worldReady(w.id) ? '' : '<small>скоро</small>'}`;
+      if (w.id === выбран) b.className = 'chosen';
+      b.onclick = () => {
+        if (!worldReady(w.id)) {
+          showSoon(w.name, 'Этот мир ещё рисуется. Пока побегаем в открытых.');
+          return;
+        }
+        players.setWorld(w.id);
+        renderWorlds();
+        refreshMenuWorld();
+      };
+    } else {
+      const left = порог - Math.max(0, bank);
+      b.innerHTML = `${w.name}<small>ещё ${left} ${plural(left, RINGS)}</small>`;
+      b.disabled = true;
+    }
+    list.appendChild(b);
+  }
+}
+
+/* Имя мира на кнопке меню. Отдельной функцией, потому что зовут её двое:
+   открытие меню и сам выбор. */
+function refreshMenuWorld() {
+  const id = players.world();
+  $('worldV').textContent = WORLDS[id]?.name || WORLDS.hills.name;
+}
+
+$('goWorld').onclick = () => { renderWorlds(); show('worlds'); };
+$('worldsBack').onclick = BACK.worlds = () => show('menu');
+
+$('goTrophy').onclick = () => { renderTrophy(); show('trophy'); };
+$('trophyBack').onclick = BACK.trophy = () => show('menu');
+
 $('goRecords').onclick = () => {
   recLen = settings.get('runLength') || recLen;
   recordsFrom = 'menu';

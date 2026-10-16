@@ -5,7 +5,7 @@
 // Здесь живёт покраска. Смешать значит получить правку палитры в том же diff,
 // что правка порога, и потом не знать, что из этого сломало забег.
 //
-// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/sky-and-art.md, docs/view-and-zones.md
+// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 /* ──────────────────────────── светлота ────────────────────────────
    Относительная светлота по WCAG. Нужна не для красоты: Miracast режет
@@ -284,9 +284,35 @@ export const THEME = {
   },
 };
 
-/* Порядок зон в забеге. Массив, а не поле темы: порядок — свойство ЗАБЕГА, а
-   не палитры, и читаться он должен в одном месте. */
-export const ZONES = ['greenHill', 'sunsetDunes', 'nightHills'];
+/* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
+   выбирает его в меню перед забегом.
+
+   Экспорта `ZONES` здесь больше нет, и это сделано нарочно. Оставленный рядом
+   он был бы вторым именем одной вещи: половина читателей брала бы зоны из
+   него и молча игнорировала выбранный мир. Здесь стояло «порядок зон —
+   свойство ЗАБЕГА, а не палитры»; это по-прежнему так, опровергнуто другое —
+   что забег знает только порядок. Теперь он знает ещё и мир.
+
+   `zones: null` у трёх миров — не заготовка на будущее, а честное «арт ещё не
+   собран»: пустой список был бы неотличим от забытого поля. Разбор лестницы,
+   которая их открывает, — docs/trophy-and-worlds.md. */
+export const WORLDS = {
+  hills: { id: 'hills', name: 'Холмы', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
+  ice:   { id: 'ice',   name: 'Ледяные горы',     zones: null },
+  deep:  { id: 'deep',  name: 'Подводная долина', zones: null },
+  stars: { id: 'stars', name: 'Звёздная дорога',  zones: null },
+};
+
+/** Собран ли арт этого мира. Открытый, но несобранный мир показывает «скоро». */
+export function worldReady(world) {
+  return Array.isArray(WORLDS[world]?.zones) && WORLDS[world].zones.length === 3;
+}
+
+/** Зоны мира. Неизвестный, мусорный и несобранный мир отдают первый — молча:
+    отрисовка кадра не вправе получить undefined вместо имени зоны. */
+export function zonesOf(world) {
+  return worldReady(world) ? WORLDS[world].zones : WORLDS.hills.zones;
+}
 
 /* Растр неба у каждой зоны свой.
 
@@ -329,16 +355,17 @@ export const SKY_FILES = {
  * кактус оказался бы в зелёной зоне — тот же класс дефекта, что край
  * препятствия, посчитанный дважды.
  */
-export function zoneAt(elapsed, durationS) {
-  if (!(durationS > 0)) return ZONES[0];
-  const i = Math.floor((elapsed / durationS) * ZONES.length);
+export function zoneAt(elapsed, durationS, world) {
+  const zones = zonesOf(world);
+  if (!(durationS > 0)) return zones[0];
+  const i = Math.floor((elapsed / durationS) * zones.length);
   /* `Number.isFinite`, а не просто зажим: `Math.min/max` пропускают NaN
-     насквозь, и `ZONES[NaN]` даёт `undefined` — то есть кадр без палитры, а
+     насквозь, и `zones[NaN]` даёт `undefined` — то есть кадр без палитры, а
      Canvas на `undefined` в fillStyle молча оставляет прежний цвет. Поймано
      тестом на вырожденных входах; в игре NaN сюда прийти не должен, но эта
      функция решает, чем красить КАЖДЫЙ кадр, и отдавать «ничего» не вправе. */
-  if (!Number.isFinite(i)) return ZONES[0];
-  return ZONES[Math.min(ZONES.length - 1, Math.max(0, i))];
+  if (!Number.isFinite(i)) return zones[0];
+  return zones[Math.min(zones.length - 1, Math.max(0, i))];
 }
 
 /** Цвета, которые сообщают решение. Проверка светлоты их не ограничивает. */
