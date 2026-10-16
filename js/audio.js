@@ -14,7 +14,7 @@
 // Синтез, а не файлы: десяток коротких сигналов не стоит ни одного килобайта
 // в офлайн-кэше, где и так лежит семнадцать мегабайт MediaPipe.
 //
-// Разбор: docs/obstacles.md, docs/rings.md, docs/trophy-and-worlds.md
+// Разбор: docs/obstacles.md, docs/prizes-and-cost.md, docs/rings.md, docs/trophy-and-worlds.md
 
 import { settings } from './settings.js';
 

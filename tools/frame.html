@@ -51,6 +51,7 @@
   import { createView, makeDecor, makeStars } from '../js/view.js';
   import { VIEW } from '../js/config.js';
   import { THEME, WORLDS, zonesOf, SKY_FILES, skyClamp } from '../js/theme.js';
+  import { TROPHY, unlockedAt } from '../js/awards.js';
 
   const q = new URLSearchParams(location.search);
   const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -307,10 +308,15 @@
        оказался невидимым, а светлячки «пропали» из-за ошибки замера.
        Проверять приз одним счётчиком заливок нельзя: он считает вызовы
        отрисовки, а не картинку. Разбор — docs/trophy-and-worlds.md. */
-    const ВСЕ_ПРИЗЫ = ['sparks', 'bloom', 'rim', 'firefly', 'fanfare', 'chime'];
+    /* Список призов берётся у ВЛАДЕЛЬЦА — таблицы в js/awards.js, — а не
+       пишется здесь третьей копией. Прежняя копия уже отстала: `?prizes=all`
+       не знал про спутника и шлейф, то есть ритуал «проверено кадром» был
+       ослеплён ровно для тех двух призов, ради которых он и нужен. Поймано
+       ревью; на спутнике это стоило двух заходов. */
     const заказ = (q.get('prizes') || '').split(',').map((x) => x.trim()).filter(Boolean);
-    const prizes = {};
-    for (const имя of заказ.includes('all') ? ВСЕ_ПРИЗЫ : заказ) prizes[имя] = true;
+    const prizes = заказ.includes('all')
+      ? unlockedAt(TROPHY[TROPHY.length - 1].at)
+      : Object.fromEntries(заказ.map((имя) => [имя, true]));
 
     view.render({
       u: num('u', 0),
