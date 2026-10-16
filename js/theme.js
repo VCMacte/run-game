@@ -486,6 +486,187 @@ export const THEME = {
       ],
     },
   },
+
+  /* ───────── Мир «Подводная долина» (приз уровня 6, 600 колец) ─────────
+
+     Ни одной новой ФОРМЫ обочины: камень, столб, ель и куст — те же, что в
+     холмах. Мир отличается палитрой и небом, и потому не стоит кадру ничего.
+
+     Светящаяся бездна — третья тёмная зона проекта, и потолок растра у неё
+     свой, как у обеих ночных. Механизм ввёл этап 3, и здесь он впервые
+     применён к зоне, которая не называется ночью: тёмная — это свойство
+     палитры, а не имени.
+
+     Палитры прогнаны через ПОЛНЫЙ контракт ДО написания кода: семь нарушений
+     нашлись в черновике. На этапе 3 такие же четыре вскрылись уже в работе. */
+reefShallow: {
+    id: 'reefShallow',
+    name: 'Мелководье',
+    ...DECISION,
+    sky: '#4fb3c4', skyLow: '#8fd4dc', hills: '#3f8f9e', cloud: '#a9dde3',
+    starSky: '#b0dde4', grass: '#55a88f', grassDark: '#2f7a66', earthL: '#3f7a84',
+    earthR: '#2c5d66', earthDeep: '#17323a', floorA: '#8fd0cc', floorB: '#3d7a7c',
+    floorMid: '#6bb3b2', floorFar: '#4e9496', shadow: '#2a5a5e', palmTrunk: '#6b5a4a',
+    palmLeaf: '#2f8f6f', flower: '#e07aa8', totem: '#9ec4c8', post: '#7fb0b6',
+    postMark: '#bfe0e4', cactus: '#4f9e86', rock: '#86a8ae', spruce: '#2f6b5a',
+    firefly: '#6b7a3a', buddy: '#1f4a52', badnik: '#5a2f4a', badnikMouth: '#2e1726',
+    spike: '#c9dde0', critter: '#e0a85f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        /* Сумма правимых весов не меняется (0.62), и это нужно НЕ ВЕЗДЕ, а
+           там, где зона мешает виды РАЗНОЙ цены: камень здесь стоит одну
+           заливку против двух у остальных, и выросшая сумма разбавила бы его
+           долю — «цветущая» обочина вышла бы ДОРОЖЕ обычной. Ровно это и
+           случилось в черновике: 1.683 против 1.620. Та же ловушка, что в
+           дюнах на этапе 2.
+
+           Там, где все виды стоят одинаково (как в зоне «над облаками»),
+           сумма может расти безнаказанно — средняя цена не меняется. Но стоит
+           добавить туда камень, и ловушка вернётся, поэтому правило проще
+           держать везде. Уточнено по ревью. */
+        { kind: 'rock', weight: 0.38, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, bloomWeight: 0.10, height: 2.6 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.32, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.10, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+      ],
+    },
+  },
+
+
+  kelpDeep: {
+    id: 'kelpDeep',
+    name: 'Заросли',
+    ...DECISION,
+    sky: '#1d5c66', skyLow: '#2f7f86', hills: '#1a4a52', cloud: '#3f8f94',
+    starSky: '#9ecfd4', grass: '#246b5c', grassDark: '#0f2f28', earthL: '#255259',
+    earthR: '#15353b', earthDeep: '#0c1f24', floorA: '#59a39c', floorB: '#20534f',
+    floorMid: '#44857f', floorFar: '#2f6a66', shadow: '#163c3a', palmTrunk: '#4a3a2a',
+    palmLeaf: '#2a7a5e', flower: '#c76a92', totem: '#6f9ea2', post: '#5a8a90',
+    postMark: '#9ec4c8', cactus: '#3f8f6a', rock: '#56767c', spruce: '#1f6b4a',
+    firefly: '#7a8a3a', buddy: '#8fc2c8', badnik: '#4a2340', badnikMouth: '#261120',
+    spike: '#b4d6da', critter: '#d99a4f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
+        { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+      ],
+    },
+  },
+
+
+  abyssGlow: {
+    id: 'abyssGlow',
+    name: 'Светящаяся бездна',
+    ...DECISION,
+    skyStars: true,
+    skyAurora: true,
+    skyClampTo: 0.30,
+    sky: '#07161f', skyLow: '#0e2a36', hills: '#102b33', cloud: '#17424e',
+    /* `grassDark` светлее, чем просилось: им красится КУСТ, а куст стоит на
+       линии горизонта против силуэта хребта. В черновике было 0.015 против
+       0.021 у хребта — куст был бы невидим. Мой предпроверочный список видов
+       куста не содержал (он появляется только с призом «цветущая обочина»), а
+       контракт проверяет ВСЕ виды зоны. */
+    starSky: '#a8d2dc', grass: '#153c3a', grassDark: '#22524e', earthL: '#1b3a42',
+    earthR: '#0e2229', earthDeep: '#060f14', floorA: '#3f7a80', floorB: '#15383c',
+    floorMid: '#2f6066', floorFar: '#224a50', shadow: '#102a2e', palmTrunk: '#3a2c20',
+    palmLeaf: '#1f5c46', flower: '#8a4a68', totem: '#4a6f76', post: '#5c8a90',
+    postMark: '#86b2b8', cactus: '#2a6650', rock: '#3f6269', spruce: '#1a5c46',
+    firefly: '#9aba5a', buddy: '#7fb4bc', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    spike: '#a8ccd2', critter: '#d4913f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        /* Сумма правимых весов не меняется (0.50) — по той же причине, что в
+           мелководье: камень в одну заливку нельзя разбавлять. */
+        { kind: 'rock', weight: 0.34, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.28, bloomWeight: 0.26, height: 2.6 },
+        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
+        { kind: 'bush', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
+        { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
+      ],
+    },
+  },
+
+  /* ───────── Мир «Звёздная дорога» (приз уровня 9, 900 колец) ─────────
+
+     Последний мир лестницы. Новых форм обочины снова ни одной.
+
+     Туманность — четвёртая тёмная зона, пояс комет — промежуточная: темнее
+     дневных, светлее ночи, и потолок растра у неё свой, 0.45. Это первый
+     случай, когда зажим не «дневной или ночной», а именно свой: шкала
+     оказалась непрерывной, как только зон стало двенадцать. */
+cloudTop: {
+    id: 'cloudTop',
+    name: 'Над облаками',
+    ...DECISION,
+    sky: '#6a7fd4', skyLow: '#a3b0e6', hills: '#7f8fd0', cloud: '#c6cff0',
+    starSky: '#d2daf2', grass: '#8f9ad6', grassDark: '#5f6bb0', earthL: '#5a63a8',
+    earthR: '#3f4780', earthDeep: '#242a4e', floorA: '#b0bce8', floorB: '#4f5a9e',
+    floorMid: '#8e9bd4', floorFar: '#6e7bbc', shadow: '#3f4880', palmTrunk: '#6b5a4a',
+    palmLeaf: '#5a8f7a', flower: '#e08ac0', totem: '#b4bce0', post: '#8f98cc',
+    postMark: '#cdd4ee', cactus: '#5f9e86', rock: '#9aa3d0', spruce: '#3f6b8a',
+    firefly: '#8a9a4a', buddy: '#2f3566', badnik: '#4a2f6b', badnikMouth: '#241735',
+    spike: '#b6c0e4', critter: '#e8b05a', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'bush', weight: 0.34, bloomWeight: 0.40, height: 0.7, out: 0.12 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'totem', weight: 0.22, height: 1.1, out: 0.35 },
+        { kind: 'flower', weight: 0.14, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+      ],
+    },
+  },
+
+
+  cometBelt: {
+    id: 'cometBelt',
+    name: 'Пояс комет',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.45,
+    sky: '#2a2f66', skyLow: '#454d8f', hills: '#333a73', cloud: '#5a63a3',
+    starSky: '#cdd4f2', grass: '#3f4580', grassDark: '#262b56', earthL: '#333a6b',
+    earthR: '#1f2447', earthDeep: '#12152b', floorA: '#7f88c4', floorB: '#333a73',
+    floorMid: '#646ea8', floorFar: '#4e5790', shadow: '#242a52', palmTrunk: '#4a3a2a',
+    palmLeaf: '#4a7f6a', flower: '#c77aa8', totem: '#8f97c8', post: '#6f78b4',
+    postMark: '#b4bce0', cactus: '#4f8f76', rock: '#6a73a8', spruce: '#2f5f7a',
+    firefly: '#8a9a4a', buddy: '#a8b0dc', badnik: '#3f2359', badnikMouth: '#1f112c',
+    spike: '#c2c9ea', critter: '#e0a04f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.34, height: 2.6 },
+        { kind: 'totem', weight: 0.26, height: 1.1, out: 0.35 },
+      ],
+    },
+  },
+
+
+  nebula: {
+    id: 'nebula',
+    name: 'Туманность',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.30,
+    sky: '#1a0e2e', skyLow: '#331a4a', hills: '#2a1540', cloud: '#4a2a66',
+    starSky: '#d6c2ea', grass: '#33204a', grassDark: '#1f122e', earthL: '#3a2456',
+    earthR: '#1a0f28', earthDeep: '#0d0718', floorA: '#7a5aa3', floorB: '#281840',
+    floorMid: '#553f73', floorFar: '#43305c', shadow: '#241433', palmTrunk: '#3a2c20',
+    palmLeaf: '#3f6b5a', flower: '#b06a9a', totem: '#7f66a3', post: '#8f73b4',
+    postMark: '#bfa8d6', cactus: '#3f7f66', rock: '#6a5290', spruce: '#2f5f7a',
+    firefly: '#b48ad6', buddy: '#c2a8e0', badnik: '#4a1f3a', badnikMouth: '#240f1c',
+    spike: '#d6c2ea', critter: '#e0a04f', shade: '#0b0d14',
+    decor: {
+      kinds: [
+        { kind: 'rock', weight: 0.32, height: 0.6, out: 0.10 },
+        { kind: 'post', weight: 0.30, height: 2.6 },
+        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
+        { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
+      ],
+    },
+  },
 };
 
 /* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
@@ -497,15 +678,21 @@ export const THEME = {
    свойство ЗАБЕГА, а не палитры»; это по-прежнему так, опровергнуто другое —
    что забег знает только порядок. Теперь он знает ещё и мир.
 
-   `zones: null` у трёх миров — не заготовка на будущее, а честное «арт ещё не
-   собран»: пустой список был бы неотличим от забытого поля. Разбор лестницы,
-   которая их открывает, — docs/trophy-and-worlds.md. */
+   `zones: null` означало бы «арт ещё не собран» — честнее пустого списка,
+   который неотличим от забытого поля. СЕЙЧАС такого мира нет ни одного: с
+   этапа 5 собраны все четыре. Поле и ветка `worldReady` остались, и остались
+   не впрок — их держит отдельная проверка на подделанном мире, потому что
+   вторая половина `worldReady` про опечатку в имени зоны, а это `undefined` в
+   палитре кадра, который Canvas глотает молча. Разбор лестницы, которая миры
+   открывает, — docs/trophy-and-worlds.md. */
 export const WORLDS = {
   hills: { id: 'hills', name: 'Холмы', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
   ice:   { id: 'ice',   name: 'Ледяные горы',
            zones: ['iceMorning', 'snowField', 'auroraNight'] },
-  deep:  { id: 'deep',  name: 'Подводная долина', zones: null },
-  stars: { id: 'stars', name: 'Звёздная дорога',  zones: null },
+  deep: { id: 'deep', name: 'Подводная долина',
+           zones: ['reefShallow', 'kelpDeep', 'abyssGlow'] },
+  stars: { id: 'stars', name: 'Звёздная дорога',
+           zones: ['cloudTop', 'cometBelt', 'nebula'] },
 };
 
 /** Собран ли арт этого мира. Открытый, но несобранный мир показывает «скоро». */
@@ -590,6 +777,12 @@ export const SKY_FILES = {
   iceMorning: 'sky-ice-morning.webp',
   snowField: 'sky-snow.webp',
   auroraNight: 'sky-aurora.webp',
+  reefShallow: 'sky-reef.webp',
+  kelpDeep: 'sky-kelp.webp',
+  abyssGlow: 'sky-abyss.webp',
+  cloudTop: 'sky-cloudtop.webp',
+  cometBelt: 'sky-comet.webp',
+  nebula: 'sky-nebula.webp',
 };
 
 /**
@@ -659,17 +852,25 @@ export const GAP_GUARD = 0.25;
    на старом зажиме — и разошлись бы они ровно так же, как разошёлся худший
    кадр кадра между корнем и счётчиком.
 
-   Дневным зонам потолок ВЫВОДИТСЯ: это граница `GAP_GUARD` от проёма, то
+   Зоне без поля потолок ВЫВОДИТСЯ: это граница `GAP_GUARD` от проёма, то
    есть ровно то же правило, по которому проверяется палитра.
 
-   Ночной задан отдельно и меньше, и это не придирка: при общем потолке её
-   облака оказались бы многократно светлее самого светлого цвета её же
-   палитры — небо перестало бы быть ночным. Вывести это число из палитры
-   нельзя: такого правила проект не формулировал, и выдуманная формула была бы
-   хуже честного исключения. Поэтому исключение названо исключением.
+   А заданный полем — задан потому, что выведенный ей не годится: при общем
+   потолке белое в тёмном небе оказалось бы многократно светлее самого
+   светлого цвета её палитры, и небо перестало бы быть тёмным. Вывести это
+   число из палитры нечем: такого правила проект не формулировал, и выдуманная
+   формула была бы хуже честного исключения.
 
-   Проверяется в группе «небо» (`tests-control.mjs`): дневной обязан
-   следовать за `GAP_GUARD`, ночной — оставаться ниже дневного. */
+   Здесь стояло «дневным выводится, ночной задан отдельно», и это разворот:
+   деление на день и ночь было упрощением, видным только пока зон было три.
+   С двенадцатью шкала оказалась НЕПРЕРЫВНОЙ — 0.704 у шести зон, 0.62 у
+   снежного поля, 0.45 у пояса комет, 0.30 у четырёх тёмных, — и «исключение»
+   перестало быть исключением: это просто свойство зоны.
+
+   Проверяется в группе «потолок светлоты растра»: у каждой зоны с полем
+   потолок сверяется ТОЧНЫМ равенством, у каждой без поля — с выведенным, и
+   те же числа сверяются с README. Прежняя проверка держала порог «не выше
+   0.45» и не держала ничего: пояс комет в неё не входил вовсе. */
 
 export function skyClamp(zone) {
   const свой = THEME[zone]?.skyClampTo;
