@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';

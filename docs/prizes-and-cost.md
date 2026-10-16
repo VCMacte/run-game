@@ -4,7 +4,7 @@
 спутника и шлейфа — и перед любой тратой бюджета кадра на украшение.
 
 Родитель: [`../CLAUDE.md`](../CLAUDE.md).
-Код: `js/view.js`, `js/audio.js`, `js/theme.js`.
+Код: `js/view.js`, `js/audio.js`, `js/theme.js`, `js/app.js`, `css/style.css`.
 Замысел и обоснование чисел: [`concept-and-plan.md`](concept-and-plan.md).
 
 Лестница, кубок и миры — в [`trophy-and-worlds.md`](trophy-and-worlds.md);

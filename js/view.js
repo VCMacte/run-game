@@ -207,6 +207,25 @@ export function createView(canvas, { backdrops = null } = {}) {
          нарисовать кадр в цветах соседней зоны, чем в `undefined`. */
       if (THEME[zone]) { COLORS = THEME[zone]; zoneNow = zone; }
 
+      /* Цвета колец считаются ОДИН раз на кадр, а не на каждое кольцо.
+
+         Радуга вершины (`rainbowOf`) зависит только от базового цвета, времени
+         и сжатия — все три за кадр постоянны, — а внутри у неё двадцать четыре
+         шага двоичного поиска по светлоте. В окне видимости бывает до девяти
+         колец, то есть восемнадцать вызовов там, где хватает четырёх.
+         Счётчик заливок этого не видит по построению: он считает ВЫЗОВЫ
+         отрисовки, а не вычисления, — и просадка проявилась бы только как fps
+         на телевизоре. Поймано ревью. */
+      const цветаКолец = prizes.gold ? {
+        small: rainbowOf(COLORS.star, elapsed, mscale),
+        smallDim: rainbowOf(COLORS.starDim, elapsed, mscale),
+        big: rainbowOf(COLORS.starBig, elapsed, mscale),
+        bigDim: rainbowOf(COLORS.starBigDim, elapsed, mscale),
+      } : {
+        small: COLORS.star, smallDim: COLORS.starDim,
+        big: COLORS.starBig, bigDim: COLORS.starBigDim,
+      };
+
       const cam = camera(u, v);
 
       const far = VIEW.fogDistance;
@@ -330,15 +349,8 @@ export function createView(canvas, { backdrops = null } = {}) {
            двенадцать миллиметров, и он уже выбран. Заказчик сказал об этом
            прямо: «визуально не отличается, только другой звук», — то есть о
            цене ребёнок узнавал ПОСЛЕ сбора. */
-        /* Радуга вершины — приз двенадцатого уровня. Меняется ОТТЕНОК, не
-           светлота: кольцо это цвет РЕШЕНИЯ, и контракт на него
-           распространяется в любой фазе. */
-        const colr = prizes.gold
-          ? rainbowOf(крупно ? COLORS.starBig : COLORS.star, elapsed, mscale)
-          : (крупно ? COLORS.starBig : COLORS.star);
-        const colDim = prizes.gold
-          ? rainbowOf(крупно ? COLORS.starBigDim : COLORS.starDim, elapsed, mscale)
-          : (крупно ? COLORS.starBigDim : COLORS.starDim);
+        const colr = крупно ? цветаКолец.big : цветаКолец.small;
+        const colDim = крупно ? цветаКолец.bigDim : цветаКолец.smallDim;
         const r = Math.max(3, p.scale * VIEW.starDrawR * (крупно ? VIEW.bigStarScale : 1));
 
         // Собранное кольцо подпрыгивает и исчезает — короткой функцией от
