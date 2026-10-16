@@ -707,3 +707,10 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
 #worldList button[disabled] { background: var(--dim); color: var(--panel); opacity: 1; }
 /* Выбранный помечен заливкой, а не галочкой — по той же причине. */
 #worldList button.chosen { background: var(--ok); }
+
+/* Золотой кубок — приз вершины (1200 колец). Обводка, а не заливка: полосы
+   сообщают рост светлотой, и сплошное золото эту лестницу перебило бы.
+   Толщина в единицах viewBox, а не в пикселях: чаша масштабируется под экран,
+   и пиксельная обводка на телевизоре исчезла бы — ровно тем, чем Miracast
+   съедает тонкое. */
+.cup.gold rect[data-lv] { stroke: #ffd77a; stroke-width: 1.2; }

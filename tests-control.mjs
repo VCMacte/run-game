@@ -25,6 +25,7 @@ import { describe, motifFor, motifNameFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
   makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
+  rainbowOf,
   skyGaps, CORRIDOR_HALF, CLIFF_TOP, decorYMask,
 } from './js/view.js';
 import {
@@ -3018,9 +3019,17 @@ group('звук', () => {
   check('у финиша есть вариант приза', !!m.finishFanfare);
   check('фанфара длиннее обычного финиша', m.finishFanfare.length > m.finish.length,
     `${m.finishFanfare?.length} против ${m.finish.length}`);
-  check('и остаётся самым длинным мотивом',
-    m.finishFanfare.length >= Math.max(...Object.values(m).map((v) => v.length)),
-    'финиш — единственное место, где звук длиннее четверти секунды');
+  /* Длиннее всех — СЕМЕЙСТВО финиша, а не одна фанфара уровня 4: с этапа 6 у
+     вершины своя, и она длиннее. Правило же не про конкретный мотив, а про
+     то, что длинный звук позволен только финишу: он терминальный, после него
+     не решают ничего. */
+  {
+    const финишные = ['finish', 'finishFanfare', 'finishGold'];
+    const прочие = Object.entries(m).filter(([k]) => !финишные.includes(k));
+    check('финишные мотивы длиннее всех прочих',
+      Math.min(...финишные.map((k) => m[k].length)) > Math.max(...прочие.map(([, v]) => v.length)),
+      'длинный звук позволен только финишу — он терминальный');
+  }
   check('фанфара идёт вверх',
     m.finishFanfare.every((n, i, a) => i === 0 || n[0] >= a[i - 1][0]),
     'вниз она читалась бы как проигрыш');
@@ -3037,6 +3046,25 @@ group('звук', () => {
   check('отбор никогда не отдаёт несуществующее имя',
     Object.keys(m).includes(motifNameFor('star', { chime: false })),
     'иначе play() промолчит, и это неотличимо от выключенного звука');
+
+  /* Фанфара ВЕРШИНЫ. Словарь не растёт: это подмена того же события, что и
+     фанфара уровня 4, — у одного события может быть несколько вариантов, и
+     выбирается ПЕРВЫЙ открытый. */
+  check('у вершины своя фанфара', !!m.finishGold);
+  check('она длиннее фанфары уровня 4', m.finishGold.length > m.finishFanfare.length,
+    `${m.finishGold?.length} против ${m.finishFanfare.length}`);
+  check('и остаётся самым длинным мотивом',
+    m.finishGold.length >= Math.max(...Object.values(m).map((v) => v.length)));
+  check('вершина сильнее обычной фанфары',
+    motifNameFor('finish', { fanfare: true, gold: true }) === 'finishGold',
+    'взявший вершину уже взял и четвёртый уровень — звучать должна вершина');
+  check('а без вершины звучит обычная',
+    motifNameFor('finish', { fanfare: true }) === 'finishFanfare');
+  check('ноты вершины не наезжают',
+    m.finishGold.every((n, i, a) => i === 0 || n[1] >= a[i - 1][1]));
+  check('и фанфара вершины идёт вверх',
+    m.finishGold.every((n, i, a) => i === 0 || n[0] >= a[i - 1][0]),
+    'вниз она читалась бы как проигрыш');
 
   /* Выключенный в родительском меню звук СИЛЬНЕЕ любого приза. Из node
      проверить исполнением нельзя — Web Audio здесь нет, — поэтому сторож
@@ -4000,6 +4028,30 @@ group('кубок', () => {
     check(`на ${z} м пятно не мигает с вращением`, поФазам.size === 1,
       `пятен по фазам: ${[...поФазам].join(', ')}`);
   }
+
+  /* Радуга вершины меняет ОТТЕНОК кольца, но не его светлоту: кольцо — цвет
+     РЕШЕНИЯ, и контракт светлоты на него распространяется в любой фазе.
+     Свободного цвета кольцу не положено ни в каком призе. */
+  for (let t = 0; t < 3; t += 0.1) {
+    const c = rainbowOf(THEME.greenHill.star, t);
+    check(`радуга на ${t.toFixed(1)} с держит светлоту кольца`,
+      Math.abs(luminance(c) - luminance(THEME.greenHill.star)) < 0.02,
+      `${luminance(c).toFixed(3)} против ${luminance(THEME.greenHill.star).toFixed(3)}`);
+    check(`радуга на ${t.toFixed(1)} с даёт настоящий цвет`, /^#[0-9a-f]{6}$/i.test(c), c);
+  }
+  /* И она действительно КРАСИТ: за период оттенок обязан смениться заметно. */
+  const оттенки = new Set();
+  for (let t = 0; t < 4; t += 0.2) оттенки.add(rainbowOf(THEME.greenHill.star, t));
+  check('радуга меняет цвет', оттенки.size > 8, `${оттенки.size} разных цветов`);
+
+  /* Без приза кольцо красится ровно как прежде. */
+  const кольцоЦвета = (prizes) => paintFrame({
+    stars: [{ x: 0, z: 4, worth: 1, taken: false }], elapsed: 1.0, prizes,
+    zone: 'greenHill',
+  }).fills.filter((c) => c === THEME.greenHill.star).length;
+  check('без приза кольцо прежнего цвета', кольцоЦвета({}) > 0);
+  check('с призом — уже нет', кольцоЦвета({ gold: true }) === 0,
+    'радуга обязана быть видна, иначе приза нет');
 
   /* Шлейф — полоса за кольцом, приз одиннадцатого уровня. Спек обещал «0,
      замена» — неверно, как было неверно у ободка: заменять у кольца нечего,
