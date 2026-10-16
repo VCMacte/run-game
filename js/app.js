@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
@@ -1483,6 +1483,12 @@ function renderTrophy() {
     if (n <= lv) el.style.fill = TROPHY[n - 1].color;
     else el.style.removeProperty('fill');
   }
+  /* Вершина взята — кубок золотеет. ОБВОДКОЙ, а не заливкой: светлота полос
+     строго возрастает и этим сообщает рост, а сплошное золото перебило бы эту
+     лестницу и отняло у кубка единственный признак, который переживает
+     Miracast. */
+  $('trophyCup').classList.toggle('gold', lv >= TROPHY.length);
+
   $('trophyNow').textContent = lv > 0
     ? `Собрано ${bank} ${plural(bank, RINGS)}, уровень ${lv}`
     : `Собрано ${bank} ${plural(bank, RINGS)}`;

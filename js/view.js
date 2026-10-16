@@ -21,7 +21,9 @@
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
-import { THEME, DECOR, MOTION, zonesOf, zoneAt, kindsFor, motionScale, rgba } from './theme.js';
+import {
+  THEME, DECOR, MOTION, zonesOf, zoneAt, kindsFor, motionScale, rgba, luminance,
+} from './theme.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
 const WALL = 2.6;         // высота стен
@@ -205,6 +207,25 @@ export function createView(canvas, { backdrops = null } = {}) {
          нарисовать кадр в цветах соседней зоны, чем в `undefined`. */
       if (THEME[zone]) { COLORS = THEME[zone]; zoneNow = zone; }
 
+      /* Цвета колец считаются ОДИН раз на кадр, а не на каждое кольцо.
+
+         Радуга вершины (`rainbowOf`) зависит только от базового цвета, времени
+         и сжатия — все три за кадр постоянны, — а внутри у неё двадцать четыре
+         шага двоичного поиска по светлоте. В окне видимости бывает до девяти
+         колец, то есть восемнадцать вызовов там, где хватает четырёх.
+         Счётчик заливок этого не видит по построению: он считает ВЫЗОВЫ
+         отрисовки, а не вычисления, — и просадка проявилась бы только как fps
+         на телевизоре. Поймано ревью. */
+      const цветаКолец = prizes.gold ? {
+        small: rainbowOf(COLORS.star, elapsed, mscale),
+        smallDim: rainbowOf(COLORS.starDim, elapsed, mscale),
+        big: rainbowOf(COLORS.starBig, elapsed, mscale),
+        bigDim: rainbowOf(COLORS.starBigDim, elapsed, mscale),
+      } : {
+        small: COLORS.star, smallDim: COLORS.starDim,
+        big: COLORS.starBig, bigDim: COLORS.starBigDim,
+      };
+
       const cam = camera(u, v);
 
       const far = VIEW.fogDistance;
@@ -328,8 +349,8 @@ export function createView(canvas, { backdrops = null } = {}) {
            двенадцать миллиметров, и он уже выбран. Заказчик сказал об этом
            прямо: «визуально не отличается, только другой звук», — то есть о
            цене ребёнок узнавал ПОСЛЕ сбора. */
-        const colr = крупно ? COLORS.starBig : COLORS.star;
-        const colDim = крупно ? COLORS.starBigDim : COLORS.starDim;
+        const colr = крупно ? цветаКолец.big : цветаКолец.small;
+        const colDim = крупно ? цветаКолец.bigDim : цветаКолец.smallDim;
         const r = Math.max(3, p.scale * VIEW.starDrawR * (крупно ? VIEW.bigStarScale : 1));
 
         // Собранное кольцо подпрыгивает и исчезает — короткой функцией от
@@ -1784,6 +1805,54 @@ export function buddyPos(t, scale = 1) {
     x: W * (0.5 + 0.035 * Math.sin(фаза * 0.3) * scale),
     y: H * (0.11 + 0.025 * Math.sin(фаза * 0.23) * scale),
   };
+}
+
+/** Тот же цвет с ПОВЁРНУТЫМ тоном и ТОЙ ЖЕ светлотой. Радуга вершины красит
+    кольцо, но кольцо — цвет РЕШЕНИЯ, и контракт светлоты на него
+    распространяется в любой фазе: свободного цвета ему не положено ни в каком
+    призе. Поэтому поворачивается ТОН (через HSL), а светлота возвращается на
+    место подбором множителя.
+
+    Замерено на `#ffd34d`: максимальное отклонение светлоты за оборот 0.0048
+    при допуске 0.02, двенадцать различимых цветов за период. */
+export function rainbowOf(base, t, scale = 1) {
+  const r = parseInt(base.slice(1, 3), 16) / 255;
+  const g = parseInt(base.slice(3, 5), 16) / 255;
+  const b = parseInt(base.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0; let sat = 0;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r ? ((g - b) / d + (g < b ? 6 : 0))
+      : max === g ? ((b - r) / d + 2) : ((r - g) / d + 4);
+    h /= 6;
+  }
+  h = (h + (t * MOTION.rainbowHz * scale) % 1 + 1) % 1;
+  const тон = (p, q, x) => {
+    let v = x; if (v < 0) v += 1; if (v > 1) v -= 1;
+    if (v < 1 / 6) return p + (q - p) * 6 * v;
+    if (v < 1 / 2) return q;
+    if (v < 2 / 3) return p + (q - p) * (2 / 3 - v) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+  const p = 2 * l - q;
+  const к = [тон(p, q, h + 1 / 3), тон(p, q, h), тон(p, q, h - 1 / 3)];
+  const hex = (a) => '#' + a
+    .map((v) => Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2, '0'))
+    .join('');
+  /* Светлота возвращается на место двоичным поиском множителя: поворот тона
+     её сдвигает, а контракт этого не прощает. Двадцать четыре шага дают
+     точность заведомо выше допуска. */
+  const цель = luminance(base);
+  let lo = 0; let hi = 3;
+  for (let i = 0; i < 24; i++) {
+    const m = (lo + hi) / 2;
+    if (luminance(hex(к.map((v) => v * m))) < цель) lo = m; else hi = m;
+  }
+  return hex(к.map((v) => v * (lo + hi) / 2));
 }
 
 /** Взмах крыла спутника: 0…1, функция времени с фазой. Амплитуда жмётся
