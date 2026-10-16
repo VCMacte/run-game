@@ -21,7 +21,7 @@ import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
-import { describe, motifFor } from './js/audio.js';
+import { describe, motifFor, motifNameFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
 import {
   makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed,
@@ -2937,6 +2937,59 @@ group('звук', () => {
         `нота ${i} начинается в ${notes[i][1]}, предыдущая в ${notes[i - 1][1]}`);
     }
   }
+
+  /* ── Призы подменяют мотив, а не добавляют новый ──
+
+     Словарь звука дефицитный намеренно: новый мотив означал бы новое
+     действие. Поэтому приз обязан звучать тем же событием, и у подмены
+     столько же ВСТУПЛЕНИЙ, сколько у базового мотива.
+
+     Для сбора кольца это не стиль, а запрет: `starBig` — ровно три ноты, и
+     обычное кольцо в три ноты стало бы неотличимо от большого, то есть
+     ребёнок потерял бы единственный признак награды. Поэтому «звонкий сбор»
+     работает ДЛИТЕЛЬНОСТЬЮ, а не числом нот. */
+  check('у сбора кольца есть вариант приза', !!m.starChime);
+  check('и в нём столько же нот, сколько в обычном',
+    m.starChime.length === m.star.length,
+    `${m.starChime?.length} против ${m.star.length}`);
+  check('то есть он не путается с большим кольцом',
+    m.starChime.length !== m.starBig.length,
+    'три ноты — это «большое кольцо», и занимать их нельзя');
+  check('а звонче он послезвучием', m.starChime.at(-1)[2] > m.star.at(-1)[2],
+    'последняя нота тянется дольше — это и есть «звонче» без новых нот');
+
+  check('у финиша есть вариант приза', !!m.finishFanfare);
+  check('фанфара длиннее обычного финиша', m.finishFanfare.length > m.finish.length,
+    `${m.finishFanfare?.length} против ${m.finish.length}`);
+  check('и остаётся самым длинным мотивом',
+    m.finishFanfare.length >= Math.max(...Object.values(m).map((v) => v.length)),
+    'финиш — единственное место, где звук длиннее четверти секунды');
+  check('фанфара идёт вверх',
+    m.finishFanfare.every((n, i, a) => i === 0 || n[0] >= a[i - 1][0]),
+    'вниз она читалась бы как проигрыш');
+
+  /* Отбор варианта — чистая функция, и проверяется она без звука: Web Audio в
+     node нет вовсе, а правило отбора есть. */
+  check('без приза играет базовый мотив', motifNameFor('star', {}) === 'star');
+  check('с призом — вариант', motifNameFor('star', { chime: true }) === 'starChime');
+  check('финиш так же', motifNameFor('finish', { fanfare: true }) === 'finishFanfare');
+  check('у события без вариантов приз ничего не меняет',
+    motifNameFor('duck', { chime: true, fanfare: true }) === 'duck');
+  /* Приза нет — и варианта нет: `MOTIFS[undefined]` даёт undefined, а `play`
+     на этом выходит МОЛЧА, то есть сбор кольца потерял бы звук совсем. */
+  check('отбор никогда не отдаёт несуществующее имя',
+    Object.keys(m).includes(motifNameFor('star', { chime: false })),
+    'иначе play() промолчит, и это неотличимо от выключенного звука');
+
+  /* Выключенный в родительском меню звук СИЛЬНЕЕ любого приза. Из node
+     проверить исполнением нельзя — Web Audio здесь нет, — поэтому сторож
+     текстовый и смотрит на ПОРЯДОК: проверка `sound` обязана стоять до
+     отбора варианта. Иначе приз однажды окажется выше настройки взрослого. */
+  const audioSrc = readFileSync(join(ROOT, 'js/audio.js'), 'utf8');
+  const телоPlay = audioSrc.slice(audioSrc.indexOf('export function play('));
+  check('выключенный звук проверяется до отбора варианта',
+    телоPlay.indexOf("settings.get('sound')") < телоPlay.indexOf('motifNameFor('),
+    'приз не вправе обойти настройку «Звук: выключен»');
 
   check('для бокового справа звучит «влево»', motifFor({ kind: 'side', side: 1 }) === 'left',
     'закрыта правая сторона — уходить надо влево, и звук говорит именно это');
