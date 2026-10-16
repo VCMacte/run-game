@@ -16,7 +16,7 @@
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
 //
-// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/rings.md, docs/sky-and-art.md, docs/view-and-zones.md
+// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/rings.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
@@ -307,6 +307,29 @@ export function createView(canvas, { backdrops = null } = {}) {
           const age = elapsed - (s.takenAtS ?? -9);
           if (age < 0 || age > 0.45) continue;
           lift = Math.sin((age / 0.45) * Math.PI) * r * 2.2 * mscale;
+
+          /* Искры — приз первого уровня. Функция времени с фазой, состояния не
+             копят: `age` уже посчитан выше, и этого хватает.
+
+             Рисуются ТОЛЬКО у собранного кольца и только 0.45 с: горящие весь
+             забег, они платили бы за себя каждым кадром, а не одним.
+
+             Цвет — `starDim`, уже стоящий в контракте светлоты: собственного
+             цвета искрам не нужно, и свободного им всё равно не положено. */
+          if (prizes.sparks) {
+            const ф = age / 0.45;
+            const разлёт = r * 2.4 * ф;
+            const полу = r * 0.34 * (1 - ф);
+            for (let k = 0; k < 4; k++) {
+              const a = (k / 4) * Math.PI * 2 + 0.6;
+              ctx.fillStyle = colDim;
+              ctx.fillRect(
+                p.x + Math.cos(a) * разлёт - полу,
+                p.y - lift + Math.sin(a) * разлёт - полу,
+                полу * 2, полу * 2,
+              );
+            }
+          }
         }
 
         /* Пятно на полу под кольцом.
