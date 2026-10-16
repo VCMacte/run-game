@@ -647,7 +647,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           tally.star(s.worth ?? 1);
           log.event('star', { side: Math.sign(s.x), u: round(u), worth: s.worth ?? 1 });
           // Три ноты вместо двух: мотивы различаются числом нот, см. audio.js.
-          audio.play(s.worth > 1 ? 'starBig' : 'star');
+          audio.play(s.worth > 1 ? 'starBig' : 'star', prizes);
           hud();
         }
       }
@@ -926,7 +926,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
        потом решение по нему, и читается это сверху вниз. Номер ступени
        уезжает и в результат — оттуда его берёт запись рекорда. */
     result.step = applyStep(true);
-    audio.play('finish');
+    audio.play('finish', prizes);
     // Без аргумента намеренно: result теперь уходит из hud() всегда, и
     // передавать его здесь ещё раз значило бы намекать, что это единственный
     // путь — именно так и возник обнуляющийся экран результата.

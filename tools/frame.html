@@ -250,14 +250,26 @@
       });
     }
 
+    /* Призы кубка: `?prizes=rim,firefly,bloom,sparks` — или `?prizes=all`.
+       Без них этот инструмент не мог показать НИ ОДИН приз, а именно им и
+       проверяется «виден ли приз на экране» — урок этапа 2, где ободок
+       оказался невидимым, а светлячки «пропали» из-за ошибки замера.
+       Проверять приз одним счётчиком заливок нельзя: он считает вызовы
+       отрисовки, а не картинку. Разбор — docs/trophy-and-worlds.md. */
+    const ВСЕ_ПРИЗЫ = ['sparks', 'bloom', 'rim', 'firefly', 'fanfare', 'chime'];
+    const заказ = (q.get('prizes') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const prizes = {};
+    for (const имя of заказ.includes('all') ? ВСЕ_ПРИЗЫ : заказ) prizes[имя] = true;
+
     view.render({
       u: num('u', 0),
       v: num('v', 0),
       travel,
       elapsed,
       obstacles,
+      prizes,
       stars: bare ? [] : makeStars({ durationS: 40 }),
-      decor: bare ? [] : makeDecor({ durationS: 40 }),
+      decor: bare ? [] : makeDecor({ durationS: 40, prizes }),
       safe: q.get('safe') !== '0',
       pulse: num('pulse', 1),
       finishIn: q.has('finishIn') ? num('finishIn', 1.2) : null,
