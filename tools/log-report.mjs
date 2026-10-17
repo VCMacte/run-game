@@ -20,6 +20,9 @@ import { OBSTACLES } from '../js/config.js';
    (четыре мира с этапа 5), а вторая копия имён разошлась бы с первой — тот же
    довод, по которому отсюда же берётся окно телеграфа. */
 import { WORLDS } from '../js/theme.js';
+/* Та же причина, что у имён миров: имя приза живёт в таблице лестницы, и
+   второй копии ему здесь не положено. */
+import { TROPHY, prizeName } from '../js/awards.js';
 
 import { readFileSync } from 'node:fs';
 import { count, TIMES } from '../js/text.js';
@@ -626,6 +629,19 @@ export function report(session) {
       pauses: e.pauses ?? null,
       ringPct: e.ringPct ?? null,
     })),
+    /* Взятые уровни кубка. Событие пишется на КАЖДЫЙ взятый уровень, и забег
+       умеет взять два сразу — поэтому список, а не последний номер.
+
+       Читателя у этой записи не было с этапа 1: лестница — главное, ради чего
+       ребёнок возвращается, а журнал про неё молчал. Тот же дефект, что был у
+       мира забега, и находится он тем же вопросом: кто ЧИТАЕТ то, что мы
+       пишем. */
+    levels: pick(log, 'trophy.level').map((e) => ({
+      level: Number.isInteger(e.level) ? e.level : null,
+      at: Number.isInteger(e.at) ? e.at : null,
+      id: typeof e.id === 'string' ? e.id : null,
+      bank: Number.isFinite(e.bank) ? e.bank : null,
+    })),
     errors,
     notes,
   };
@@ -734,6 +750,18 @@ export function format(rep) {
   if (где?.world) {
     L.push(`  мир «${WORLDS[где.world]?.name || где.world}»`
       + (где.level === null ? '' : `, уровень кубка ${где.level}`));
+  }
+
+  /* Взятые за сессию уровни кубка. Печатаются ВСЕ: забег берёт два сразу, и
+     «взял уровень» с «взял два» — разные новости. Приз называется по таблице,
+     а не по ключу: `world-ice` читает код, а сводку читают глазами. Ничего не
+     взято — строки нет: «уровней взято 0» читалось бы как наблюдение, а это
+     отсутствие события. */
+  for (const l of rep.levels) {
+    const row = TROPHY.find((r) => r.id === l.id) ?? TROPHY[(l.level ?? 0) - 1];
+    const приз = row ? prizeName(row) : (l.id ?? '—');
+    L.push(`  кубок: уровень ${l.level} взят на ${l.at} кольцах — ${приз}`
+      + (l.bank === null ? '' : ` (копилка ${l.bank})`));
   }
 
   if (rep.run) {

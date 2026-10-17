@@ -20,7 +20,9 @@ import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS } from './text.js';
 import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
-import { TROPHY, levelAt, nextAt, prizeName, unlockedAt, worldsAt } from './awards.js';
+import {
+  TROPHY, activeWorld, levelAt, nextAt, prizeName, unlockedAt, worldsAt,
+} from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
 
 const $ = (id) => document.getElementById(id);
@@ -974,8 +976,7 @@ async function startRun() {
      не знают про хранилище и не должны: ровно поэтому их можно считать из
      node, а tools/replay.mjs — подать любой набор. */
   const bankNow = players.bank();
-  const хочет = players.world();
-  const world = worldsAt(bankNow).includes(хочет) && worldReady(хочет) ? хочет : 'hills';
+  const world = activeWorld(bankNow, players.world());
 
   training = createTraining({
     canvas: $('runCanvas'),
@@ -1279,9 +1280,13 @@ function runLengthLabel(seconds) {
 
 function renderWho() {
   $('whoV').textContent = players.name();
-  // Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
-  // по которой длина забега показана в двух местах сразу.
-  $('trophyLv').textContent = String(levelAt(players.bank()));
+  /* Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
+     по которой длина забега показана в двух местах сразу.
+
+     Со словом «уровень», а не голым числом: соседние кнопки называют свою
+     величину («Забег: 5 минут», «Кто играет: Ваня»), и «Кубок: 3» среди них
+     читается как три чего угодно. Спек называл кнопку именно так. */
+  $('trophyLv').textContent = `уровень ${levelAt(players.bank())}`;
   refreshMenuWorld();
 }
 
@@ -1509,7 +1514,11 @@ function renderTrophy() {
 function renderWorlds() {
   const bank = players.bank();
   const открыты = worldsAt(bank);
-  const выбран = players.world();
+  /* Отмечается тот мир, в котором забег ПОЙДЁТ, а не тот, что лежит в
+     профиле. Выбранный когда-то при большей копилке сейчас заперт, и забег
+     уйдёт в холмы — экран обязан это показать, иначе выбранной не окажется ни
+     одной кнопки. Правило общее со `startRun`, одной функцией. */
+  const выбран = activeWorld(bank, players.world());
   const list = $('worldList');
   list.innerHTML = '';
   for (const w of Object.values(WORLDS)) {

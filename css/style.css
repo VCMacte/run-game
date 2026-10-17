@@ -698,6 +698,16 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
    --vh, как у списков рекордов и игроков, и по той же причине. */
 #worldList { display: flex; flex-direction: column; gap: calc(var(--u) * 2.2);
              max-height: calc(var(--vh) * 0.5); overflow-y: auto; }
+/* Название и сноска «ещё N колец» — ДВЕ строки, а не одна. Своего правила у
+   них не было, и `<small>` вставал в строку: «Подводная долинаещё 60 колец».
+   Образец `button > small` в проекте есть, но живёт он у `.big`, а кнопки
+   миров собираются кодом и этого класса не носят. */
+#worldList button { display: flex; flex-direction: column; align-items: center;
+                    gap: calc(var(--u) * 0.8); }
+/* Без `opacity`: контраст сноски на запертой кнопке считается тестом точно,
+   а прозрачность увела бы его мимо расчёта. Отличается она размером и весом. */
+#worldList button small { font-size: calc(var(--u) * 2.6); font-weight: 400; }
+
 /* Запертый мир гаснет, но остаётся читаемым: ребёнок должен видеть, за что
    бежит. Заливкой, не контуром — контур Miracast съедает первым. */
 /* Цвет текста — `--panel`, а не `--fg`: на `--dim` первый даёт 6.61:1, а

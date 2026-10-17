@@ -16,6 +16,7 @@ import { makeLevel, telegraph, isSafe, LOOKS, telegraphDebt } from './js/level.j
 import { tuneFor, nextStep, whyStep, breatherFor, clampStep, STEP_MAX } from './js/difficulty.js';
 import {
   TROPHY, STEP_RINGS, TOP_LEVEL, levelAt, unlockedAt, nextAt, worldsAt, prizeName,
+  activeWorld,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
@@ -3677,6 +3678,17 @@ group('кубок', () => {
     n0 && n0.level === 1 && n0.at === 100 && n0.left === 100, JSON.stringify(n0));
   check('остаток считается от копилки', nextAt(150)?.left === 50, `${nextAt(150)?.left}`);
 
+  /* Имя приза-мира встаёт в ЧУЖУЮ строку, и строку эту читает ребёнок с
+     дивана. «Следующий: Мир: Подводная долина» и «Открылось: Мир: Ледяные
+     горы» — двоеточие в двоеточии; обе строки собираются подстановкой, и
+     чинить их по отдельности значило бы завести второе правило именования. */
+  check('приз-мир называется строчным словом и в кавычках',
+    prizeName(TROPHY[2]) === 'мир «Ледяные горы»', prizeName(TROPHY[2]));
+  check('и в строке «следующего» двоеточие не удваивается',
+    !/Следующий: Мир:/.test(`Следующий: ${nextAt(250).name}`), nextAt(250).name);
+  check('а косметика остаётся просто именем', prizeName(TROPHY[0]) === 'Искры',
+    prizeName(TROPHY[0]));
+
   /* Светлота цветов кубка строго возрастает — кубок читается как
      «наливается» даже когда Miracast съел цветность. Проверяется той же
      функцией, что и палитра коридора, и с зазором: слипшиеся по светлоте
@@ -3733,6 +3745,29 @@ group('кубок', () => {
   check('взятый И собранный звёздный мир доступен', доступен(900, 'stars'),
     'с этапа 5 собраны все четыре мира — несобранных больше нет');
   check('первый мир доступен всегда', доступен(0, 'hills'));
+
+  /* Правило «куда пойдёт забег» живёт ОДНОЙ функцией, и это не уборка.
+     Выражение `worldsAt(bank).includes(x) && worldReady(x) ? x : 'hills'`
+     стояло в `startRun`, а экран выбора его не знал — и мир, выбранный когда-то
+     при большей копилке, не был отмечен на экране ничем. Ребёнок видел четыре
+     кнопки и ни одной выбранной, а забег молча уходил в холмы: игра не
+     показала того, что сделала. */
+  check('доступный выбор остаётся собой', activeWorld(900, 'stars') === 'stars');
+  check('недоступный выбор уходит в первый мир',
+    activeWorld(100, 'stars') === 'hills', activeWorld(100, 'stars'));
+  check('несобранный мир тоже уходит в первый', (() => {
+    const было = WORLDS.stars.zones;
+    WORLDS.stars.zones = null;
+    const r = activeWorld(900, 'stars');
+    WORLDS.stars.zones = было;
+    return r === 'hills';
+  })());
+  check('мусор уходит в первый мир',
+    ['', null, undefined, 42, 'нет такого'].every((b) => activeWorld(900, b) === 'hills'));
+  check('и startRun зовёт именно её, а не повторяет правило',
+    /activeWorld\(/.test(readFileSync(join(ROOT, 'js/app.js'), 'utf8'))
+    && !/worldsAt\([^)]*\)\.includes/.test(readFileSync(join(ROOT, 'js/app.js'), 'utf8')),
+    'вторая копия правила разъехалась бы с первой молча');
 
   /* Искры рисуются только открытыми и только у СОБРАННОГО кольца, и живут те
      же 0.45 с, что подскок. Проверяется поддельным холстом: число заливок в
@@ -6130,6 +6165,48 @@ group('разбор журнала', () => {
     JSON.stringify([безПолитики.run.world, безПолитики.run.level]));
   check('и сводка о нём молчит', !/мир «/.test(format(безПолитики)),
     'печатать «мир: Холмы» по умолчанию значит выдать догадку за запись');
+
+  /* Взятый уровень кубка — ИСХОД, и журнал его пишет с этапа 1. Читателя у
+     записи не было: лестница в двенадцать уровней — главное, ради чего
+     ребёнок возвращается, а по журналу нельзя было сказать, брал ли он
+     что-нибудь вообще. Тот же дефект, что был у мира: запись есть, читателя
+     нет. */
+  const лестница = report(сессия([
+    { t: 0, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, world: 'hills', level: 2 },
+    { t: 60000, type: 'run.finish', stars: 60, score: 60, starsTotal: 60, hits: 0, durationS: 60 },
+    { t: 60500, type: 'bank', added: 60, bank: 310, player: 'Ребёнок' },
+    { t: 60600, type: 'trophy.level', level: 3, at: 300, id: 'world-ice', bank: 310 },
+  ]));
+  check('взятый уровень прочитан', лестница.levels.length === 1,
+    JSON.stringify(лестница.levels));
+  check('и у него есть номер, порог и приз',
+    лестница.levels[0].level === 3 && лестница.levels[0].at === 300
+    && лестница.levels[0].id === 'world-ice',
+    JSON.stringify(лестница.levels[0]));
+  check('сводка называет взятый уровень и приз',
+    /уровень 3 взят.*Ледяные горы/.test(format(лестница)),
+    format(лестница).split(String.fromCharCode(10)).filter((l) => /уровень/.test(l)).join(' | ') || '(строки нет)');
+
+  /* Забег может взять ДВА уровня сразу (собрал 220 при копилке 90), и журнал
+     пишет по событию на каждый. Разбор обязан показать оба: «взял уровень»
+     и «взял два» — разные новости. */
+  const двойной = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 40, stars: 100, world: 'hills', level: 0 },
+    { t: 300000, type: 'run.finish', stars: 220, score: 220, starsTotal: 240, hits: 0, durationS: 300 },
+    { t: 300500, type: 'trophy.level', level: 1, at: 100, id: 'sparks', bank: 310 },
+    { t: 300600, type: 'trophy.level', level: 2, at: 200, id: 'bloom', bank: 310 },
+  ]));
+  check('оба взятых уровня видны', двойной.levels.length === 2,
+    JSON.stringify(двойной.levels.map((l) => l.level)));
+  check('и оба названы в сводке',
+    /уровень 1 взят/.test(format(двойной)) && /уровень 2 взят/.test(format(двойной)),
+    format(двойной).split(String.fromCharCode(10)).filter((l) => /уровень/.test(l)).join(' | ') || '(строки нет)');
+
+  /* Ничего не взято — строки нет. Та же осторожность, что у политики экрана:
+     «взято 0 уровней» читалось бы как наблюдение, а это отсутствие события. */
+  check('без взятых уровней разбор молчит',
+    безПолитики.levels.length === 0 && !/уровень \d+ взят/.test(format(безПолитики)),
+    'строка про уровни у журнала без них была бы выдумкой');
 
   const безУдаров = report(сессия([
     { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100 },

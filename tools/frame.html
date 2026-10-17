@@ -77,6 +77,32 @@
      копии числа без владельца. Разбор — у `skyClamp` в js/theme.js. */
   window.skyClamp = skyClamp;
 
+  /* Светлота пикселя — та же формула, что у `luminance` в js/theme.js, но по
+     трём каналам пикселя, а не по hex-строке. Второй копией правила это не
+     является: правило одно, представление цвета разное. */
+  const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const pxLum = (r, g, b) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+
+  const maxLum = (data) => {
+    let m = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const L = pxLum(data[i], data[i + 1], data[i + 2]);
+      if (L > m) m = L;
+    }
+    return m;
+  };
+
+  /* Зажим светлоты в gamma-пространстве: так цвет сохраняется, а светлота
+     падает. Зажим по каналам порознь менял бы оттенок. */
+  const clampPixels = (data, to) => {
+    for (let i = 0; i < data.length; i += 4) {
+      const L = pxLum(data[i], data[i + 1], data[i + 2]);
+      if (L <= to) continue;
+      const k = (to / L) ** (1 / 2.4);
+      data[i] *= k; data[i + 1] *= k; data[i + 2] *= k;
+    }
+  };
+
   window.toWebp = async (src, dest, quality = 0.82, clampTo = null) => {
     const img = new Image();
     img.src = '/' + src;
@@ -86,32 +112,88 @@
     off.height = img.naturalHeight;
     const octx = off.getContext('2d');
     octx.drawImage(img, 0, 0);
+    const src0 = octx.getImageData(0, 0, off.width, off.height);
 
-    /* Зажим светлоты. Нейросеть рисует облака чисто белыми, а белое — это
-       светлота 1.0 при проёме 0.95: фон начинает спорить с каналом решения,
-       то есть с сообщением «иди сюда». Правило то же, что у палитры в
-       js/theme.js, и нарушить его растром было бы ровно так же плохо.
-       Проверка в tests-control.mjs растр увидеть не может — там нет
-       декодировщика картинок, — поэтому зажим делается здесь, один раз, при
-       сборке файла. */
-    if (clampTo != null) {
-      const d = octx.getImageData(0, 0, off.width, off.height);
-      const px = d.data;
-      const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-      for (let i = 0; i < px.length; i += 4) {
-        const L = 0.2126 * lin(px[i]) + 0.7152 * lin(px[i + 1]) + 0.0722 * lin(px[i + 2]);
-        if (L <= clampTo) continue;
-        // Приглушаем в gamma-пространстве: так цвет сохраняется, а светлота
-        // падает. Зажим по каналам порознь менял бы оттенок.
-        const k = (clampTo / L) ** (1 / 2.4);
-        px[i] *= k; px[i + 1] *= k; px[i + 2] *= k;
-      }
+    /* Зажим светлоты, ПРОВЕРЕННЫЙ ПО ФАКТУ КОДИРОВАНИЯ.
+
+       Нейросеть рисует облака чисто белыми, а белое — это светлота 1.0 при
+       проёме 0.95: фон начинает спорить с каналом решения, то есть с
+       сообщением «иди сюда». Правило то же, что у палитры в js/theme.js.
+
+       Зажать перед кодированием НЕ ДОСТАТОЧНО, и это замерено 17 октября:
+       WebP выталкивает самые светлые пиксели обратно вверх примерно на пятую
+       часть ОТНОСИТЕЛЬНО потолка, а не на постоянные 0.047, как здесь
+       считалось. Поэтому у всех двенадцати растров максимум стоял выше
+       собственного потолка: у дневных зон 0.83–0.86 при 0.704, у ночных
+       0.35–0.40 при 0.30. Зажатое перед кодированием число проверить было
+       нечем — и его не проверяли.
+
+       Теперь цикл: зажали, закодировали, ИЗМЕРИЛИ результат, и если он выше
+       потолка — зажали строже на ту же долю. Сходится за один-три прохода.
+       У самых тёмных зон остаётся хвост в сотые доли: кодировщик не умеет
+       держать нижние значения точнее, и упираться в это бесконечно незачем —
+       отсюда потолок проходов и допуск. Возвращается ДОСТИГНУТЫЙ максимум:
+       число, которого не видно, — число, которому нельзя верить. */
+    const PASSES = 4;
+    const TOL = 1.03;
+    let target = clampTo;
+    let got = null;
+    let dataUrl = null;
+    for (let pass = 0; pass < (clampTo == null ? 1 : PASSES); pass++) {
+      const d = new ImageData(new Uint8ClampedArray(src0.data), src0.width, src0.height);
+      if (clampTo != null) clampPixels(d.data, target);
       octx.putImageData(d, 0, 0);
+      dataUrl = off.toDataURL('image/webp', quality);
+      if (clampTo == null) break;
+      const back = new Image();
+      back.src = dataUrl;
+      await back.decode();
+      const check = document.createElement('canvas');
+      check.width = off.width; check.height = off.height;
+      const cctx = check.getContext('2d');
+      cctx.drawImage(back, 0, 0);
+      got = maxLum(cctx.getImageData(0, 0, check.width, check.height).data);
+      if (got <= clampTo * TOL) break;
+      target *= clampTo / got;
     }
 
-    const dataUrl = off.toDataURL('image/webp', quality);
     const res = await fetch('/save', { method: 'POST', body: JSON.stringify({ path: dest, dataUrl }) });
-    return { dest, w: off.width, h: off.height, ...(await res.json()) };
+    return {
+      dest, w: off.width, h: off.height, clampTo,
+      max: got === null ? null : Math.round(got * 1000) / 1000,
+      ...(await res.json()),
+    };
+  };
+
+  /* Замер светлоты собранных растров. Та проверка, которой не было: потолок
+     сверялся только как число в теме, а сам файл не смотрел никто — и все
+     двенадцать растров стояли выше своих потолков.
+
+     Живёт здесь, а не в tests-control.mjs, по той же причине, по которой
+     здесь живёт кодировщик: в node нет декодировщика картинок. Запускается
+     одной строкой из консоли браузера, печатает таблицей. */
+  window.skyAudit = async () => {
+    const rows = [];
+    for (const [zone, file] of Object.entries(SKY_FILES)) {
+      const img = new Image();
+      img.src = `/assets/${file}`;
+      try { await img.decode(); } catch { rows.push({ зона: zone, файл: file, нет: true }); continue; }
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext('2d');
+      x.drawImage(img, 0, 0);
+      const потолок = skyClamp(zone);
+      const max = maxLum(x.getImageData(0, 0, c.width, c.height).data);
+      rows.push({
+        зона: zone,
+        потолок: Math.round(потолок * 1000) / 1000,
+        максимум: Math.round(max * 1000) / 1000,
+        превышение: `${Math.round((max / потолок - 1) * 100)}%`,
+        годен: max <= потолок * 1.03,
+      });
+    }
+    console.table(rows);
+    return rows;
   };
 
   const ruler = document.getElementById('ruler');
