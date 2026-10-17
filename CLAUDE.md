@@ -159,12 +159,13 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 этом стоят `lateralHeld` и `starGuardS`.
 → [`docs/obstacles.md`](docs/obstacles.md)
 
-**Исторические имена переименованию не подлежат.** «Звёзды» в коде
-(`starX`, `starReach`, `makeStars`) — это кольца на экране, а `js/train.js` —
-дирижёр забега, а не тренировки. Имена стоят в офлайн-кэше, в тестах и в КАЖДОМ
-снятом журнале: переименование обрубит сравнимость со всем, что проект про себя
-знает. Ключи хранилища (`run-game.*`) — тем же правилом.
-→ [`docs/rings.md`](docs/rings.md), [`docs/menu-and-navigation.md`](docs/menu-and-navigation.md)
+**Исторические имена переименованию не подлежат.** «Звёзды» в коде (`starX`,
+`starReach`, `makeStars`) — это кольца на экране, а `js/train.js` — дирижёр
+забега, а не тренировки. Имена стоят в офлайн-кэше, в тестах и в КАЖДОМ снятом
+журнале: переименование обрубит сравнимость со всем, что проект про себя знает.
+Ключи хранилища (`run-game.*`) — тем же правилом.
+→ [`docs/rings.md`](docs/rings.md),
+[`docs/menu-and-navigation.md`](docs/menu-and-navigation.md)
 
 **Правка формы Шустрика — это правка в ТРЁХ файлах** (генератор иконки,
 `<symbol>` в разметке, зверёк в `js/view.js`): среды разные, общего источника
@@ -270,7 +271,8 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 | [`docs/concept-and-plan.md`](docs/concept-and-plan.md) | зачем всё устроено именно так; обоснование чисел |
 
 Разборы отдельных журналов — в [`measurements/`](measurements/), по файлу на
-сессию; ритуал снятия — в [`.claude/skills/take-measurements/`](.claude/skills/take-measurements/).
+сессию; ритуал снятия — в
+[`.claude/skills/take-measurements/`](.claude/skills/take-measurements/).
 
 ## Где что лежит
 
