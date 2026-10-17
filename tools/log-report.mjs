@@ -16,6 +16,10 @@
 // Разбор: docs/log-and-storage.md
 
 import { OBSTACLES } from '../js/config.js';
+/* Имена миров берутся из реестра, а не вписаны списком: реестр и так растёт
+   (четыре мира с этапа 5), а вторая копия имён разошлась бы с первой — тот же
+   довод, по которому отсюда же берётся окно телеграфа. */
+import { WORLDS } from '../js/theme.js';
 
 import { readFileSync } from 'node:fs';
 import { count, TIMES } from '../js/text.js';
@@ -288,6 +292,11 @@ export function report(session) {
          То же правило, что у panSpan. */
       step: Number.isInteger(st.step) ? st.step : null,
       tune: st.tune && typeof st.tune === 'object' ? st.tune : null,
+      /* Мир забега и уровень кубка на его начало. Отсутствие — «журнал снят
+         до миров», а не «холмы»: умолчание здесь выдало бы догадку за запись,
+         ровно как нулевая ступень выше. */
+      world: typeof st.world === 'string' ? st.world : null,
+      level: Number.isInteger(st.level) ? st.level : null,
       wakeLost: сколько((e) => e.released === true && e.why === 'system'),
       wakeRegained: сколько((e) => e.got === true && e.why === 'regain'),
       windows: own.reduce((a, w) => a + occurrences(w), 0),
@@ -311,6 +320,11 @@ export function report(session) {
          отпущена на время забега. Нет поля — журнал снят до замера, и врать
          догадкой здесь нечем. */
       screenRun: start && typeof start.screenRun === 'string' ? start.screenRun : null,
+      /* Мир и уровень — у того же `start`, что и политика экрана: забегов в
+         сессии бывает несколько, и в разных мирах. Взять первый попавшийся
+         значило бы подписать числа второго забега миром первого. */
+      world: start && typeof start.world === 'string' ? start.world : null,
+      level: start && Number.isInteger(start.level) ? start.level : null,
       // Собранные кольца. С 7 октября это именно они: до правки одно поле
       // значило и кольца, и очки, и при задетом препятствии показывало очки.
       stars: finish.stars ?? 0,
@@ -708,6 +722,20 @@ export function format(rep) {
   // gesture — длины торса, и весь разбор строится на сравнении этих чисел.
   L.push(`  ширина поля panSpan ${чис(rep.panSpan)} (u в health — доли поля)`);
 
+  /* Мир забега и уровень кубка. Берутся у того забега, про который и говорит
+     вся сводка ниже, — у дошедшего до финиша; у брошенного финиша нет, а мир
+     есть, и молчать о нём незачем.
+
+     Печатается ИМЯ из реестра: ключ `deep` читает код, а сводку читают
+     глазами. Незнакомый ключ печатается как есть — реестр перепишут, а журнал
+     снят однажды, и молчание выглядело бы как журнал до миров. Нет поля —
+     строки нет: та же осторожность, что с политикой экрана. */
+  const где = rep.run ?? rep.runs.at(-1) ?? null;
+  if (где?.world) {
+    L.push(`  мир «${WORLDS[где.world]?.name || где.world}»`
+      + (где.level === null ? '' : `, уровень кубка ${где.level}`));
+  }
+
   if (rep.run) {
     const o = rep.run.obstacles;
     const looks = Object.entries(o.byLook || {});
@@ -776,7 +804,10 @@ export function format(rep) {
       const потери = r.wakeLost || r.wakeRegained
         ? `, блокировка: потеряна ${r.wakeLost}, взята заново ${r.wakeRegained}`
         : '';
-      L.push(`    ${i + 1}) ${чис(r.durationS)} с${экран}${потери}`
+      // Мир — у каждого забега свой: без него два забега в разных мирах стоят
+      // в сводке рядом как два забега в одном, и сравнение чисел врёт.
+      const мир = r.world ? `, мир «${WORLDS[r.world]?.name || r.world}»` : '';
+      L.push(`    ${i + 1}) ${чис(r.durationS)} с${экран}${мир}${потери}`
         + `  —  кадры ${чис(r.fps)} fps, позы ${чис(r.hz)} Гц,`
         + ` инференс ${мс(r.infer)}  (окон ${r.windows})`);
     });

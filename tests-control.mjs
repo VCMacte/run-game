@@ -6074,6 +6074,63 @@ group('разбор журнала', () => {
   check('и сводка о ней молчит', !/экран/.test(format(безПолитики)),
     'печатать «экран: null» значит предлагать принять это за наблюдение');
 
+  /* Мир и уровень кубка. Забег их называет с этапа 5, а разбор о них молчал:
+     миров четыре, и первый же журнал с ребёнком оказался бы неразборчивым по
+     мирам — числа двух забегов в разных мирах легли бы рядом без подписи. */
+  const миры = report(сессия([
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake', world: 'hills', level: 3 },
+    { t: 61000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+    { t: 70000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake', world: 'deep', level: 7 },
+    { t: 130000, type: 'run.finish', stars: 19, score: 19, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  check('мир забега прочитан', миры.runs[0].world === 'hills' && миры.runs[1].world === 'deep',
+    JSON.stringify(миры.runs.map((r) => r.world)));
+  check('и уровень кубка тоже', миры.runs[0].level === 3 && миры.runs[1].level === 7,
+    JSON.stringify(миры.runs.map((r) => r.level)));
+  /* Финишу принадлежит ПОСЛЕДНИЙ запуск до него — то же правило, что у
+     политики экрана: иначе разбор приписал бы второму забегу мир первого. */
+  check('у забега с финишем мир свой, а не первый попавшийся',
+    миры.run.world === 'deep' && миры.run.level === 7,
+    JSON.stringify([миры.run.world, миры.run.level]));
+  const сМирами = format(миры);
+  /* Печатается ИМЯ из реестра, а не ключ: ключ читается кодом, а сводку
+     читают глазами, и `deep` рядом с `hills` ничего не говорит о том, где
+     ребёнок бежал. */
+  check('сводка называет мир по имени', /^ {2}мир «Подводная долина», уровень кубка 7$/m.test(сМирами),
+    сМирами.split(String.fromCharCode(10)).filter((l) => /мир/.test(l)).join(' | ') || '(строки нет)');
+  check('и оба забега подписаны своим миром',
+    /мир «Холмы»/.test(сМирами) && /мир «Подводная долина»/.test(сМирами),
+    сМирами.split(String.fromCharCode(10)).filter((l) => /мир/.test(l)).join(' | ') || '(строки нет)');
+
+  /* Один забег — разбивки по забегам нет, а мир назвать всё равно надо: без
+     него журнал неразборчив ровно так же. */
+  const одинМир = report(сессия([
+    { t: 0, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, world: 'stars', level: 12 },
+    { t: 60000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  check('мир назван и у единственного забега',
+    /^ {2}мир «Звёздная дорога», уровень кубка 12$/m.test(format(одинМир)),
+    format(одинМир).split(String.fromCharCode(10)).filter((l) => /мир/.test(l)).join(' | ') || '(строки нет)');
+
+  /* Незнакомый ключ печатается как есть. Реестр миров переписывают, а журнал
+     снят однажды: молчание о мире выглядело бы как журнал до миров, то есть
+     соврало бы о другом. */
+  const чужойМир = report(сессия([
+    { t: 0, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, world: 'лес', level: 2 },
+    { t: 60000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  check('незнакомый мир назван ключом, а не замолчан',
+    /мир «лес»/.test(format(чужойМир)),
+    format(чужойМир).split(String.fromCharCode(10)).filter((l) => /мир/.test(l)).join(' | ') || '(строки нет)');
+
+  /* То же правило, что у политики экрана и у ступени: отсутствие поля — это
+     «журнал снят до миров», а не «мир по умолчанию». */
+  check('у журнала до миров мира нет',
+    безПолитики.run.world === null && безПолитики.run.level === null,
+    JSON.stringify([безПолитики.run.world, безПолитики.run.level]));
+  check('и сводка о нём молчит', !/мир «/.test(format(безПолитики)),
+    'печатать «мир: Холмы» по умолчанию значит выдать догадку за запись');
+
   const безУдаров = report(сессия([
     { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100 },
     { t: 300000, type: 'run.finish', stars: 88, starsTotal: 100, hits: 0, durationS: 300 },
