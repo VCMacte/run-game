@@ -88,6 +88,7 @@
       <button id="goRecords" class="ghost">Рекорды</button>
       <button id="goTrophy" class="ghost">Кубок: <span id="trophyLv">—</span></button>
       <button id="goWorld" class="ghost">Мир: <span id="worldV">—</span></button>
+      <button id="goLevel" class="ghost">Сложность: <span id="levelV">—</span></button>
     </div>
     <!-- Настройки отдельной кнопкой: прежде они открывались долгим удержанием
          невидимого угла, то есть не открывались никак — найти это, не зная
@@ -292,8 +293,18 @@
        второй список в разметке разъехался бы с ним. -->
   <section id="worlds" class="sheet screen" hidden>
     <h1>Куда побежим</h1>
-    <div id="worldList"></div>
+    <div id="worldList" class="picker"></div>
     <div class="row center"><button id="worldsBack" class="ghost">Назад</button></div>
+  </section>
+
+  <!-- Выбор сложности. Кнопки собирает код: их число задаёт таблица STEPS, и
+       второй список в разметке разъехался бы с ней. Заголовок парный к
+       «Куда побежим»: слово «сложность» стоит на кнопке меню — оно для
+       взрослого, — а внутри экрана ребёнку нужен вопрос, а не термин. -->
+  <section id="levels" class="sheet screen" hidden>
+    <h1>Как побежим</h1>
+    <div id="levelList" class="picker"></div>
+    <div class="row center"><button id="levelsBack" class="ghost">Назад</button></div>
   </section>
 
   <!-- Ввод имени. Единственное текстовое поле в приложении, и оно вертикальное:

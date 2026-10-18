@@ -13,13 +13,13 @@ import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition, coverFit } from './js/preview.js';
 import { makeLevel, telegraph, isSafe, LOOKS, telegraphDebt } from './js/level.js';
-import { tuneFor, nextStep, whyStep, breatherFor, clampStep, STEP_MAX } from './js/difficulty.js';
+import { tuneFor, breatherFor, clampStep, STEP_MAX, LEVELS } from './js/difficulty.js';
 import {
   TROPHY, STEP_RINGS, TOP_LEVEL, levelAt, unlockedAt, nextAt, worldsAt, prizeName,
   activeWorld,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
-import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView } from './js/view.js';
+import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor } from './js/audio.js';
@@ -1912,11 +1912,19 @@ group('телеграф', () => {
   // куда. Поэтому вплотную препятствие перестаёт рисоваться: иначе оно
   // закрывает проём именно в эти миллисекунды.
   const forgiveS = O.lateForgiveMs / 1000;
-  check('препятствие исчезает не раньше окна прощения',
-    O.drawNearM / VIEW.speed >= forgiveS - 1e-9,
-    `исчезает за ${(O.drawNearM / VIEW.speed).toFixed(2)} с, окно ${forgiveS} с`);
-  check('и не слишком рано', O.drawNearM / VIEW.speed < 1.0,
+  /* Считается от момента, когда плита исчезает ЦЕЛИКОМ, то есть от
+     `drawNear − thickness`: прежняя проверка делила на скорость сам
+     `drawNearM` и потому мерила не то, что называла. И гоняется она теперь
+     по ВСЕМ скоростям уровней: в метрах это число при каждой своё, во
+     времени обязано остаться не меньше окна прощения — иначе ребёнок
+     получает приговор, глядя на закрытый проём. */
+  check('препятствие исчезает не раньше окна прощения при скорости 2.0',
+    (drawNear(2.0) - O.thickness) / 2.0 >= forgiveS - 1e-9,
+    `исчезает за ${((drawNear(2.0) - O.thickness) / 2.0).toFixed(2)} с, окно ${forgiveS} с`);
+  check('и не слишком рано', (drawNear(2.0) - O.thickness) / 2.0 < 1.0,
     'иначе препятствие пропадает, когда решение ещё не принято');
+  check('при скорости 2.0 это ровно прежние 1.4 метра', drawNear(2.0) === 1.4,
+    `${drawNear(2.0)} — перевод во время обязан был сохранить число`);
 });
 
 /* ───────────── перекраска не достаёт до игры ─────────────
@@ -2719,8 +2727,14 @@ group('ступень', () => {
      счёт времени на решение, то есть за счёт того единственного запаса,
      которого у ребёнка нет. */
   {
+    /* `speed` из списка ВЫШЕЛ 18 октября: скорость стала ручкой третьего и
+       пятого уровней. Запрет на неё обосновывался тем, что расписание задано
+       в секундах, — то есть объяснял, почему ручка бесполезна, а не почему
+       опасна. Взамен поставлена проверка по сути (ниже): расписание уровня
+       с другой скоростью обязано совпасть посекундно. Остальные ключи
+       заперты как были. */
     const запрещено = ['signalS', 'visibleS', 'railS', 'lastCallS', 'minGapS',
-      'minLeadS', 'lateForgiveMs', 'speed', 'starX', 'starReach', 'starGuardS'];
+      'minLeadS', 'lateForgiveMs', 'starX', 'starReach', 'starGuardS'];
     for (let s = 0; s <= STEP_MAX; s++) {
       const ключи = Object.keys(tuneFor(s));
       check(`ступень ${s} не трогает время на решение`,
@@ -2734,7 +2748,8 @@ group('ступень', () => {
     const b = tuneFor(s);
     check(`ступень ${s} не легче ${s - 1}`,
       b.blockFrac >= a.blockFrac && b.duckShare >= a.duckShare
-      && b.seriesMin >= a.seriesMin && b.seriesMax >= a.seriesMax,
+      && b.seriesMin >= a.seriesMin && b.speed >= a.speed
+      && (b.seriesMin + b.seriesMax) >= (a.seriesMin + a.seriesMax),
       `${JSON.stringify(a)} → ${JSON.stringify(b)}`);
     check(`и чем-то отличается от неё`,
       JSON.stringify(a) !== JSON.stringify(b),
@@ -2827,45 +2842,195 @@ group('ступень', () => {
       `${база.n.toFixed(1)} против ${верх.n.toFixed(1)}`);
   }
 
-  /* ── переход: вверх только по безупречному, вниз по любому ──
+  /* ── ЗДЕСЬ БЫЛО ПРАВИЛО ПЕРЕХОДА, и его больше нет ──
 
-     Случаи взяты ИЗ ЖУРНАЛОВ, а не придуманы. Асимметрия — не осторожность:
-     данных «ребёнку трудно» у проекта нет вовсе, а «не понял, почему
-     проиграл» здесь худший класс дефекта. */
+     Четырнадцать проверок сторожили `nextStep`: вверх только по безупречному
+     забегу, вниз по любому, мусор не двигает. Правило отменено 18 октября по
+     требованию заказчика («менять сложность автоматически не надо»), удалено
+     из кода целиком, и проверять в нём нечего. Пороги, на которых оно
+     стояло, живы — они переехали в разбор журнала и сторожатся в группе
+     «разбор журнала».
+
+     На освободившееся место встали проверки того, чем уровни теперь
+     различаются. */
+
+  // ── скорость растёт ровно на третьем и пятом ──
   {
-    const чисто = { finished: true, faced: 53, late: 0, pauses: 0, ringPct: 98 };
-    check('безупречный забег поднимает ступень', nextStep(0, чисто) === 1,
-      '11 октября: 53 препятствия чисто, ноль пауз, 98% колец');
-    check('холодный забег не поднимает',
-      nextStep(1, { finished: true, faced: 26, late: 0, pauses: 0, ringPct: 81 }) === 1,
-      '81% — первый забег сразу после калибровки, ребёнок был занят, а не скучал');
-    check('забег с паузой не поднимает',
-      nextStep(1, { finished: true, faced: 26, late: 0, pauses: 1, ringPct: 93 }) === 1,
-      'усложнять по журналу с дефектами запрещено: так и появилось единственное задетое');
-    check('короткий отладочный не поднимает',
-      nextStep(1, { finished: true, faced: 3, late: 0, pauses: 0, ringPct: 100 }) === 1,
-      '?run=20 и «забег 30 с» не вправе двигать ступень');
-    check('брошенный не поднимает',
-      nextStep(1, { finished: false, faced: 53, late: 0, pauses: 0, ringPct: 98 }) === 1);
+    const скорость = (i) => tuneFor(i).speed;
+    check('первые два уровня идут базовой скоростью',
+      скорость(0) === VIEW.speed && скорость(1) === VIEW.speed,
+      `${скорость(0)} и ${скорость(1)} при базовой ${VIEW.speed}`);
+    check('третий быстрее второго', скорость(2) > скорость(1),
+      `${скорость(1)} → ${скорость(2)}`);
+    check('четвёртый идёт скоростью третьего', скорость(3) === скорость(2),
+      'заказчик назвал ровно два уровня, где растёт скорость: третий и пятый');
+    check('пятый быстрее четвёртого', скорость(4) > скорость(3),
+      `${скорость(3)} → ${скорость(4)}`);
+  }
 
-    const трудно = { finished: true, faced: 26, late: 3, pauses: 0, ringPct: 90 };
-    check('три «не успел» понижают', nextStep(2, трудно) === 1);
-    check('и понижают даже брошенный',
-      nextStep(2, { ...трудно, finished: false }) === 1,
-      'ребёнок, бросивший забег на третьем промахе, — ровно тот случай, ради которого понижение и есть');
-    check('и даже с паузами', nextStep(2, { ...трудно, pauses: 4 }) === 1,
-      'послабление не требует чистого журнала: оно отвечает на «ребёнку плохо»');
-    check('один промах не понижает',
-      nextStep(2, { ...трудно, late: 1 }) === 2, 'один из 26 — шум одного шага');
+  /* ── скорость не трогает время на решение ──
 
-    check('ниже нуля ступень не уходит', nextStep(0, трудно) === 0);
-    check('выше потолка не уходит', nextStep(STEP_MAX, чисто) === STEP_MAX);
-    check('больше шага за забег не бывает',
-      Math.abs(nextStep(2, чисто) - 2) <= 1 && Math.abs(nextStep(2, трудно) - 2) <= 1);
-    check('мусор ступень не двигает',
-      nextStep(2, {}) === 2 && nextStep(2, { faced: NaN, late: 5, pauses: 0, ringPct: 0 }) === 2,
-      'решение принимается только по числам, которые есть');
-    check('нечисловая ступень читается как нулевая', nextStep(undefined, чисто) === 1);
+     Это и есть то, чем заменена структурная проверка по именам ключей:
+     `speed` из списка запрещённых вышел, и запрет теперь проверяется по
+     СУТИ. Расписание задано в секундах, поэтому уровень с другой скоростью
+     обязан дать посекундно то же расписание при том же посеве — меняются
+     метры, а не секунды. */
+  for (let s1 = 1; s1 <= STEP_MAX; s1++) {
+    const база = makeLevel({ durationS: 300, rng: seeded(5),
+      tune: { ...tuneFor(s1), speed: VIEW.speed } });
+    const быстро = makeLevel({ durationS: 300, rng: seeded(5), tune: tuneFor(s1) });
+    check(`уровень ${s1 + 1}: скорость не сдвинула расписание`,
+      база.length === быстро.length
+      && база.every((ob, i) => Math.abs(ob.at - быстро[i].at) < 1e-9),
+      'окно решения задано в секундах; скорость меняет метры, а не их');
+  }
+
+  /* ── на любой скорости плита исчезает раньше окна прощения ──
+
+     Метры тут при каждой скорости свои, а время обязано остаться не меньше
+     окна прощения: иначе ребёнок получает приговор, глядя на закрытый проём,
+     — худший класс дефекта проекта. */
+  for (let s1 = 0; s1 <= STEP_MAX; s1++) {
+    const v = tuneFor(s1).speed;
+    check(`уровень ${s1 + 1}: плита исчезает раньше прощения`,
+      (drawNear(v) - O.thickness) / v >= O.lateForgiveMs / 1000 - 1e-9,
+      `${((drawNear(v) - O.thickness) / v).toFixed(3)} с при окне ${O.lateForgiveMs / 1000} с`);
+    check(`уровень ${s1 + 1}: телеграф появляется внутри тумана`,
+      O.signalS * v < VIEW.fogDistance * 0.92,
+      `${(O.signalS * v).toFixed(1)} м при тумане ${VIEW.fogDistance} м`);
+    check(`уровень ${s1 + 1}: окно решения не короче minLeadS`,
+      O.signalS >= O.minLeadS,
+      'расписание в секундах, значит это тождество — но оно обязано быть проверено');
+  }
+
+  /* ── цена перехода не опускается ниже измеренного предела ──
+
+     3.0 с — ИЗМЕРЕННОЕ время перехода ребёнка через коридор, а не настройка.
+     Множитель меньше единицы дал бы кольца, за которыми нельзя успеть, и
+     написался бы он первым делом при следующей правке «ещё чуть труднее». */
+  for (let s1 = 0; s1 <= STEP_MAX; s1++) {
+    check(`уровень ${s1 + 1}: переход не дешевле измеренного`,
+      tuneFor(s1).starSwitchScale >= 1,
+      `${tuneFor(s1).starSwitchScale} — ниже 1.0 кольцо становится недостижимым`);
+  }
+
+  // ── у каждого уровня есть имя ──
+  check('имён столько же, сколько строк в таблице', LEVELS.length === STEP_MAX + 1,
+    `${LEVELS.length} имён на ${STEP_MAX + 1} уровней`);
+  LEVELS.forEach((lv, i) => {
+    check(`уровень ${i + 1} назван`, !!lv.name && !!lv.hint,
+      'уровень без имени — пустая кнопка на экране выбора');
+  });
+
+  /* ── чередование видов не перебивает долю приседов ──
+
+     `kindRunMax` подменяет вид, когда полоса одного тянется слишком долго, и
+     подменяет его ВСЕГДА на присед. Если ручку взять слишком строгой,
+     реализованная доля приседов уедет выше заказанной, то есть ручка молча
+     перебьёт `duckShare`. */
+  for (let s1 = 0; s1 <= STEP_MAX; s1++) {
+    let всего = 0;
+    let приседов = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const lv = makeLevel({ durationS: 300, crouch: true, rng: seeded(seed * 13),
+        tune: tuneFor(s1) });
+      всего += lv.length;
+      приседов += lv.filter((ob) => ob.kind === 'duck').length;
+    }
+    const доля = приседов / всего;
+    check(`уровень ${s1 + 1}: доля приседов не убежала`, доля <= 0.45,
+      `${доля.toFixed(3)} при заказанных ${tuneFor(s1).duckShare}`);
+  }
+
+  /* ── чередование действительно действует ──
+
+     Иначе ручка была бы обещанием: самая длинная полоса одного вида на
+     верхнем уровне обязана быть короче, чем на нижнем, где потолка нет. */
+  {
+    const полоса = (step) => {
+      let worst = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const lv = makeLevel({ durationS: 300, crouch: true, rng: seeded(seed * 29),
+          tune: tuneFor(step) });
+        let run = 0;
+        let last = null;
+        for (const ob of lv) {
+          run = ob.kind === last ? run + 1 : 1;
+          last = ob.kind;
+          worst = Math.max(worst, run);
+        }
+      }
+      return worst;
+    };
+    check('на верхнем уровне полоса одного вида короче',
+      полоса(STEP_MAX) < полоса(0),
+      `${полоса(0)} подряд на первом против ${полоса(STEP_MAX)} на пятом`);
+    check('и укладывается в заказанный потолок',
+      полоса(STEP_MAX) <= tuneFor(STEP_MAX).kindRunMax,
+      `${полоса(STEP_MAX)} при потолке ${tuneFor(STEP_MAX).kindRunMax}`);
+  }
+
+  /* ── боковые стороны на верхнем уровне чередуются каждый раз ── */
+  {
+    let подряд = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const lv = makeLevel({ durationS: 300, crouch: true, rng: seeded(seed * 31),
+        tune: tuneFor(STEP_MAX) });
+      let last = null;
+      let run = 0;
+      for (const ob of lv) {
+        if (ob.kind !== 'side') continue;
+        run = ob.side === last ? run + 1 : 1;
+        last = ob.side;
+        подряд = Math.max(подряд, run);
+      }
+    }
+    check('на верхнем уровне каждое боковое с другой стороны', подряд === 1,
+      `${подряд} подряд с одной стороны при потолке ${tuneFor(STEP_MAX).sameSideMax}`);
+  }
+
+  /* ── ряд колец различается по уровням ──
+
+     Три состояния на пять уровней, и каждое обязано быть видно в числах:
+     доля боковых колец ВНУТРИ серии растёт от нуля к беговым фразам. */
+  {
+    const вСерии = (step) => {
+      const tune = tuneFor(step);
+      let боковых = 0;
+      let всего = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const obstacles = makeLevel({ durationS: 300, rng: seeded(seed * 17), tune });
+        const stars = makeStars({ durationS: 300, obstacles, rng: seeded(seed * 19), tune });
+        /* «В передышке» — тем же определением, что в группе «фразы колец»:
+           промежуток до следующего препятствия не короче передышки. Своё,
+           более грубое определение («ближе половины передышки») я написал
+           первым, и оно дало 19.5% боковых там, где их ноль: внутрь серии
+           попадали кольца, стоящие в самой широкой её части. */
+        const вПередышке = (t) => {
+          let prev = null;
+          for (const ob of obstacles) {
+            if (ob.at > t) return prev === null ? true : ob.at - prev >= tune.breatherS;
+            prev = ob.at;
+          }
+          return true;
+        };
+        for (const st of stars) {
+          if (вПередышке(st.at)) continue;
+          всего++;
+          if (st.side !== 0) боковых++;
+        }
+      }
+      return всего ? боковых / всего : 0;
+    };
+    const спокойный = вСерии(0);
+    const средний = вСерии(2);
+    const беговой = вСерии(STEP_MAX);
+    check('на первом уровне боковых колец в серии нет', спокойный === 0,
+      `${(спокойный * 100).toFixed(1)}% — требование заказчика от 11 октября`);
+    check('на третьем они появляются', средний > спокойный,
+      `${(спокойный * 100).toFixed(1)}% → ${(средний * 100).toFixed(1)}%`);
+    check('на пятом их ещё больше', беговой > средний,
+      `${(средний * 100).toFixed(1)}% → ${(беговой * 100).toFixed(1)}%`);
   }
 
   /* ── кольца от ступени не зависят ──
@@ -2879,15 +3044,18 @@ group('ступень', () => {
       let n = 0;
       for (let seed = 1; seed <= 20; seed++) {
         const obstacles = makeLevel({ durationS: 300, rng: seeded(seed * 3), tune: tuneFor(step) });
-        n += makeStars({ durationS: 300, obstacles, rng: seeded(seed * 11) }).length;
+        n += makeStars({ durationS: 300, obstacles, rng: seeded(seed * 11),
+          tune: tuneFor(step) }).length;
       }
       return n / 20;
     };
-    const низ = колец(0);
-    const верх = колец(STEP_MAX);
-    check('колец на верхней ступени столько же',
-      Math.abs(верх - низ) / низ < 0.05,
-      `${низ.toFixed(1)} против ${верх.toFixed(1)} — иначе рекорды ступеней несравнимы`);
+    const ряд = [];
+    for (let step = 0; step <= STEP_MAX; step++) ряд.push(колец(step));
+    const низ = Math.min(...ряд);
+    const верх = Math.max(...ряд);
+    check('колец на всех пяти уровнях столько же',
+      (верх - низ) / низ < 0.05,
+      `${ряд.map((x) => x.toFixed(1)).join(' / ')} — иначе рекорды уровней несравнимы`);
   }
 });
 
@@ -4404,18 +4572,26 @@ group('бюджет кадра', () => {
   let worstWorld = WORLDS.hills.id;
   for (const мир of Object.keys(WORLDS).filter((w) => worldReady(w))) {
   for (const seed of [1, 7, 13, 29]) {
-   for (const step of [0, STEP_MAX]) {
+   /* По ВСЕМ пяти уровням. Прежде считались только края, и это годилось,
+      пока уровни различались тремя числами. Теперь у трёх верхних своя
+      скорость, своё чередование и свой ряд колец — то есть свой СОСТАВ
+      кадра, — и мерить бюджет по краям значило бы не видеть середины. */
+   for (let step = 0; step <= STEP_MAX; step++) {
     const rng = seeded(seed);
-    const obstacles = makeLevel({ durationS: 300, rng, tune: tuneFor(step) });
-    const stars = makeStars({ durationS: 300, obstacles, rng });
+    const tune = tuneFor(step);
+    const obstacles = makeLevel({ durationS: 300, rng, tune });
+    const stars = makeStars({ durationS: 300, obstacles, rng, tune });
     /* Мир и ПРИЗЫ — как в игре. Без `prizes` счётчик мерил бы обочину без
        цветущего приза, то есть состав, в который ребёнок с полной копилкой
        уже не играет. Ровно эта дыра была у искр на этапе 1: бюджет считал
        приз, которого не видит. */
-    const decor = makeDecor({ durationS: 300, rng, world: мир, prizes });
+    const decor = makeDecor({ durationS: 300, rng, world: мир, prizes, speed: tune.speed });
 
     const { canvas, fills } = recorder();
-    const view = createView(canvas);
+    /* Скорость — та же, с которой построено расписание. Без неё вид считал
+       бы глубины по базовой скорости, то есть мерил бы кадр, которого на
+       быстром уровне не бывает. */
+    const view = createView(canvas, { speed: tune.speed });
 
     // Шаг 0.25 с по всему забегу: кадры между ними отличаются сдвигом камеры,
     // а не составом, и на число заливок это не влияет.
@@ -5313,7 +5489,10 @@ group('звёзды и препятствия', () => {
      эталоном. */
   const ПОТОЛОК_КОЛЕЦ = 101;
   const счёт = [];
-  for (const step of [0, STEP_MAX]) {
+  /* По ВСЕМ пяти уровням, а не по краям. Прежде перебирались только нижний
+     и верхний: с тремя средними, у каждого из которых теперь свой ряд колец
+     и своя скорость, это значило бы не проверять три пятых игры. */
+  for (let step = 0; step <= STEP_MAX; step++) {
   for (const crouch of [true, false]) {
     let bad = 0;
     let total = 0;
@@ -5326,7 +5505,13 @@ group('звёзды и препятствия', () => {
          который виден только когда две случайности расходятся, такой перебор
          пропустил бы. */
       const obstacles = makeLevel({ durationS: 300, crouch, rng: seeded(seed * 7919), tune: tuneFor(step) });
-      const stars = makeStars({ durationS: 300, obstacles, rng: seeded(seed * 104729) });
+      /* `tune` обязателен и ЗДЕСЬ. Без него ряд строился умолчаниями `VIEW`,
+         то есть компенсатор `starGapS` своего уровня не применялся вовсе, и
+         проверка «колец столько же» сравнивала два ряда, построенных по
+         одним и тем же числам, — то есть не проверяла ничего. Поймано
+         18 октября, когда у каждого уровня появился свой компенсатор. */
+      const stars = makeStars({ durationS: 300, obstacles, rng: seeded(seed * 104729),
+        tune: tuneFor(step) });
       total += stars.length;
       for (const s of stars) {
         if (starAllowed(s.at, s.side, obstacles)) continue;
@@ -5423,18 +5608,27 @@ group('звёзды и препятствия', () => {
      там им попросту негде встать. */
   const ст0 = tuneFor(0);
   const ст1 = tuneFor(1);
+  /* Спокойный ряд держится теперь на ДВУХ нижних уровнях, а не на одном:
+     второй отличается от первого размахом и ценой перехода, но кольцо у
+     препятствия на нём по-прежнему не ставится. Второй язык (кольца)
+     добавляется к первому (уклонение) отдельным шагом — так и задумано. */
+  const ст2 = tuneFor(2);
   check('ступень 0: у препятствия тихо и на открытой стороне',
     !starAllowed(30, -1, right, ст0) && !starAllowed(30, 1, right, ст0)
     && !starAllowed(30, 0, right, ст0),
     'сбор в уклонении — это два дела разом, а ступень 0 первая игра ребёнка');
-  check('а на ступени 1 открытая сторона снова награда',
-    starAllowed(30, -1, right, ст1),
-    'кольцо за правильный уход — хорошая мысль, её отменять только на нулевой');
-  check('ступень 0: переход дороже измеренного впритык',
-    ст0.starSwitchScale > 1 && ст1.starSwitchScale === 1,
-    `${ст0.starSwitchScale} против ${ст1.starSwitchScale}`);
-  check('и шаг ряда на нулевой свой — это компенсатор потолка колец',
-    ст0.starGapS !== ст1.starGapS,
+  check('и на втором уровне тоже тихо',
+    !starAllowed(30, -1, right, ст1),
+    'второй уровень отличается размахом и ценой перехода, а не кольцом у препятствия');
+  check('а на третьем открытая сторона снова награда',
+    starAllowed(30, -1, right, ст2),
+    'кольцо за правильный уход — хорошая мысль, её отменять только на двух нижних');
+  check('переход дешевеет ступенями, но не ниже измеренного',
+    ст0.starSwitchScale > ст1.starSwitchScale && ст1.starSwitchScale > ст2.starSwitchScale
+    && ст2.starSwitchScale === 1,
+    `${ст0.starSwitchScale} → ${ст1.starSwitchScale} → ${ст2.starSwitchScale}`);
+  check('и шаг ряда у каждого уровня свой — это компенсатор потолка колец',
+    new Set([ст0, ст1, ст2].map((t) => t.starGapS)).size === 3,
     'без него спокойный ряд стоил бы ребёнку колец, а значит и рекорда');
 
   /* Главное из трёх — и проверяется оно на РАССТАВЛЕННОМ ряде, а не на
@@ -6560,6 +6754,66 @@ group('разбор журнала', () => {
   ]));
   check('«держится» тоже печатается', /ступень: 1 держится/.test(format(держится)),
     'молчание здесь означало бы, что код не выполнился');
+
+  /* ── словарь читателя шире словаря писателя ──
+
+     Автоматический переход отменён 18 октября, и игра пишет теперь только
+     `chosen` и `fake`. Но `easy`, `hard` и `held` стоят во ВСЕХ журналах,
+     снятых до того дня, включая тот, которым отмена и обоснована: три
+     проверки выше читают ровно их. Перестать понимать старые слова значило
+     бы потерять сравнимость там, где она доказывает необходимость правки, —
+     поэтому разбор понимает пять слов, а пишутся два. */
+  const выбран = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 3,
+      tune: { blockFrac: 0.455, duckShare: 0.34, seriesMin: 4, seriesMax: 6, breatherS: 9.9,
+              speed: 2.3 } },
+    { t: 300000, type: 'run.finish', stars: 95, score: 95, starsTotal: 100, hits: 0, durationS: 300 },
+    { t: 300100, type: 'difficulty', from: 3, to: 3, why: 'chosen', finished: true,
+      faced: 43, late: 0, hits: 0, grace: 0, pauses: 0, ringPct: 95 },
+  ]));
+  check('скорость уровня напечатана, когда она в журнале есть',
+    /скорость 2\.3/.test(format(выбран)),
+    'уровни различаются и ею, значит два журнала без неё неразличимы');
+  check('а у журнала без неё не выдумывается',
+    !/скорость/.test(format(держится)),
+    'подставить базовые 2.0 значило бы соврать числом: та сборка о ней не знала');
+  check('выбранный рукой уровень назван своим словом',
+    /ступень: 3 — выбран вручную/.test(format(выбран)),
+    '`from === to` без слова через месяц прочитается как «автоматика сломалась»');
+  const синтетика = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 0, tune: null },
+    { t: 300000, type: 'run.finish', stars: 10, score: 10, starsTotal: 100, hits: 9, durationS: 300 },
+    { t: 300100, type: 'difficulty', from: 0, to: 0, why: 'fake', finished: true,
+      faced: 43, late: 9, hits: 9, grace: 0, pauses: 0, ringPct: 10 },
+  ]));
+  check('синтетика названа синтетикой',
+    /ступень: 0 — синтетика/.test(format(синтетика)),
+    'забег, в котором никто не двигался, не должен выглядеть забегом ребёнка');
+
+  /* ── совет вместо правила ──
+
+     Пороги те же, что двигали ступень, и асимметрия та же: «трудно» по трём
+     «не успел», «перерос» — только по безупречному забегу. Адресат другой:
+     решение принимает взрослый, и числа печатаются ему. */
+  const трудно = report(сессия([
+    { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 2, tune: null },
+    { t: 300000, type: 'run.finish', stars: 70, score: 70, starsTotal: 100, hits: 3, durationS: 300 },
+    { t: 300100, type: 'difficulty', from: 2, to: 2, why: 'chosen', finished: true,
+      faced: 43, late: 3, hits: 3, grace: 0, pauses: 0, ringPct: 70 },
+  ]));
+  check('разбор советует уровень ниже', /ребёнку трудно: не успел 3 раза из 43/.test(format(трудно)),
+    'это и есть то, во что превратилось правило понижения');
+  check('и советует уровень выше по безупречному забегу',
+    /перерос эту сложность/.test(format(выбран)),
+    'пороги взяты из DIFFICULTY, а не переписаны литералами');
+  check('а по забегу с паузой — не советует',
+    !/перерос/.test(format(report(сессия([
+      { t: 0, type: 'run.start', durationS: 300, obstacles: 43, stars: 100, step: 3, tune: null },
+      { t: 300000, type: 'run.finish', stars: 95, score: 95, starsTotal: 100, hits: 0, durationS: 300 },
+      { t: 300100, type: 'difficulty', from: 3, to: 3, why: 'chosen', finished: true,
+        faced: 43, late: 0, hits: 0, grace: 0, pauses: 2, ringPct: 95 },
+    ])))),
+    'усложнять по журналу с дефектами нельзя — это правило пережило саму автоматику');
 
   /* А журнал ДО тихой адаптации не получает ступень нулевой: это выдумка про
      игру, которой тогда не было. То же правило, что у panSpan и очков. */

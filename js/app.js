@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/difficulty.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
@@ -24,6 +24,7 @@ import {
   TROPHY, activeWorld, levelAt, nextAt, prizeName, unlockedAt, worldsAt,
 } from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
+import { LEVELS, clampStep, STEP_MAX } from './difficulty.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -298,7 +299,7 @@ addEventListener('fullscreenchange', updateStatus);
 // ─────────────────────────────── экраны ───────────────────────────────
 
 const SCREENS = ['gate', 'menu', 'run', 'soon', 'parent', 'logs', 'players', 'records', 'name',
-  'trophy', 'worlds'];
+  'trophy', 'worlds', 'levels'];
 
 /* Телефонные экраны держат в руке — они вертикальные. Забег уходит на
    телевизор и обязан быть горизонтальным. Ориентация меняется вместе с
@@ -308,7 +309,7 @@ const ORIENTATION = {
   gate: 'portrait', menu: 'portrait', soon: 'portrait',
   parent: 'portrait', logs: 'portrait',
   players: 'portrait', records: 'portrait', name: 'portrait',
-  trophy: 'portrait', worlds: 'portrait',
+  trophy: 'portrait', worlds: 'portrait', levels: 'portrait',
   run: 'landscape',
 };
 
@@ -318,7 +319,8 @@ const ORIENTATION = {
    свой выход, и он знает, куда именно. Экран имени вызывается и из меню
    игроков, и прямо с финиша — поэтому цель возврата у него своя переменная, а
    не общий previous, который к моменту возврата успел бы стать другим. */
-const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy', 'worlds']);
+const ADULT = new Set(['parent', 'logs', 'players', 'records', 'name', 'trophy', 'worlds',
+  'levels']);
 let previous = 'menu';
 
 let currentScreen = null;
@@ -988,6 +990,11 @@ async function startRun() {
     world,
     level: levelAt(bankNow),
     prizes: unlockedAt(bankNow),
+    /* Уровень сложности едет СЮДА, а не читается внутри забега. Так пришлось
+       сделать, когда скорость стала различаться по уровням: вид получает её
+       при создании. Заодно дирижёр забега перестал знать про хранилище и в
+       этой части — ровно как он не знает его про мир и призы. */
+    step: players.step(),
   });
   renderRunHud({ stage: 'setup', score: 0 });
   await training.start({ source: want.source, script: want.script });
@@ -1288,6 +1295,7 @@ function renderWho() {
      читается как три чего угодно. Спек называл кнопку именно так. */
   $('trophyLv').textContent = `уровень ${levelAt(players.bank())}`;
   refreshMenuWorld();
+  refreshMenuLevel();
 }
 
 // ── экран «кто играет» ──
@@ -1555,6 +1563,46 @@ function refreshMenuWorld() {
 
 $('goWorld').onclick = () => { renderWorlds(); show('worlds'); };
 $('worldsBack').onclick = BACK.worlds = () => show('menu');
+
+/* Выбор сложности — экран-близнец выбора мира, и это не совпадение формы:
+   ребёнок уже умеет им пользоваться, а взрослый находит его там же.
+
+   Открыты ВСЕ ПЯТЬ сразу, без порога по кольцам, и у кнопки поэтому два
+   состояния, а не три. Запереть сложность значило бы вернуть машину,
+   решающую за ребёнка, — ровно то, что правка 18 октября убирает, — и
+   сделать платным путь ВНИЗ. А он обязан быть открыт всегда: «слишком
+   трудно» здесь худший класс дефекта, «слишком легко» всего лишь скучно.
+
+   Кубок остаётся при своём: он открывает МИРЫ. Две разные вещи за одним
+   порогом сделали бы непонятными обе («почему, набрав колец, игра стала
+   труднее?»). */
+function renderLevels() {
+  const выбран = clampStep(players.step());
+  const list = $('levelList');
+  list.innerHTML = '';
+  LEVELS.forEach((lv, i) => {
+    const b = document.createElement('button');
+    b.innerHTML = `${i + 1} · ${lv.name}<small>${lv.hint}</small>`;
+    if (i === выбран) b.className = 'chosen';
+    b.onclick = () => {
+      players.setStep(i);
+      renderLevels();
+      refreshMenuLevel();
+    };
+    list.appendChild(b);
+  });
+}
+
+/* Номер И слово на кнопке меню. Номер взрослому — ему сравнивать с журналом,
+   где уровень едет числом; слово ребёнку. Прецедент прямой: «Кубок: уровень
+   3» — голое число в столбце соседних кнопок читается как что угодно. */
+function refreshMenuLevel() {
+  const i = clampStep(players.step());
+  $('levelV').textContent = `${i + 1} · ${LEVELS[i]?.name ?? LEVELS[0].name}`;
+}
+
+$('goLevel').onclick = () => { renderLevels(); show('levels'); };
+$('levelsBack').onclick = BACK.levels = () => show('menu');
 
 $('goTrophy').onclick = () => { renderTrophy(); show('trophy'); };
 $('trophyBack').onclick = BACK.trophy = () => show('menu');

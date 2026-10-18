@@ -16,7 +16,7 @@
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
 //
-// Разбор: docs/identity-and-icons.md, docs/obstacles.md, docs/prizes-and-cost.md, docs/rings.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
+// Разбор: docs/difficulty.md, docs/identity-and-icons.md, docs/obstacles.md, docs/prizes-and-cost.md, docs/rings.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
@@ -157,7 +157,17 @@ export const horizonY = (cam) => HORIZON + cam.pitch;
  * самого начала: арт собирается отдельным прогоном, и забег не имеет права от
  * него зависеть.
  */
-export function createView(canvas, { backdrops = null } = {}) {
+export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}) {
+  /* СКОРОСТЬ ЗАБЕГА приходит снаружи, а не берётся из `VIEW.speed`.
+
+     Причина — уровень сложности: с 18 октября скорость растёт на третьем и
+     пятом. Жить ей в модуле нельзя было бы, будь это накопительное
+     состояние, но это не оно: число приходит один раз при создании вида и
+     больше не меняется — тот же приём, которым сюда приходит `backdrops`.
+
+     Умолчание `VIEW.speed` оставлено нарочно: все прежние вызовы (и тесты, и
+     `tools/replay.mjs`) продолжают значить ровно то же, что значили. */
+  const РЕЙС = speed > 0 ? speed : VIEW.speed;
   const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   canvas.width = VIEW.width;
   canvas.height = VIEW.height;
@@ -283,7 +293,7 @@ export function createView(canvas, { backdrops = null } = {}) {
       // Рисуется до препятствий: ворота стоят дальше них и не должны лезть
       // поверх того, что ближе.
       if (finishIn != null && finishIn <= FIN.visibleS) {
-        drawFinish(ctx, cam, Math.max(finishIn, 0) * VIEW.speed, { project, quad, pulse });
+        drawFinish(ctx, cam, Math.max(finishIn, 0) * РЕЙС, { project, quad, pulse, speed: РЕЙС });
       }
 
       /* ── кольца и препятствия: порядок маляра ──
@@ -298,7 +308,7 @@ export function createView(canvas, { backdrops = null } = {}) {
          Разрез — глубина самого близкого нарисованного препятствия. Линия по
          полу и последний зов остаются в конце: они у самого глаза и ниже
          колец (starY 0.55), спорить им не с чем. */
-      const zCut = nearestObstacleDepth(obstacles, elapsed, far);
+      const zCut = nearestObstacleDepth(obstacles, elapsed, far, РЕЙС);
       drawStars(stars, zCut, far);
 
       /* «Стоит на месте» нужно бадникам: они икают, пока ребёнок не двигается.
@@ -309,7 +319,8 @@ export function createView(canvas, { backdrops = null } = {}) {
          центр видел. Порог берётся тот же, которым сигналы отличают дрейф от
          движения, чтобы «не двигается» значило одно и то же во всей игре. */
       const still = Math.abs(speed) < S.driftSpeedMax;
-      drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse, still, mscale });
+      drawObstacles(ctx, cam, obstacles, elapsed,
+        { project, quad, far, safe, pulse, still, mscale, speed: РЕЙС });
 
       // Кольца ближе препятствия — поверх него, как и было задумано.
       drawStars(stars, 0, zCut);
@@ -1180,7 +1191,8 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
  * задача оценки расстояния подменяется задачей ожидания ритма, а ритм в этом
  * возрасте уже освоен.
  */
-function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe, pulse, still, mscale }) {
+function drawObstacles(ctx, cam, obstacles, elapsed,
+  { project, quad, far, safe, pulse, still, mscale, speed = VIEW.speed }) {
   for (const ob of obstacles) {
     /* Край берётся У САМОГО препятствия: с тихой адаптацией сложности он
        зависит от ступени, на которой построен уровень, а не от текущего
@@ -1191,10 +1203,10 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
        режется проход по кольцам, и две копии разошлись бы — кольцо снова
        начало бы просвечивать сквозь плиту. Отсечения («прошли», «дальше
        телеграфа», «уехало за спину») живут там же. */
-    const depth = obstacleDepth(ob, elapsed, far);
+    const depth = obstacleDepth(ob, elapsed, far, speed);
     if (depth == null) continue;
     const dt = ob.at - elapsed;          // секунд до прихода
-    const zRaw = dt * VIEW.speed;
+    const zRaw = dt * speed;
     const z = depth;
 
     /* Метка в глубине коридора: крупная заливка, а не рамка. Тонкий контур на
@@ -1234,7 +1246,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed, { project, quad, far, safe,
       continue;
     }
 
-    const zBack = Math.max(zRaw + O.thickness, O.drawNearM + 0.02);
+    const zBack = Math.max(zRaw + O.thickness, drawNear(speed) + 0.02);
 
     // Проём заливается ярким: ребёнку надо показать, куда идти, а не только
     // куда нельзя.
@@ -1790,7 +1802,7 @@ function drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, stil
  * нельзя. На подходе перекладина мигает: это единственное место в игре, где
  * мигание уместно — оно обещает конец, а не требует реакции.
  */
-function drawFinish(ctx, cam, z, { project, quad, pulse }) {
+function drawFinish(ctx, cam, z, { project, quad, pulse, speed = VIEW.speed }) {
   if (z < 0.4) return;
   const w = FIN.postWidth;
   const h = FIN.gateHeight;
@@ -1822,7 +1834,7 @@ function drawFinish(ctx, cam, z, { project, quad, pulse }) {
 
   const sx = HALF * 0.62;
   const flop = z < 2.2;
-  const spin = flop ? 1 : Math.abs(Math.cos(2 * Math.PI * z * MOTION.signSpinHz / VIEW.speed));
+  const spin = flop ? 1 : Math.abs(Math.cos(2 * Math.PI * z * MOTION.signSpinHz / speed));
   const bw = 0.26 * Math.max(0.14, spin);
   const by = flop ? 0.14 : 0.78;
   const bh = flop ? 0.12 : 0.44;
@@ -2018,7 +2030,7 @@ export function badnikJump(t, phase = 0, scale = 1) {
  * игровую полосу, не даёт очков. Проверяется группой «декорации».
  */
 export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills',
-                            prizes = {} } = {}) {
+                            prizes = {}, speed = VIEW.speed } = {}) {
   /* Виды берутся из ЗОНЫ, в которую элемент попадает по времени, а зона — из
      той же `zoneAt`, по которой выбирается палитра кадра. Один источник: две
      копии расписания разошлись бы, и кактус оказался бы в зелёной зоне. */
@@ -2055,7 +2067,10 @@ export function makeDecor({ durationS = 300, rng = Math.random, world = 'hills',
       x: side * (HALF + (k.out ?? DECOR.outM)),
       y: WALL,                 // основание — ровно кромка обрыва
       h: k.height,
-      z: t * VIEW.speed,
+      /* Глубина = время × скорость забега. Расписание обочины задано в
+         СЕКУНДАХ, поэтому её ритм на быстрых уровнях не меняется ни на
+         секунду — меняется только шаг в метрах. */
+      z: t * speed,
       at: t,
       phase: rng(),
     });
@@ -2088,20 +2103,28 @@ export const obstacleEdge = (blockFrac = O.blockFrac) => Math.abs(camera(1, 0).x
  * весь экран. Логика столкновения при этом продолжает работать, она смотрит
  * на время, а не на пиксели.
  */
-export function obstacleDepth(ob, elapsed, far = VIEW.fogDistance) {
+/** Метры, ближе которых препятствие не рисуется. Выводятся из времени: при
+    скорости 2.0 м/с это прежние 1.4 м. Единственный владелец — здесь. */
+export function drawNear(speed = VIEW.speed) {
+  return O.thickness + O.drawNearS * speed;
+}
+
+export function obstacleDepth(ob, elapsed, far = VIEW.fogDistance, speed = VIEW.speed) {
   if (!ob || ob.passed) return null;
   const dt = ob.at - elapsed;
   if (dt > O.signalS) return null;
-  const zRaw = dt * VIEW.speed;
-  if (zRaw + O.thickness < O.drawNearM) return null;
-  return dt > O.visibleS ? far * 0.92 : Math.max(zRaw, O.drawNearM);
+  const zRaw = dt * speed;
+  const ближе = drawNear(speed);
+  if (zRaw + O.thickness < ближе) return null;
+  return dt > O.visibleS ? far * 0.92 : Math.max(zRaw, ближе);
 }
 
 /** Глубина самого близкого нарисованного препятствия; Infinity — ни одного. */
-export function nearestObstacleDepth(obstacles = [], elapsed = 0, far = VIEW.fogDistance) {
+export function nearestObstacleDepth(obstacles = [], elapsed = 0, far = VIEW.fogDistance,
+  speed = VIEW.speed) {
   let cut = Infinity;
   for (const ob of obstacles) {
-    const d = obstacleDepth(ob, elapsed, far);
+    const d = obstacleDepth(ob, elapsed, far, speed);
     if (d != null && d < cut) cut = d;
   }
   return cut;
@@ -2165,6 +2188,11 @@ const STAR_TUNE = {
   starSwitchScale: VIEW.starSwitchScale,
   starGapS: VIEW.starGapS,
   breatherS: O.breatherS,
+  /* Словарь фраз ВНУТРИ серии. Прежде его выбирал `starBesideObstacle` —
+     тот же флаг, что управляет запретным окном открытой стороны. Два разных
+     решения на одном булеве нельзя было разложить по пяти уровням: третьему
+     нужно кольцо у препятствия и спокойный ряд, пятому — беговой. */
+  ringsInSeries: 'calm',
 };
 
 /**
@@ -2246,7 +2274,8 @@ export function starAllowed(t, side, obstacles, tune = STAR_TUNE) {
  * вплотную к препятствиям. Умолчание — пустой список — существует для тестов
  * и для сравнения «сколько колец было бы без развязки».
  */
-export function makeStars({ durationS = 300, obstacles = [], rng = Math.random, tune = STAR_TUNE } = {}) {
+export function makeStars({ durationS = 300, obstacles = [], rng = Math.random,
+                            tune = STAR_TUNE, speed = tune.speed || VIEW.speed } = {}) {
   /* Стороны набираются ФРАЗАМИ, а не броском на каждое кольцо.
 
      Зачем. Независимые броски дают ряд без замысла: собирать приходится то,
@@ -2353,8 +2382,9 @@ export function makeStars({ durationS = 300, obstacles = [], rng = Math.random, 
     if (!очередь.length) { хвост = последняя; подрядХвоста = подрядПоставленных; }
     while (!очередь.length) {
       фразаВПередышке = вПередышке(t);
-      const набор = фразаВПередышке ? БЕГОВЫЕ
-        : (tune.starBesideObstacle ? СПОКОЙНЫЕ : В_СЕРИИ);
+      const вСерии = tune.ringsInSeries ?? 'calm';
+      const набор = фразаВПередышке || вСерии === 'run' ? БЕГОВЫЕ
+        : (вСерии === 'calm' ? СПОКОЙНЫЕ : В_СЕРИИ);
       for (let side of набор[Math.floor(rng() * набор.length)](ведущая)) {
         if (side !== 0 && side === хвост && подрядХвоста >= 2) side = -side;
         подрядХвоста = side !== 0 && side === хвост ? подрядХвоста + 1 : 1;
@@ -2399,7 +2429,7 @@ export function makeStars({ durationS = 300, obstacles = [], rng = Math.random, 
      секунды вперёд — замерено, что так в серию попадало 15.3% боковых колец
      при заявленном нуле. */
   const годится = (t, side) => starAllowed(t, side, obstacles, tune)
-    && (tune.starBesideObstacle || side === 0 || вПередышке(t));
+    && ((tune.ringsInSeries ?? 'calm') !== 'centre' || side === 0 || вПередышке(t));
 
   /* Отодвинуть кольцо от запретных окон. СДВИГ, а не выброс: ряд колец не
      должен редеть там, где и без того напряжённо.
@@ -2517,7 +2547,7 @@ export function makeStars({ durationS = 300, obstacles = [], rng = Math.random, 
     }
     stars.push({
       x: side * HALF * VIEW.starX,
-      z: t * VIEW.speed,
+      z: t * speed,
       side,
       at: t,
       taken: false,
