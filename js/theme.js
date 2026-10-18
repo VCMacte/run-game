@@ -93,6 +93,7 @@ export const THEME = {
   greenHill: {
     id: 'greenHill',
     name: 'Зелёные холмы',
+    skyMotif: 'clouds',
     ...DECISION,
 
     // ── фон ──
@@ -168,6 +169,11 @@ export const THEME = {
        ниже проёма на GAP_GUARD. В тёмных зонах птица светлее неба, в
        светлых темнее — иначе она пропадает ровно там, где летит. */
     buddy: '#4a3b2a',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2f7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#7d93a6',
+    drift: '#9fb3c0', crystal: '#6a74b8', shard: '#5f6bb0',
     decor: {
       kinds: [
         /* `bloomWeight` — вес при открытом призе «цветущая обочина» (уровень
@@ -190,6 +196,7 @@ export const THEME = {
   sunsetDunes: {
     id: 'sunsetDunes',
     name: 'Закатные дюны',
+    skyMotif: 'clouds',
     ...DECISION,
 
     sky: '#b4593f',
@@ -230,6 +237,11 @@ export const THEME = {
        пропадала. Поймано ревью; геометрия сейчас её туда не пускает, но
        растр неба рисует свои горы где угодно, а растр из node не проверить. */
     buddy: '#1e120c',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2f6a58', coral: '#b55a80', anemone: '#9a4a6e', spire: '#6f7f94',
+    drift: '#8f9fae', crystal: '#5f68a8', shard: '#55609e',
     decor: {
       kinds: [
         { kind: 'cactus', weight: 0.40, bloomWeight: 0.30, height: 1.6, out: 0.45 },
@@ -258,6 +270,7 @@ export const THEME = {
   nightHills: {
     id: 'nightHills',
     name: 'Ночные холмы',
+    skyMotif: 'night',
     /* Небо этой зоны набирается звёздами, а не облаками, и флаг стоит ЗДЕСЬ, а
        не в `js/view.js` по имени зоны: «чем набрано небо» — свойство зоны, из
        того же ряда, что `decor`. Проверив имя в отрисовке, мы получили бы
@@ -324,6 +337,11 @@ export const THEME = {
     shade: '#0b0d14',
 
     buddy: '#6a6d8c',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#1e4a3c', coral: '#6a3a50', anemone: '#5a3048', spire: '#43566a',
+    drift: '#52657a', crystal: '#3f4878', shard: '#39416c',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
@@ -361,6 +379,7 @@ export const THEME = {
   iceMorning: {
     id: 'iceMorning',
     name: 'Морозное утро',
+    skyMotif: 'clouds',
     ...DECISION,
     sky: '#6f9fc8', skyLow: '#a8c6dc', hills: '#8fa6bb', cloud: '#c3d6e4',
     starSky: '#c2d6e6', grass: '#b9cfdd', grassDark: '#93aec1',
@@ -377,6 +396,11 @@ export const THEME = {
     badnik: '#3d3456', badnikMouth: '#231d33',
     spike: '#9aa7b2', critter: '#8f7a5f', shade: '#0b0d14',
     buddy: '#4e606e',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#3f8a74', coral: '#c97aa0', anemone: '#b06a90', spire: '#8aa2b6',
+    drift: '#bdd1de', crystal: '#7a84c4', shard: '#6f79ba',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.42, bloomWeight: 0.32, height: 2.4 },
@@ -390,6 +414,7 @@ export const THEME = {
   snowField: {
     id: 'snowField',
     name: 'Снежное поле',
+    skyMotif: 'clouds',
     ...DECISION,
     /* Потолок растра СВОЙ, хотя зона дневная. Её собственное небо стоит на
        0.693 при потолке фона 0.704 — запаса 0.011, — а WebP выталкивает
@@ -412,12 +437,17 @@ export const THEME = {
     badnik: '#433a5e', badnikMouth: '#262036',
     spike: '#a6b3be', critter: '#8f7a5f', shade: '#0b0d14',
     buddy: '#5c6d79',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#4a9480', coral: '#d08cae', anemone: '#b87a9c', spire: '#7d93a6',
+    drift: '#c8dae6', crystal: '#8089c8', shard: '#757ebe',
     decor: {
       kinds: [
         { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
         { kind: 'post', weight: 0.32, height: 2.6 },
-        { kind: 'spruce', weight: 0.28, bloomWeight: 0.20, height: 2.4 },
-        { kind: 'bush', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
+        { kind: 'spire', weight: 0.28, bloomWeight: 0.20, height: 2.4, out: 0.55 },
+        { kind: 'drift', weight: 0, bloomWeight: 0.08, height: 0.6, out: 0.10 },
       ],
     },
   },
@@ -429,21 +459,32 @@ export const THEME = {
      Здесь стояло «белое сияние оказалось бы светлее всего в её палитре» — и
      это было обоснование элементом, которого в проекте не существовало:
      полоса рисовала только звёзды и луну. Поймано ревью. Сияние теперь есть
-     (`skyAurora`), и ленты его нарочно приглушены — 0.09–0.18, заметно ниже
-     зажима, чтобы он их не трогал. */
+     (мотив `aurora`), и ленты его нарочно приглушены — 0.09–0.18, заметно
+     ниже зажима, чтобы он их не трогал. */
   auroraNight: {
     id: 'auroraNight',
     name: 'Ночь с сиянием',
     ...DECISION,
     skyStars: true,
-    /* Сияние. Флаг, как `skyStars`: полоса рисует по нему ленты над
-       горизонтом, и без него зона была бы ночными холмами в другом синем —
-       то есть имя «Ночь с сиянием» обещало бы несуществующее. Поймано ревью.
+    /* Мотив неба. Здесь стояло `skyAurora: true` с подписью «флаг, как
+       `skyStars`», и подпись была неверной сравнением: `skyStars` читают
+       ОБА — и генератор полосы, и запасной векторный путь `drawSky`, — а
+       сияние не читал никто, кроме полосы. Асимметрия законна (сияние на
+       векторном пути стоило бы заливок, а путь этот существует ради того,
+       чтобы забег шёл вовсе без арта), но называть одно другим нельзя.
+
+       Булев флаг отменён и по второй причине, и она дороже: он описывал
+       ОДНУ добавку к общему шаблону, а шаблона было два — «звёзды» и
+       «облака со стволами». Третьего не предполагалось, и потому заросли
+       ламинарии получили облака с пальмами, а светящаяся бездна — полярное
+       сияние и луну ПОД ВОДОЙ. Мотив называет композицию целиком, и зона без
+       мотива роняет проверку: умолчание «облака и стволы» и есть тот
+       механизм, которым пальмы попали на дно.
 
        Ленты рисуются ПРИГЛУШЁННЫМИ нарочно: зажим растра здесь 0.30, и
        яркое сияние он погасил бы до серой кляксы — ровно так и вышло бы с
        белым облаком, ради чего зажим и стоит. */
-    skyAurora: true,
+    skyMotif: 'aurora',
     skyClampTo: 0.30,
     sky: '#0e1c33', skyLow: '#1b3350', hills: '#22384f', cloud: '#2d4a66',
     starSky: '#c2d9ec', grass: '#2b4257', grassDark: '#33506a',
@@ -475,12 +516,17 @@ export const THEME = {
        0.209. Поймано ревью; контракт эти пары не проверял. */
     spike: '#96a3af', critter: '#9a8463', shade: '#0b0d14',
     buddy: '#8496a6',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#235a48', coral: '#70405c', anemone: '#5e3650', spire: '#6f90a8',
+    drift: '#597f96', crystal: '#454e80', shard: '#3e4774',
     decor: {
       kinds: [
-        { kind: 'spruce', weight: 0.46, bloomWeight: 0.36, height: 2.4 },
+        { kind: 'spire', weight: 0.46, bloomWeight: 0.36, height: 2.4, out: 0.55 },
         { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
         { kind: 'post', weight: 0.28, height: 2.6 },
-        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+        { kind: 'drift', weight: 0, bloomWeight: 0.10, height: 0.6, out: 0.10 },
         // Светлячки — приз уровня 7; в ледяной ночи они тоже уместны.
         { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
       ],
@@ -502,6 +548,7 @@ export const THEME = {
 reefShallow: {
     id: 'reefShallow',
     name: 'Мелководье',
+    skyMotif: 'shallows',
     ...DECISION,
     sky: '#4fb3c4', skyLow: '#8fd4dc', hills: '#3f8f9e', cloud: '#a9dde3',
     starSky: '#b0dde4', grass: '#55a88f', grassDark: '#2f7a66', earthL: '#3f7a84',
@@ -511,6 +558,11 @@ reefShallow: {
     postMark: '#bfe0e4', cactus: '#4f9e86', rock: '#86a8ae', spruce: '#2f6b5a',
     firefly: '#6b7a3a', buddy: '#1f4a52', badnik: '#5a2f4a', badnikMouth: '#2e1726',
     spike: '#c9dde0', critter: '#e0a85f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2f7a6a', coral: '#e07aa8', anemone: '#b85c96', spire: '#8aa6b4',
+    drift: '#b7cdd6', crystal: '#6f79be', shard: '#646eb4',
     decor: {
       kinds: [
         /* Сумма правимых весов не меняется (0.62), и это нужно НЕ ВЕЗДЕ, а
@@ -525,9 +577,9 @@ reefShallow: {
            добавить туда камень, и ловушка вернётся, поэтому правило проще
            держать везде. Уточнено по ревью. */
         { kind: 'rock', weight: 0.38, height: 0.6, out: 0.10 },
-        { kind: 'post', weight: 0.30, bloomWeight: 0.10, height: 2.6 },
-        { kind: 'bush', weight: 0.22, bloomWeight: 0.32, height: 0.7, out: 0.12 },
-        { kind: 'flower', weight: 0.10, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+        { kind: 'kelp', weight: 0.30, bloomWeight: 0.10, height: 2.4, out: 0.55 },
+        { kind: 'coral', weight: 0.22, bloomWeight: 0.32, height: 1.0, out: 0.30 },
+        { kind: 'anemone', weight: 0.10, bloomWeight: 0.20, height: 0.7, out: 0.12 },
       ],
     },
   },
@@ -536,6 +588,16 @@ reefShallow: {
   kelpDeep: {
     id: 'kelpDeep',
     name: 'Заросли',
+    skyMotif: 'kelp',
+    /* Потолок растра ВЫБРАН, а не унаследован, и это разворот.
+
+       Здесь не было поля вовсе, а разбор говорил: потолок 0.704 у зарослей
+       «унаследован, а не выбран», и выбирать это число стоит тогда, когда
+       будет что им мерить. 18 октября стало: растр зоны пересобран своим
+       мотивом — толща воды, лучи света, стая рыб, — и самое светлое в нём
+       теперь ЛУЧИ, а не перекрашенные облака. 0.45 взят по прецеденту пояса
+       комет: он держит лучи ниже дневного порога и не гасит их в серое. */
+    skyClampTo: 0.45,
     ...DECISION,
     sky: '#1d5c66', skyLow: '#2f7f86', hills: '#1a4a52', cloud: '#3f8f94',
     starSky: '#9ecfd4', grass: '#246b5c', grassDark: '#0f2f28', earthL: '#255259',
@@ -545,12 +607,17 @@ reefShallow: {
     postMark: '#9ec4c8', cactus: '#3f8f6a', rock: '#56767c', spruce: '#1f6b4a',
     firefly: '#7a8a3a', buddy: '#8fc2c8', badnik: '#4a2340', badnikMouth: '#261120',
     spike: '#b4d6da', critter: '#d99a4f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2a7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#5f7f92',
+    drift: '#7d97a6', crystal: '#5a64a8', shard: '#525c9e',
     decor: {
       kinds: [
-        { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
+        { kind: 'kelp', weight: 0.44, bloomWeight: 0.34, height: 2.4, out: 0.55 },
         { kind: 'rock', weight: 0.26, height: 0.6, out: 0.10 },
-        { kind: 'post', weight: 0.30, height: 2.6 },
-        { kind: 'bush', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
+        { kind: 'coral', weight: 0.30, height: 1.0, out: 0.30 },
+        { kind: 'anemone', weight: 0, bloomWeight: 0.10, height: 0.7, out: 0.12 },
       ],
     },
   },
@@ -561,7 +628,12 @@ reefShallow: {
     name: 'Светящаяся бездна',
     ...DECISION,
     skyStars: true,
-    skyAurora: true,
+    /* Мотив БЕЗДНЫ, а не сияния. Здесь стояло `skyAurora: true` — и это
+       значило полярное сияние и луну под водой: ровно то, на что заказчик
+       пожаловался 18 октября («на небе появляются зелёные полосы»). Флаг был
+       поставлен потому, что другого способа сказать «тёмное небо с чем-то,
+       кроме звёзд» в полосе не существовало. Теперь существует. */
+    skyMotif: 'abyss',
     skyClampTo: 0.30,
     sky: '#07161f', skyLow: '#0e2a36', hills: '#102b33', cloud: '#17424e',
     /* `grassDark` светлее, чем просилось: им красится КУСТ, а куст стоит на
@@ -576,14 +648,19 @@ reefShallow: {
     postMark: '#86b2b8', cactus: '#2a6650', rock: '#3f6269', spruce: '#1a5c46',
     firefly: '#9aba5a', buddy: '#7fb4bc', badnik: '#3a1f33', badnikMouth: '#1c0f18',
     spike: '#a8ccd2', critter: '#d4913f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2a6a5c', coral: '#8a4a68', anemone: '#7a4060', spire: '#4a6a7a',
+    drift: '#5c7d8c', crystal: '#4a5490', shard: '#434c86',
     decor: {
       kinds: [
         /* Сумма правимых весов не меняется (0.50) — по той же причине, что в
            мелководье: камень в одну заливку нельзя разбавлять. */
         { kind: 'rock', weight: 0.34, height: 0.6, out: 0.10 },
-        { kind: 'post', weight: 0.28, bloomWeight: 0.26, height: 2.6 },
-        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
-        { kind: 'bush', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
+        { kind: 'kelp', weight: 0.28, bloomWeight: 0.26, height: 2.4, out: 0.55 },
+        { kind: 'coral', weight: 0.22, bloomWeight: 0.16, height: 1.0, out: 0.30 },
+        { kind: 'anemone', weight: 0, bloomWeight: 0.08, height: 0.7, out: 0.12 },
         { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
       ],
     },
@@ -600,6 +677,7 @@ reefShallow: {
 cloudTop: {
     id: 'cloudTop',
     name: 'Над облаками',
+    skyMotif: 'cloudsHigh',
     ...DECISION,
     sky: '#6a7fd4', skyLow: '#a3b0e6', hills: '#7f8fd0', cloud: '#c6cff0',
     starSky: '#d2daf2', grass: '#8f9ad6', grassDark: '#5f6bb0', earthL: '#5a63a8',
@@ -609,12 +687,17 @@ cloudTop: {
     postMark: '#cdd4ee', cactus: '#5f9e86', rock: '#9aa3d0', spruce: '#3f6b8a',
     firefly: '#8a9a4a', buddy: '#2f3566', badnik: '#4a2f6b', badnikMouth: '#241735',
     spike: '#b6c0e4', critter: '#e8b05a', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#3f8a74', coral: '#c97aa0', anemone: '#b06a90', spire: '#8aa2b6',
+    drift: '#c3d2e2', crystal: '#6a74b8', shard: '#5f6bb0',
     decor: {
       kinds: [
-        { kind: 'bush', weight: 0.34, bloomWeight: 0.40, height: 0.7, out: 0.12 },
+        { kind: 'crystal', weight: 0.34, bloomWeight: 0.40, height: 1.6, out: 0.45 },
         { kind: 'post', weight: 0.30, height: 2.6 },
         { kind: 'totem', weight: 0.22, height: 1.1, out: 0.35 },
-        { kind: 'flower', weight: 0.14, bloomWeight: 0.20, height: 0.45, out: 0.22 },
+        { kind: 'shard', weight: 0.14, bloomWeight: 0.20, height: 0.6, out: 0.10 },
       ],
     },
   },
@@ -623,6 +706,7 @@ cloudTop: {
   cometBelt: {
     id: 'cometBelt',
     name: 'Пояс комет',
+    skyMotif: 'comet',
     ...DECISION,
     skyStars: true,
     skyClampTo: 0.45,
@@ -634,9 +718,14 @@ cloudTop: {
     postMark: '#b4bce0', cactus: '#4f8f76', rock: '#6a73a8', spruce: '#2f5f7a',
     firefly: '#8a9a4a', buddy: '#a8b0dc', badnik: '#3f2359', badnikMouth: '#1f112c',
     spike: '#c2c9ea', critter: '#e0a04f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2a6a58', coral: '#8a4a70', anemone: '#78406a', spire: '#6a7a92',
+    drift: '#7d8da6', crystal: '#8f97c8', shard: '#6a73a8',
     decor: {
       kinds: [
-        { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
+        { kind: 'shard', weight: 0.40, height: 0.6, out: 0.10 },
         { kind: 'post', weight: 0.34, height: 2.6 },
         { kind: 'totem', weight: 0.26, height: 1.1, out: 0.35 },
       ],
@@ -647,6 +736,7 @@ cloudTop: {
   nebula: {
     id: 'nebula',
     name: 'Туманность',
+    skyMotif: 'nebula',
     ...DECISION,
     skyStars: true,
     skyClampTo: 0.30,
@@ -658,11 +748,16 @@ cloudTop: {
     postMark: '#bfa8d6', cactus: '#3f7f66', rock: '#6a5290', spruce: '#2f5f7a',
     firefly: '#b48ad6', buddy: '#c2a8e0', badnik: '#4a1f3a', badnikMouth: '#240f1c',
     spike: '#d6c2ea', critter: '#e0a04f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#245a4c', coral: '#7a3a60', anemone: '#6a3256', spire: '#5a6a84',
+    drift: '#6b7b96', crystal: '#9a7ac0', shard: '#6a5290',
     decor: {
       kinds: [
-        { kind: 'rock', weight: 0.32, height: 0.6, out: 0.10 },
+        { kind: 'shard', weight: 0.32, height: 0.6, out: 0.10 },
         { kind: 'post', weight: 0.30, height: 2.6 },
-        { kind: 'spruce', weight: 0.22, bloomWeight: 0.16, height: 2.4 },
+        { kind: 'crystal', weight: 0.22, bloomWeight: 0.16, height: 1.6, out: 0.45 },
         { kind: 'firefly', needs: 'firefly', weight: 0.16, height: 1.4, out: 0.20 },
       ],
     },
@@ -823,6 +918,10 @@ export const BACKGROUND_KEYS = [
   'earthL', 'earthR', 'earthDeep', 'floorA', 'floorB', 'floorMid', 'floorFar',
   'palmTrunk', 'palmLeaf', 'flower', 'totem', 'post', 'postMark',
   'cactus', 'rock', 'spruce', 'firefly', 'buddy',
+  /* Формы новых миров: водоросль, коралл, актиния, ледяной шпиль, сугроб,
+     кристалл, обломок. Неотнесённый цвет не проверяется светлотой НИЧЕМ —
+     именно так однажды появилась бы белая декорация, спорящая с «иди сюда». */
+  'kelp', 'coral', 'anemone', 'spire', 'drift', 'crystal', 'shard',
   'badnik', 'badnikMouth', 'spike', 'critter', 'shadow', 'shade',
 ];
 

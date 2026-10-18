@@ -19,3 +19,4 @@ fixtures/*
 # tools/ed-generate.mjs, а в приложение уходит только сжатый assets/*.webp.
 tools/init/
 tools/painted/
+.tmp/

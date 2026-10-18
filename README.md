@@ -39,6 +39,7 @@ node tools/ed-generate.mjs --init tools/init/band-sunsetDunes.png --strength 0.5
 `skyClamp(зона)` берёт его из `js/theme.js`, где он и живёт: у дневных зон
 выводится границей `GAP_GUARD` от проёма (сейчас 0.704), а у шести зон задан
 полем `skyClampTo`: у четырёх тёмных 0.30, у пояса комет 0.45,
+у зарослей 0.45,
 у снежного поля 0.62 — его небо занимает полкадра и стоит в сотых долях
 от потолка. Вписанное
 в строку запуска число было бы копией без владельца: `GAP_GUARD` изменился бы,
@@ -77,14 +78,54 @@ node tools/ed-generate.mjs --init tools/init/band-iceMorning.png --strength 0.55
 ```
 
 Снежное поле — так же, с `band=snowField`, `sky-snow.webp` и промптом про
-пасмурное зимнее небо. А ночь с сиянием — БЕЗ нейросети, прямо из полосы.
+пасмурное зимнее небо.
+
+**Небо новых миров пересобрано 18 октября, и впервые через нейросеть прошли
+тёмные зоны.** Здесь стояло «а ночь с сиянием — БЕЗ нейросети, прямо из
+полосы»: по этому правилу пять растров из двенадцати (сияние, заросли,
+бездна, пояс комет, туманность) поехали к ребёнку СЫРЫМИ полосами, и он
+увидел на небе зелёные трапеции, нарисованные как подсказка модели. Разбор —
+в [`docs/sky-and-art.md`](docs/sky-and-art.md). Сила перезаписи у тёмных зон
+ниже: 0.40–0.45 против 0.55 у светлых, иначе они светлеют и зажим гасит их в
+серое.
+
+```
+# по одной зоне: снять полосу, прогнать, перегнать в WebP
+# в браузере http://localhost:8099/tools/frame.html?band=kelpDeep
+#   -> await saveFrame('tools/init/band-kelpDeep.png')
+node tools/ed-generate.mjs --init tools/init/band-kelpDeep.png --strength 0.45 \
+  --w 1024 --h 576 --steps 30 --cfg 7.5 --seed 1703 --out tools/painted/sky-kelp.png \
+  --prompt "underwater scene in a deep kelp forest, tall kelp silhouettes, sunbeams piercing green-teal water, school of small fish, floating particles, flat vector poster style, clean horizon line, no text" \
+  --negative "text, watermark, signature, blurry, lowres, clouds, sky, palm trees, beach, sun disk, boat, people, divers"
+# затем в tools/frame.html:
+#   await toWebp('tools/painted/sky-kelp.png', 'assets/sky-kelp.webp', 0.82,
+#                skyClamp('kelpDeep'))
+```
+
+Остальные шесть — тем же порядком, со своими семенами и промптами:
+
+| Зона | Файл | strength | seed | О чём промпт |
+|---|---|---|---|---|
+| `auroraNight` | `sky-aurora.webp` | 0.42 | 1701 | мягкое зелёное сияние, звёзды, луна, хребет |
+| `abyssGlow` | `sky-abyss.webp` | 0.40 | 1702 | биолюминесценция и медузы; в negative — `moon, stars, aurora` |
+| `kelpDeep` | `sky-kelp.webp` | 0.45 | 1703 | заросли ламинарии, лучи, стая рыб |
+| `cometBelt` | `sky-comet.webp` | 0.42 | 1704 | кометы с хвостами, звёздное поле |
+| `nebula` | `sky-nebula.webp` | 0.40 | 1705 | газовые массы, звёздное поле |
+| `reefShallow` | `sky-reef.webp` | 0.58 | 2200 | кораллы, рыбы, лучи; в negative — `cactus, desert` |
+| `cloudTop` | `sky-cloudtop.webp` | 0.52 | 1706 | вид поверх облаков; в negative — `palm trees` |
+
+Семена записаны не для красоты: растр собирается один раз и обязан быть
+повторимым. Два последних пересобраны потому, что их init-полоса изменилась —
+у мелководья появились кораллы вместо грибов, у вершины исчезли пальмовые
+стволы.
 
 **Если генерация падает с `[WinError 233]`, смотреть надо на видеопамять, а не
 на промпт.** Рендер-процесс Easy Diffusion умирает молча, когда VRAM занята
 чужими приложениями: `nvidia-smi --query-gpu=memory.free --format=csv` покажет
 правду за секунду. На свободной RTX 3060 небо рисуется за 10–13 секунд.
 
-**Ночная зона собирается БЕЗ Easy Diffusion** — прямо из полосы, без img2img:
+**Ночные ХОЛМЫ собираются БЕЗ Easy Diffusion** — прямо из полосы, без
+img2img. Это единственная зона, для которой правило осталось в силе:
 
 ```
 # в браузере http://localhost:8099/tools/frame.html?band=nightHills
