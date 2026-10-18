@@ -1279,6 +1279,12 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
         drawTeeth(ob, z, cam, { project, quad });
       } else if (ob.look === 'bat') {
         drawBat(ob, z, cam, elapsed, { project, quad, mscale });
+      } else if (ob.look === 'icicles') {
+        drawIcicles(ob, z, cam, { project, quad });
+      } else if (ob.look === 'ribs') {
+        drawRibs(ob, z, cam, { project, quad });
+      } else if (ob.look === 'comet') {
+        drawComet(ob, z, cam, elapsed, { project, quad, mscale });
       }
     } else {
       const x0 = ob.side > 0 ? edge : -HALF;
@@ -1326,9 +1332,21 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
            `gate`, а не после развилки — и порядок внутри неё остаётся
            единственным, который приходится держать руками. */
         drawSpikes(ob, z, cam, { project, quad, x0, x1 });
-      } else {
+      } else if (ob.look === 'plate') {
         drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, still, mscale });
+      } else if (ob.look === 'jelly') {
+        drawJelly(ob, z, cam, elapsed, { project, quad, x0, x1, mscale });
+      } else if (ob.look === 'floe') {
+        drawFloe(ob, z, cam, elapsed, { project, quad, x0, x1, mscale });
+      } else if (ob.look === 'asteroid') {
+        drawAsteroid(ob, z, cam, elapsed, { project, quad, x0, x1, mscale });
       }
+      /* Ветки ЯВНЫЕ, без `else`, и здесь он стоял: плита со зверем была
+         «всё остальное». Пока внешностей было две, разницы не было никакой, а
+         с шестью `else` означал бы, что опечатка в имени рисует зверя под
+         водой и в космосе — то есть молчаливо и неотличимо от замысла. Правило
+         то же, что у декораций: незнакомый вид не рисуется НИЧЕМ, и снятая
+         `beam` из старых журналов это проверяет. */
     }
 
     // Линия по полу, которая дойдёт вместе с препятствием.
@@ -1463,6 +1481,272 @@ function drawBat(ob, z, cam, elapsed, { project, quad, mscale }) {
       project(ex - eyeW, eyeY, z, cam), project(ex + eyeW, eyeY, z, cam),
       project(ex + eyeW, eyeY + eyeH, z, cam), project(ex - eyeW, eyeY + eyeH, z, cam),
       COLORS.badnikEye,
+    );
+  }
+}
+
+/* ─────────────── свои внешности миров: присед ───────────────
+
+   Все три — ПРОДОЛЖЕНИЕ `drawTeeth`, а не новое препятствие: плита остаётся на
+   месте целиком, фигура рисуется на её лице, светлота решения не меняется ни
+   на пиксель. Форма сообщает мир, светлота сообщает решение.
+
+   И все три — НЕПОДВИЖНЫЕ навесы сверху, кроме дыхания хвоста кометы. Это
+   правило, а не совпадение: своё боковое препятствие в каждом мире живое или
+   движется, своё верхнее — висит. Ребёнок учит один признак на четыре мира.
+
+   Доли берутся от высоты плиты (`WALL − duckHeight`), как у зверя, а не метры:
+   высота щели приседа — число гейм-плея, и фигура в метрах при его правке
+   вылезла бы в проём, то есть в самое светлое место кадра. */
+
+/* Сосульки — лёд. Шесть ТОНКИХ игл против тринадцати широких зубьев.
+
+   Отличает их от зубьев ширина, а не число, и это выяснилось кадром. Первая
+   версия ставила пять треугольников во всю свою долю: на экране вышла та же
+   пила, только с пропусками, — с полутора метров не отличить. Глубина у обоих
+   одна и та же и расти не вправе: потолок связан с `duckHeight` проверкой,
+   потому что ребёнок видит картинку, а не приговор, и длинная бахрома учила бы
+   приседать глубже, чем просят. Значит остаётся ширина — и игла в треть своей
+   доли читается льдом, а не челюстью.
+
+   Блика здесь НЕТ, и его отсутствие намеренное. Он был — одна светлая заливка,
+   ползущая по кромке, — и на кадре оказался белым прямоугольником поперёк той
+   самой линии, по которой судит `isSafe`: светлое пятно размером с кольцо на
+   границе «можно / нельзя». Правило проекта светлое на плите разрешает только
+   в несколько пикселей, и здесь оно нарушалось не чуть-чуть. Блик остался
+   у тороса, где ему есть по чему ползти. */
+function drawIcicles(ob, z, cam, { project, quad }) {
+  const N = 6;
+  const w = (HALF * 2) / N;
+  for (let i = 0; i < N; i++) {
+    const xa = -HALF + i * w;
+    // Разброс идёт ВНИЗ от `teethM`, как у зубьев: неровность разрешена, рост нет.
+    const h = O.teethM * (0.62 + 0.38 * wobble(ob.at, i + 31));
+    const base = w * 0.17;                 // треть доли на всю иглу, не больше
+    const cx = xa + w * (0.35 + 0.3 * wobble(ob.at, i + 61));
+    quad(
+      project(cx - base, O.duckHeight, z, cam), project(cx + base, O.duckHeight, z, cam),
+      project(cx, O.duckHeight - h, z, cam), project(cx, O.duckHeight - h, z, cam),
+      COLORS.spike,
+    );
+  }
+}
+
+/* Рёбра затонувшего кита — вода. Хребет вдоль плиты и пять рёбер вниз.
+   Неподвижны: кость не шевелится, и в этом вся разница с медузой на той же
+   глубине. */
+function drawRibs(ob, z, cam, { project, quad }) {
+  const top = WALL;
+  const bottom = O.duckHeight;
+  const ph = top - bottom;
+  /* Вся фигура живёт в НИЖНЕЙ половине плиты, и это не композиция, а
+     видимость: верх плиты в кадре срезан — она уходит за верхнюю кромку
+     экрана. Первая версия вешала хребет под самый потолок, и на кадре его не
+     было вовсе: оставались пять тёмных клиньев сверху, то есть те же зубья,
+     только толще. Поймано кадром в браузере; числом это не ловится — заливки
+     нарисованы, габариты внутри плиты, всё «сошлось». */
+  const spine = bottom + ph * 0.62;
+  // Хребет: без него рёбра висят поодиночке и читаются теми же зубьями.
+  quad(
+    project(-HALF * 0.86, spine, z, cam), project(HALF * 0.86, spine, z, cam),
+    project(HALF * 0.86, spine + ph * 0.09, z, cam),
+    project(-HALF * 0.86, spine + ph * 0.09, z, cam),
+    COLORS.badnikMouth,
+  );
+  const N = 5;
+  for (let i = 0; i < N; i++) {
+    const x = -HALF * 0.74 + (HALF * 1.48) * (i / (N - 1));
+    // Ребро сужается вниз: верх шире низа, поэтому четырёхугольник не
+    // вырождается в треугольник и кость читается костью.
+    const w = HALF * 0.07;
+    const len = ph * (0.34 + 0.16 * wobble(ob.at, i + 17));
+    quad(
+      project(x - w, spine, z, cam), project(x + w, spine, z, cam),
+      project(x + w * 0.35, spine - len, z, cam),
+      project(x - w * 0.35, spine - len, z, cam),
+      COLORS.blockDeep,
+    );
+  }
+}
+
+/* Комета — звёздная дорога. Ядро у одного края, хвост тянется к другому.
+   Висит неподвижно, как и положено верхнему препятствию; дышит только ДЛИНА
+   хвоста — яркостью в этой игре говорит телеграф. */
+function drawComet(ob, z, cam, elapsed, { project, quad, mscale }) {
+  const top = WALL;
+  const bottom = O.duckHeight;
+  const ph = top - bottom;
+  // Сторона выбирается фазой препятствия, а не случайностью в кадре: иначе
+  // комета меняла бы направление при каждой отрисовке.
+  const dir = wobble(ob.at, 7) < 0.5 ? -1 : 1;
+  const headX = dir * HALF * 0.66;
+  /* Доля ВИДИМОЙ части плиты, а не её середина. Верх плиты уходит за кромку
+     экрана, и 0.52 на кадре оказывались у самого верхнего среза — та же
+     ошибка, что была у хребта рёбер. */
+  const midY = bottom + ph * 0.34;
+
+  const breathe = 0.5 + 0.5 * Math.sin(2 * Math.PI * (elapsed * MOTION.cometTailHz + ob.at));
+  const len = HALF * (0.85 + 0.45 * breathe * mscale);
+  // Две полосы хвоста, расходящиеся веером: одна читается просто чертой.
+  for (const spread of [0.10, -0.14]) {
+    quad(
+      project(headX, midY - ph * 0.07, z, cam), project(headX, midY + ph * 0.07, z, cam),
+      project(headX - dir * len, midY + ph * spread, z, cam),
+      project(headX - dir * len, midY + ph * spread, z, cam),
+      COLORS.blockDeep,
+    );
+  }
+  // Ядро — ромб, а не прямоугольник: прямоугольная голова читалась ящиком,
+  // от которого куда-то тянется тень. Та же цена в заливках.
+  const r = HALF * 0.15;
+  quad(
+    project(headX - r, midY, z, cam), project(headX, midY + ph * 0.19, z, cam),
+    project(headX + r, midY, z, cam), project(headX, midY - ph * 0.19, z, cam),
+    COLORS.badnik,
+  );
+}
+
+/* ─────────────── свои внешности миров: шаг в сторону ───────────────
+
+   Эти три, наоборот, ЖИВЫЕ или движутся, и рисуются они на закрытой плите
+   вместо зверя. Доли — от самой плиты (`x0`…`x1`), как у створки: ширина плиты
+   меняется со ступенью (`blockFrac`), и фигура в метрах на узкой плите вылезла
+   бы в проём. Проверяется это по ВСЕМУ циклу анимации, а не в одной фазе. */
+
+/* Медуза — вода. Купол, щупальца и два пятна свечения; плавает вверх-вниз.
+   Ровно то, что просил заказчик, и движение здесь несёт смысл: боковое
+   препятствие в каждом мире шевелится, верхнее — висит. */
+function drawJelly(ob, z, cam, elapsed, { project, quad, x0, x1, mscale }) {
+  const w = x1 - x0;
+  const cx = x0 + w * 0.5;
+  const bob = Math.sin(2 * Math.PI * (elapsed * MOTION.jellyBobHz + ob.at));
+  /* Середина купола гуляет внутри плиты. Запас сверху и снизу взят так, чтобы
+     при полной амплитуде фигура осталась внутри `0…WALL`: это и проверяется. */
+  const cy = WALL * (0.52 + MOTION.jellyBobAmp * bob * mscale);
+  const bellW = w * 0.40;
+  const bellH = WALL * 0.17;
+
+  /* Купол: широкий по НИЖНЕЙ кромке, сужается кверху — это и есть форма
+     медузы, и ошибиться тут легко. Первая версия была трапецией наоборот,
+     широкой сверху, и вместе с двумя светлыми пятнами читалась лицом с
+     глазами, а не медузой. Поймано кадром в браузере, тестами — нет: число
+     заливок и габариты у обеих трапеций одинаковые. */
+  quad(
+    project(cx - bellW, cy, z, cam), project(cx + bellW, cy, z, cam),
+    project(cx + bellW * 0.58, cy + bellH, z, cam),
+    project(cx - bellW * 0.58, cy + bellH, z, cam),
+    COLORS.badnik,
+  );
+  // Щупальца. Три, разной длины: ряд одинаковых читается бахромой.
+  for (const [k, scale] of [[-0.55, 0.9], [0, 1.0], [0.55, 0.8]]) {
+    const tx = cx + bellW * k;
+    const len = WALL * 0.26 * scale;
+    quad(
+      project(tx - w * 0.045, cy - len, z, cam), project(tx + w * 0.045, cy - len, z, cam),
+      project(tx + w * 0.055, cy, z, cam), project(tx - w * 0.055, cy, z, cam),
+      COLORS.blockDeep,
+    );
+  }
+  /* Свечение по КРОМКЕ купола, двумя точками. Крупные пятна посреди купола
+     вместе с трапецией читались парой глаз — то есть мордой, которой у медузы
+     нет; на кромке они читаются свечением. Размер тот же, что у глаза бадника,
+     и по той же причине: светлое на плите — заём у проёма, и площадь его
+     проверяется тестом. */
+  const gw = bellW * 0.11;
+  const gh = bellH * 0.15;
+  for (const dir of [-1, 1]) {
+    const gx = cx + dir * bellW * 0.62;
+    quad(
+      project(gx - gw, cy + bellH * 0.10, z, cam), project(gx + gw, cy + bellH * 0.10, z, cam),
+      project(gx + gw, cy + bellH * 0.10 + gh, z, cam),
+      project(gx - gw, cy + bellH * 0.10 + gh, z, cam),
+      COLORS.badnikEye,
+    );
+  }
+}
+
+/* Торос — лёд. Глыба в две грани, трещина и блик, который идёт по грани.
+   Не живая, но ДВИЖЕТСЯ светом — то есть попадает в то же правило «шевелится
+   — обходи», не притворяясь при этом зверем. */
+function drawFloe(ob, z, cam, elapsed, { project, quad, x0, x1, mscale }) {
+  const w = x1 - x0;
+  const cx = x0 + w * 0.5;
+  const top = WALL * 0.78;
+  // Две грани, разной высоты: одна глыба читалась бы просто прямоугольником.
+  quad(
+    project(x0 + w * 0.08, 0, z, cam), project(cx, 0, z, cam),
+    project(cx, top, z, cam), project(x0 + w * 0.22, top * 0.86, z, cam),
+    COLORS.badnik,
+  );
+  quad(
+    project(cx, 0, z, cam), project(x1 - w * 0.08, 0, z, cam),
+    project(x1 - w * 0.20, top * 0.70, z, cam), project(cx, top, z, cam),
+    COLORS.blockDeep,
+  );
+  // Трещина по стыку граней: тонкая, тёмная, от пола до вершины.
+  quad(
+    project(cx - w * 0.035, 0, z, cam), project(cx + w * 0.035, 0, z, cam),
+    project(cx + w * 0.02, top * 0.92, z, cam), project(cx - w * 0.02, top * 0.92, z, cam),
+    COLORS.badnikMouth,
+  );
+  // Блик ползёт по грани — единственное светлое, и оно в несколько пикселей.
+  const slide = 0.5 + 0.5 * Math.sin(2 * Math.PI * (elapsed * MOTION.iceShineHz + ob.at));
+  const sy = top * (0.22 + 0.5 * slide * mscale);
+  quad(
+    project(cx - w * 0.14, sy, z, cam), project(cx - w * 0.04, sy, z, cam),
+    project(cx - w * 0.04, sy + WALL * 0.05, z, cam),
+    project(cx - w * 0.14, sy + WALL * 0.05, z, cam),
+    COLORS.badnikEye,
+  );
+}
+
+/* Астероид — звёздная дорога. Камень с кратерами, и он ПОВОРАЧИВАЕТСЯ: кратеры
+   едут по телу, само тело стоит. Катиться ему не по чему — в пустоте нет пола,
+   — и этим он отличается от прыгающего бадника, который по полу как раз
+   стучит. */
+function drawAsteroid(ob, z, cam, elapsed, { project, quad, x0, x1, mscale }) {
+  const w = x1 - x0;
+  const cx = x0 + w * 0.5;
+  const cy = WALL * 0.46;
+  const rx = w * 0.42;
+  const ry = WALL * 0.30;
+
+  /* Тело — ДВА четырёхугольника внахлёст, и второй стоит своей заливки.
+
+     Одним выходила ровная наклонная плита: четыре угла, как их ни сдвигай,
+     дают выпуклый силуэт, и на кадре он читался куском стены, а не камнем.
+     Второй кусок, сдвинутый и повёрнутый иначе, ломает контур — силуэт
+     перестаёт быть выпуклым, и этого хватает. Поймано кадром в браузере;
+     счётчик заливок и габариты были в порядке у обеих версий. */
+  const щель = (k) => 0.55 + 0.45 * wobble(ob.at, k);
+  quad(
+    project(cx - rx, cy - ry * щель(3), z, cam),
+    project(cx + rx * 0.82, cy - ry * щель(5), z, cam),
+    project(cx + rx * щель(7), cy + ry * 0.74, z, cam),
+    project(cx - rx * 0.78, cy + ry * щель(9), z, cam),
+    COLORS.badnik,
+  );
+  quad(
+    project(cx - rx * 0.52, cy - ry * 0.18, z, cam),
+    project(cx + rx * 0.94, cy - ry * 0.62, z, cam),
+    project(cx + rx * 0.70, cy + ry * 0.96, z, cam),
+    project(cx - rx * 0.30, cy + ry * 0.58, z, cam),
+    COLORS.badnik,
+  );
+  /* Кратеры едут по телу фазой. Три, и каждый уезжает за край по кругу: доля
+     от `rx`, то есть при любой ступени остаётся внутри тела. Мелкие нарочно —
+     крупные прямоугольники читались окнами, а не кратерами. */
+  const spin = elapsed * MOTION.asteroidSpinHz * mscale + ob.at;
+  for (let i = 0; i < 3; i++) {
+    const ph = (spin + i / 3) % 1;
+    const px = cx + rx * 0.52 * Math.cos(2 * Math.PI * ph);
+    const py = cy + ry * 0.30 * Math.sin(2 * Math.PI * (ph + 0.25));
+    const cw = rx * (0.08 + 0.04 * wobble(ob.at, i + 11));
+    const ch = ry * 0.09;
+    quad(
+      project(px - cw, py - ch, z, cam), project(px + cw, py - ch, z, cam),
+      project(px + cw, py + ch, z, cam), project(px - cw, py + ch, z, cam),
+      COLORS.blockDeep,
     );
   }
 }
