@@ -20,3 +20,4 @@ fixtures/*
 tools/init/
 tools/painted/
 .tmp/
+.superpowers/
