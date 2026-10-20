@@ -24,6 +24,7 @@ import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor } from './js/audio.js';
 import { OPTIONS } from './js/settings.js';
+import { isOurCache, isOurScope } from './js/vendor.js';
 import {
   makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
   rainbowOf,
@@ -6759,6 +6760,59 @@ function забегБрошен() {
     { t: 5000, type: 'pause', why: 'scale', vis: 0.2, S: 0.1, cx: 0.5, lostMs: 700 },
   ], 1759700000000);
 }
+
+/* ───────────── что при этом origin наше ─────────────
+
+   Повод: 20 октября выяснилось, что vcmacte.github.io — один origin на все
+   проекты аккаунта, и Шустрик соседям не чужой. `dropOfflineCache()` снимал
+   ВСЕ регистрации service worker и удалял ВСЕ кэши origin без разбора, то есть
+   ломал офлайн-комплект соседней игры при каждом «снять кэш» и каждом
+   `?nocache=1`. Снаружи это неотличимо от того, с чем заказчик и боролся:
+   соседняя игра перестаёт обновляться, её чинят чисткой данных сайта, а чистка
+   забирает профиль ребёнка.
+
+   Предикат живёт в `js/vendor.js` одним владельцем на оба читателя: там он был
+   и прежде (`startsWith('run-')`), и второй экземпляр этого факта в `app.js`
+   стал бы ровно тем дефектом, о котором предупреждает CLAUDE.md. */
+group('что при этом origin наше', () => {
+  check('кэш приложения наш', isOurCache('run-v163'));
+  check('кэш MediaPipe наш', isOurCache('run-vendor-d6077645'));
+  check('и прошлая сборка тоже наша', isOurCache('run-v1'),
+    'снятие кэша обязано убирать и устаревшие наши, иначе они останутся навсегда');
+
+  /* Предикат СТРОГИЙ, а не по приставке, и это главное в правке. Прежний
+     `startsWith('run-')` совпал бы с соседом, которого зовут похоже, — а цена
+     ошибки здесь несимметрична: не удалить своё значит оставить мусор,
+     удалить чужое значит сломать чужую игру. */
+  check('сосед с похожим именем НЕ наш', !isOurCache('run-away-v2'),
+    'приставки недостаточно: удалить чужой кэш дороже, чем оставить свой');
+  check('чужая игра не наша', !isOurCache('comics-v4'));
+  check('пустое имя не наше', !isOurCache(''));
+  check('и не-строка не роняет проверку', !isOurCache(undefined) && !isOurCache(null));
+
+  /* Имена генерируются `tools/make-sw.mjs`, то есть предикат и имена — две
+     копии одного факта. Поэтому сверка с НАСТОЯЩИМ sw.js: переименуют кэш — и
+     снятие молча перестанет работать, а узнает об этом ребёнок без сети. */
+  const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+  const имена = [...sw.matchAll(/const (?:VENDOR_)?CACHE = .([^.]+).;/g)].map((m) => m[1]);
+  check('в sw.js нашлись оба имени', имена.length === 2, имена.join(', '));
+  check('и оба опознаются своими', имена.every(isOurCache),
+    `sw.js зовёт кэши ${имена.join(', ')}, а предикат их не признаёт`);
+
+  // ── свой service worker: по ОБЛАСТИ, а не по счёту ──
+  const база = 'https://vcmacte.github.io/run-game/';
+  check('наша область наша', isOurScope(база, база));
+  check('и область глубже нашей — наша', isOurScope(база + 'sub/', база),
+    'область не может быть шире скрипта, значит вложенная — наша же');
+  check('сосед по тому же origin НЕ наш',
+    !isOurScope('https://vcmacte.github.io/comics/', база),
+    'ровно этот случай ломал соседнюю игру');
+  check('корень origin не наш', !isOurScope('https://vcmacte.github.io/', база),
+    'оттуда соседей видно всех, и снимать его нам нельзя');
+  check('чужой origin не наш', !isOurScope('https://example.com/run-game/', база));
+  check('мусор не роняет проверку', !isOurScope(undefined, база) && !isOurScope(база, ''));
+});
+
 
 group('разбор журнала', () => {
   /* Кольца и очки разведены с 7 октября, и разбор обязан их различать: без

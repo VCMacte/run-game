@@ -10,7 +10,7 @@
 // `train.js`, и это имя историческое. Ссылка на несуществующий файл
 // отправляла читателя искать то, чего нет.
 //
-// Разбор: docs/camera-and-frame.md, docs/difficulty.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
+// Разбор: docs/camera-and-frame.md, docs/difficulty.md, docs/log-and-storage.md, docs/menu-and-navigation.md, docs/offline-and-build.md, docs/presence-and-pause.md, docs/prizes-and-cost.md, docs/trophy-and-worlds.md, docs/ui-and-layout.md
 
 import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
@@ -24,6 +24,7 @@ import {
   TROPHY, activeWorld, levelAt, nextAt, prizeName, unlockedAt, worldsAt,
 } from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
+import { isOurCache, isOurScope } from './vendor.js';
 import { LEVELS, clampStep, STEP_MAX } from './difficulty.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1778,13 +1779,38 @@ $('logClear').onclick = async () => {
 
 // ───────────────────────── service worker ─────────────────────────
 
-/** Снимает service worker и удаляет все кэши. Возвращает, что нашлось. */
+/* Снимает НАШ service worker и удаляет НАШИ кэши. Возвращает, что нашлось и
+   что сознательно не тронуто.
+
+   Разбор снятия — в js/vendor.js, где живут предикаты, и в
+   docs/log-and-storage.md. Здесь коротко, зачем разбор вообще нужен: прежде
+   эта функция снимала ВСЕ регистрации и удаляла ВСЕ кэши origin, а
+   vcmacte.github.io — один origin на все проекты аккаунта. То есть «снять
+   кэш» у Шустрика ломало офлайн-комплект соседней игры, та перестала
+   обновляться, её починили чисткой данных сайта — и чистка забрала профиль
+   ребёнка. Петля замкнулась дважды за один день.
+
+   Чужое попадает в ответ отдельным полем, а не молча пропускается: исход
+   обязан попасть в журнал, иначе «снял и ничего не удалилось» неотличимо от
+   «снимать было нечего». */
 async function dropOfflineCache() {
-  const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
-  for (const r of regs) await r.unregister();
-  const keys = (await caches?.keys?.()) || [];
-  for (const k of keys) await caches.delete(k);
-  return { registrations: regs.length, caches: keys };
+  /* Наш каталог. Берётся из адреса страницы, а не из константы: на localhost,
+     на GitHub Pages и в установленном приложении он разный, а правило одно. */
+  const база = new URL('./', location.href).href;
+  const все = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+  const свои = все.filter((r) => isOurScope(r.scope, база));
+  for (const r of свои) await r.unregister();
+  const ключи = (await caches?.keys?.()) || [];
+  const мои = ключи.filter(isOurCache);
+  for (const k of мои) await caches.delete(k);
+  return {
+    registrations: свои.length,
+    caches: мои,
+    // Сколько чужого оставлено на месте. Ноль здесь — обычное дело, и именно
+    // поэтому поле нужно: единица означает, что рядом живёт сосед.
+    foreignRegistrations: все.length - свои.length,
+    foreignCaches: ключи.filter((k) => !isOurCache(k)),
+  };
 }
 
 $('resetCache').onclick = async () => {

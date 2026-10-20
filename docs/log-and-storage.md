@@ -4,7 +4,7 @@
 и всего, что живёт в `localStorage`.
 
 Родитель: [`../CLAUDE.md`](../CLAUDE.md).
-Код: `js/log.js`, `js/players.js`, `js/settings.js`, `js/util.js`,
+Код: `js/app.js`, `js/log.js`, `js/players.js`, `js/settings.js`, `js/util.js`,
 `tools/log-report.mjs`, `tools/replay.mjs`.
 Замысел и обоснование чисел: [`concept-and-plan.md`](concept-and-plan.md).
 
