@@ -118,6 +118,11 @@ export function report(session) {
     windows: windows.reduce((s, w) => s + occurrences(w), 0),
     infer: { med: median(nums('p50')), worst: max(nums('p95')) },
     draw: { med: median(nums('draw50')), worst: max(nums('draw95')) },
+    /* Ровность хода. Медианы интервала в журнале нет (она же 1000/fps), поэтому
+       здесь оба числа считаются по одному полю: типичное окно и худшее за
+       забег. У журналов до 21 октября поля нет вовсе — тогда `null`, и строка
+       не печатается: ноль читался бы как «кадры шли идеально ровно». */
+    gap: { med: median(nums('gap95')), worst: max(nums('gap95')) },
     hz: { med: median(nums('hz')), worst: min(nums('hz')) },
     fps: { med: median(nums('fps')), worst: min(nums('fps')) },
     drop: windows.reduce((s, w) => s + (w?.drop || 0) * occurrences(w), 0),
@@ -795,6 +800,13 @@ export function format(rep) {
       + `${мс(rep.perf.infer.worst)}   (окон ${rep.perf.windows})`);
     L.push(`  отрисовка: медиана окон ${мс(rep.perf.draw.med)}, худшее `
       + `${мс(rep.perf.draw.worst)}`);
+    /* Ровность хода названа словами, а не одним числом: «95-й процентиль» в
+       замерах читает родитель, а не движок. Строки нет, если поля нет. */
+    if (rep.perf.gap.med !== null) {
+      L.push(`  ровность хода: из каждых двадцати кадров самый затянувшийся `
+        + `${мс(rep.perf.gap.med)} (ровный ход — 33 мс), худший за забег `
+        + `${мс(rep.perf.gap.worst)}`);
+    }
     L.push(`  поза видна ${чис(rep.perf.ok)} доли отсчётов, видимость ${чис(rep.perf.vis)}, `
       + `торс S ${чис(rep.perf.S)}`);
   }

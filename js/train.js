@@ -201,7 +201,8 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
 
   // Сводка здоровья копится секунду и уходит одним событием: писать каждую
   // позу — 24 МБ за сессию при потолке 25.
-  const health = { frames: 0, poses: 0, ok: 0, infer: [], draw: [], dropped: 0, since: 0, vis: 0, S: 0 };
+  const health = { frames: 0, poses: 0, ok: 0, infer: [], draw: [], gaps: [],
+    dropped: 0, since: 0, vis: 0, S: 0 };
 
   /* Остановлено ли снаружи. Нужен потому, что `start()` долгий и его можно
      прервать посередине — см. комментарий у самого `start()`. */
@@ -619,6 +620,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
   function frame(now) {
     raf = requestAnimationFrame(frame);
     const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0;
+    /* Ровность хода копится СЫРЫМ интервалом, без зажима 0.05 выше. Зажим
+       защищает забег от прыжка вперёд после замершей страницы, но для меры
+       плавности он же и слепота: провал на 120 мс — ровно то, что ребёнок
+       чувствует, — прочитался бы как 50. Поэтому мера берётся до зажима. */
+    if (lastFrame) health.gaps.push(now - lastFrame);
     lastFrame = now;
     health.frames++;
 
@@ -953,6 +959,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     if (!span || !health.frames) return;
     const infer = health.infer;
     const draw = health.draw;
+    const gaps = health.gaps;
     log.event('health', {
       stage,
       fps: Math.round(health.frames / span),
@@ -966,6 +973,10 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // Отрисовка рядом с инференсом: по этой паре видно, кто кого ждёт.
       draw50: draw.length ? Math.round(quantile(draw, 0.5)) : 0,
       draw95: draw.length ? Math.round(quantile(draw, 0.95)) : 0,
+      /* Ровность хода: насколько затянулся худший кадр окна. Медианы интервала
+         рядом НЕТ намеренно — она и есть 1000/fps, то есть вторая копия
+         соседнего поля, а две копии одного числа в этом проекте расходятся. */
+      gap95: gaps.length ? Math.round(quantile(gaps, 0.95)) : 0,
       u: round(last.u),
       v: round(last.v),
       /* Чем поделено `u`. С этим полем журнал объясняет сам себя: здесь `u` в
@@ -975,7 +986,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       panSpan: round(panSpanOf(calibration)),
     });
     health.frames = 0; health.poses = 0; health.ok = 0; health.dropped = 0;
-    health.vis = 0; health.S = 0; health.infer = []; health.draw = [];
+    health.vis = 0; health.S = 0; health.infer = []; health.draw = []; health.gaps = [];
   }
 
   return {
