@@ -37,7 +37,7 @@ jobs:
 
       - name: JDK 17
         # Android SDK на ubuntu-latest уже стоит, JDK нужной версии — нет.
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
