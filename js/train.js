@@ -28,7 +28,7 @@ import { makeLevel, isSafe, telegraph, telegraphDebt } from './level.js';
 import { tuneFor, clampStep } from './difficulty.js';
 import { players } from './players.js';
 import * as audio from './audio.js';
-import { settings, runDurationS } from './settings.js';
+import { settings, runDurationS, poseDelegate } from './settings.js';
 import { cameraX } from './view.js';
 import { round, flag, quantile } from './util.js';
 import * as pose from './pose.js';
@@ -354,6 +354,11 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       log.event('run.start', {
         durationS, obstacles: obstacles.length, stars: stars.length,
         screenRun: settings.get('screenRun'),
+        /* На чём ПРОСИЛИ считать позу. Рядом со `screenRun` и по той же
+           причине: два забега одной сессии иначе неразличимы, а замер ровно в
+           том и состоит, чтобы сравнить их внутри одной. Что получилось —
+           в `pose.ready`; просьба без исхода неотличима от «получилось». */
+        delegate: poseDelegate(),
         /* Ступень И её числа. Номер без чисел бесполезен: таблицу ступеней
            однажды перепишут, и прошлый журнал перестанет читаться — ровно та
            же причина, по которой рядом с `u` в health едет `panSpan`. */
@@ -991,7 +996,30 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     async switchCamera() {
       const next = settings.cycle('camera');
       log.event('cam.switch', { to: settings.get('camera') });
+      /* Калибровка сбрасывается: другая камера — другая сцена, и прежние
+         пороги описывают уже не её. Этим переключение камеры и отличается от
+         перезапуска ниже. */
       calibration = null;
+      await this.restartPose();
+      return next;
+    },
+
+    /**
+     * Перезапустить распознавание, ничего больше не меняя.
+     *
+     * Нужно затем, что делегат задаётся при СОЗДАНИИ распознавателя, и
+     * поменять его у работающего нельзя — ровно как facingMode у открытой
+     * дорожки. А без перезапуска замер «процессор против видеоядра» требовал
+     * бы перезагрузки страницы, то есть нового сеанса журнала: разброс
+     * устройства ±8 fps живёт как раз между сеансами и съел бы весь эффект.
+     * Это та же причина, по которой `screenRun` переключается на ходу.
+     *
+     * Калибровку здесь НЕ сбрасываем: сцена та же, пороги по-прежнему про
+     * неё. Сбросить её значило бы заставить ребёнка встать в рамку заново
+     * посреди замера — и потерять половину сравнимости.
+     */
+    async restartPose() {
+      log.event('pose.restart', { want: poseDelegate() });
       await pose.stop();
       source = await pose.start({ source: 'camera', hz: POSE.hz, onSample });
       if (video && source.video) {
@@ -999,7 +1027,6 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         video.play?.().catch(() => {});
       }
       hud();
-      return next;
     },
 
     /** Остановить забег по просьбе человека. */

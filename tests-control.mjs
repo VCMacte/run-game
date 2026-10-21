@@ -23,7 +23,8 @@ import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor } from './js/audio.js';
-import { OPTIONS } from './js/settings.js';
+import { OPTIONS, poseDelegate } from './js/settings.js';
+import { delegateLadder } from './js/pose.pack.js';
 import { isOurCache, isOurScope } from './js/vendor.js';
 import {
   makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
@@ -8129,6 +8130,98 @@ group('повторный прогон записи', () => {
   check('склеенные жесты считаются по _n', сж.журнал.lanes === 3, `${сж.журнал.lanes}`);
   check('приседы журнала считаются отдельно', сж.журнал.crouches === 1);
   check('причины пауз журнала доезжают', сж.журнал.why.edge === 2, JSON.stringify(сж.журнал.why));
+});
+
+group('лестница делегатов', () => {
+  /* Порядок попыток несёт смысл, который глазом из кода не читается, и
+     ошибиться в нём дёшево: перепутанные две строки превращают замер
+     «процессор против видеоядра» в замер самого себя. Поэтому лестница —
+     чистая функция в js/pose.pack.js, а не массив внутри js/pose.camera.js:
+     тот из node не импортируется вовсе.
+
+     Замер, под который всё заведено, разобран в
+     docs/superpowers/specs/2026-10-21-new-engine-research.md. */
+  const авто = delegateLadder('auto', 'stream');
+  check('при «как получится» первым идёт видеоядро', авто[0].delegate === 'GPU',
+    JSON.stringify(авто[0]));
+  check('и прежний порядок сохранён байт в байт',
+    JSON.stringify(авто) === JSON.stringify([
+      { mode: 'stream', delegate: 'GPU' },
+      { mode: 'stream', delegate: 'CPU' },
+      { mode: 'bitmap', delegate: 'GPU' },
+    ]), JSON.stringify(авто));
+
+  const проц = delegateLadder('cpu', 'stream');
+  check('при просьбе о процессоре видеоядро не пробуется первым',
+    проц[0].delegate === 'CPU', JSON.stringify(проц[0]));
+  /* Главная проверка этой группы. Просьба «на процессоре» должна держать
+     процессор и менять КОНВЕЙЕР, а не наоборот: лестница, которая на первом
+     же отказе уходит на видеоядро, тихо отменяет замер. */
+  check('процессор держится дольше конвейера',
+    проц.slice(0, 2).every((a) => a.delegate === 'CPU')
+    && проц[0].mode !== проц[1].mode, JSON.stringify(проц));
+  check('но видеоядро остаётся последней ступенью',
+    проц.at(-1).delegate === 'GPU',
+    'иначе отказ процессорного пути даёт ребёнку чёрный экран вместо игры');
+
+  // Неизвестная просьба — это «как получится», а не пустая лестница.
+  check('чужое значение читается как «как получится»',
+    JSON.stringify(delegateLadder('нечто', 'bitmap'))
+    === JSON.stringify(delegateLadder('auto', 'bitmap')));
+
+  /* Параметр адреса сильнее настройки — общее правило проекта, и у делегата
+     оно должно работать так же, как у длины забега. Проверяется через
+     разрешитель, а не через лестницу: лестница про порядок, разрешитель про
+     то, чью просьбу вообще слушают. */
+  check('умолчание — сегодняшнее поведение', poseDelegate() === 'auto');
+  /* В node адреса нет вовсе — `flag()` это и проверяет, возвращая null.
+     Подделываем ровно то, что он читает, и убираем за собой: оставленный
+     глобальный `location` поменял бы поведение следующих групп. */
+  const сПараметром = (search, fn) => {
+    globalThis.location = { search, hostname: 'localhost' };
+    try { fn(); } finally { delete globalThis.location; }
+  };
+  сПараметром('?delegate=cpu', () => {
+    check('параметр адреса просит процессор', poseDelegate() === 'cpu');
+  });
+  сПараметром('?delegate=gpu', () => {
+    check('и обратный параметр возвращает «как получится»', poseDelegate() === 'auto');
+  });
+  check('и после замера адрес снова не читается', poseDelegate() === 'auto');
+
+  /* И разбор журнала обязан различить два забега одной сессии по просьбе —
+     иначе замер снять нечем. Исход берётся у ПОСЛЕДНЕГО `pose.ready` до
+     забега: распознавание перезапускается на ходу, когда настройку крутят. */
+  const замерПроц = report(сессия([
+    { t: 500, type: 'pose.ready', pipeline: 'stream', delegate: 'GPU', initMs: 3300, warmupP50: 18 },
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake', delegate: 'auto' },
+    { t: 61000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+    { t: 65000, type: 'pose.restart', want: 'cpu' },
+    { t: 66000, type: 'pose.ready', pipeline: 'stream', delegate: 'CPU', initMs: 2100, warmupP50: 110 },
+    { t: 70000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake', delegate: 'cpu' },
+    { t: 130000, type: 'run.finish', stars: 19, score: 19, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  check('просьба о делегате разложена по забегам',
+    замерПроц.runs[0].delegate === 'auto' && замерПроц.runs[1].delegate === 'cpu',
+    JSON.stringify(замерПроц.runs.map((r) => r.delegate)));
+  check('и каждому забегу достался СВОЙ исход',
+    замерПроц.runs[0].delegateGot === 'GPU' && замерПроц.runs[1].delegateGot === 'CPU',
+    JSON.stringify(замерПроц.runs.map((r) => r.delegateGot)));
+  const сводкаПроц = format(замерПроц);
+  check('сводка называет забег, где просили процессор',
+    /просили процессор/.test(сводкаПроц), сводкаПроц);
+  /* Совпавший исход в строку не печатается: это шум там, где читают глазами.
+     Разошедшийся — печатается, и ровно это главное в паре. */
+  check('и молчит об исходе, пока он совпал с просьбой',
+    !/вышло/.test(сводкаПроц), сводкаПроц);
+
+  const отказ = report(сессия([
+    { t: 500, type: 'pose.ready', pipeline: 'stream', delegate: 'GPU', initMs: 3300, warmupP50: 18 },
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake', delegate: 'cpu' },
+    { t: 61000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  check('а разошедшийся исход называет прямо',
+    /вышло GPU/.test(format(отказ)), format(отказ));
 });
 
 // ─────────────────────────── итог ───────────────────────────

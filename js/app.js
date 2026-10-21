@@ -1194,6 +1194,7 @@ const PARENT_ROWS = [
   ['setPreview', 'previewV', 'preview'],
   ['setScreenRun', 'screenRunV', 'screenRun'],
   ['setRecord', 'recordV', 'record'],
+  ['setDelegate', 'delegateV', 'poseDelegate'],
   ['setDebug', 'debugV', 'debug'],
   ['setCache', 'cacheV', 'cache'],
 ];
@@ -1215,6 +1216,20 @@ for (const [btn, out, name] of PARENT_ROWS) {
     // иначе взрослый выключает его, видит прежнее поведение и решает, что
     // настройка не работает.
     if (name === 'cache' && settings.get('cache') === 'off') dropOfflineCache();
+    /* Делегат задаётся при создании распознавателя, поэтому новая настройка
+       без перезапуска ничего не меняет — а взрослый увидел бы новую подпись и
+       поверил ей. Перезапуск идёт через train, потому что источник поз
+       принадлежит забегу; вне забега перезапускать нечего, и настройка просто
+       подействует при следующем запуске. */
+    if (name === 'poseDelegate') {
+      /* Отказ здесь не молчит, в отличие от журнала или кэша: без источника
+         поз забега нет вовсе, а взрослый только что нажал кнопку и ждёт
+         ответа. Та же развязка, что у переключения камеры рядом. */
+      training?.restartPose?.().catch((e) => {
+        log.event('error', { where: 'restartPose', message: String(e?.message || e) });
+        showSoon('Не получилось перезапустить распознавание', String(e?.message || e));
+      });
+    }
   };
 }
 

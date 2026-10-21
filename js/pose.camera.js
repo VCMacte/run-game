@@ -20,7 +20,8 @@
 
 import { POSE, VENDOR } from './config.js';
 import { flag, withTimeout } from './util.js';
-import { settings } from './settings.js';
+import { settings, poseDelegate } from './settings.js';
+import { delegateLadder } from './pose.pack.js';
 import { openCamera, watchTrack } from './camera.js';
 import * as log from './log.js';
 
@@ -46,7 +47,12 @@ function choose(p) {
 export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
   const probes = probe();
   let mode = choose(probes);
-  log.event('pose.boot', { pipeline: mode, probes, hzTarget: hz });
+  /* О чём ПРОСИЛИ, а не что получилось: получилось уедет в `pose.ready`.
+     Без просьбы в журнале два сеанса с разными делегатами различимы только по
+     итогу, а итог может совпасть при отказе — и тогда замер читается как
+     «процессор не помог», хотя процессора и не было. */
+  const want = poseDelegate();
+  log.event('pose.boot', { pipeline: mode, want, probes, hzTarget: hz });
 
   const cam = await openCamera({ facing: settings.get('camera') });
   const video = document.createElement('video');
@@ -113,13 +119,7 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
   // Каждая ступень пишется в журнал: иначе «почему-то медленно» невозможно
   // отличить от «GPU не завёлся и всё считается на процессоре».
   let info = null;
-  for (const attempt of [
-    { mode, delegate: 'GPU' },
-    { mode, delegate: 'CPU' },
-    { mode: 'bitmap', delegate: 'GPU' },
-    { mode: 'main', delegate: 'GPU' },
-  ]) {
-    if (attempt.mode === 'main') break;
+  for (const attempt of delegateLadder(want, mode)) {
     const r = await startWorker(attempt.mode, attempt.delegate);
     if (r.ok) { worker = r.worker; mode = attempt.mode; info = r.info; break; }
     log.event('pose.pipeline.down', { from: attempt.mode, delegate: attempt.delegate, why: r.why, stage: r.stage });
