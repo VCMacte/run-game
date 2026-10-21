@@ -8,7 +8,7 @@
 
 import { makeTracker, makeOneEuro, geometry, makeFollower } from './js/signals.js';
 import { makeCalibration, STAGES, CLAMP, isStale, panSpanOf, forReuse } from './js/calibrate.js';
-import { SIGNALS as S, VIEW } from './js/config.js';
+import { SIGNALS as S, VIEW, POSE } from './js/config.js';
 import { camera, project, vanishX, horizonY, cameraX, canReach, makeStars } from './js/view.js';
 import { SCRIPTS, fakeLandmarks } from './js/fake-pose.js';
 import { fieldPosition, coverFit } from './js/preview.js';
@@ -7463,7 +7463,21 @@ group('разбор журнала', () => {
   check('делегат и прогрев прочитаны',
     полный.pose.delegate === 'GPU' && полный.pose.warmupP50 === 18
     && полный.pose.initMs === 3300,
-    'заявленный делегат умеет врать, честный ответ даёт только время');
+    'заявленный делегат умеет врать, и время прогрева едет в журнал рядом');
+  /* ЧИСЛО осталось, ПРИГОВОР убран. `looksLikeCpu` объявлял процессором всё, у
+     чего прогрев дольше `POSE.warmupCpuMs` = 70 мс, и 21 октября премиса
+     оказалась обратной: честное видеоядро прогрелось за 59 и 70 мс, честный
+     процессор — за 51, то есть быстрее порога И быстрее видеоядра. Флаг стоял
+     `false` во всех трёх записях `pose.ready`, включая настоящий CPU. Порогом
+     это не лечится, поэтому порога больше нет: разбор печатает время прогрева,
+     а сравнивает делегатов человек — по кадрам и ровности двух забегов одной
+     сессии, где разница сорокапроцентная, а не по прогреву, где она шумовая. */
+  check('порога «похоже на процессор» больше нет', POSE.warmupCpuMs === undefined,
+    'премиса обратная: на Adreno 619 процессор прогревается БЫСТРЕЕ видеоядра');
+  check('а приговора в разборе нет и подавно',
+    !('looksLikeCpu' in полный.pose), JSON.stringify(Object.keys(полный.pose)));
+  check('при этом сводка по-прежнему печатает прогрев числом',
+    /прогрев p50 18 мс/.test(format(полный)), format(полный));
 
   // ── весь файл, а не первая сессия ──
   const обе = reportAll({
@@ -8241,6 +8255,55 @@ group('лестница делегатов', () => {
      Разошедшийся — печатается, и ровно это главное в паре. */
   check('и молчит об исходе, пока он совпал с просьбой',
     !/вышло/.test(сводкаПроц), сводкаПроц);
+
+  /* Окно забега для КАДРОВ закрывается финишем, а не следующим запуском.
+     Журнал 21 октября поймал это дорого: после финиша сессия 355 секунд
+     стояла на экране результата, где игру не рисуют, и последнему забегу
+     достались 535 окон вместо 187, то есть 60 fps вместо 55. Политике экрана
+     при этом нужно окно ШИРЕ финиша: блокировку отбирают и в меню, и это
+     по-прежнему про тот забег. Поэтому окон у забега два, и проверяются оба. */
+  const послеФиниша = report(сессия([
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake' },
+    { t: 2000, type: 'health', stage: 'run', fps: 39, hz: 11, drop: 0, ok: 1, vis: 1,
+      S: 0.24, p50: 88, p95: 102, draw50: 0, draw95: 1, gap95: 50, u: 0, v: 0, panSpan: 1.2 },
+    { t: 3000, type: 'health', stage: 'run', fps: 39, hz: 11, drop: 0, ok: 1, vis: 1,
+      S: 0.24, p50: 88, p95: 102, draw50: 0, draw95: 1, gap95: 50, u: 0, v: 0, panSpan: 1.2 },
+    { t: 61000, type: 'run.finish', stars: 18, score: 18, starsTotal: 20, hits: 0, durationS: 60 },
+    { t: 62000, type: 'wakelock', released: true, why: 'system' },
+    { t: 63000, type: 'health', stage: 'result', fps: 60, hz: 2, drop: 0, ok: 0, vis: 0,
+      S: 0, p50: 700, p95: 900, draw50: 0, draw95: 1, gap95: 17, u: 0, v: 0, panSpan: 1.2 },
+    { t: 64000, type: 'health', stage: 'result', fps: 60, hz: 2, drop: 0, ok: 0, vis: 0,
+      S: 0, p50: 700, p95: 900, draw50: 0, draw95: 1, gap95: 17, u: 0, v: 0, panSpan: 1.2 },
+    { t: 65000, type: 'health', stage: 'result', fps: 60, hz: 2, drop: 0, ok: 0, vis: 0,
+      S: 0, p50: 700, p95: 900, draw50: 0, draw95: 1, gap95: 17, u: 0, v: 0, panSpan: 1.2 },
+  ]));
+  const забегПосле = послеФиниша.runs[0];
+  check('кадры забега не разбавлены экраном результата',
+    забегПосле.fps === 39, JSON.stringify(забегПосле.fps));
+  check('и окна считаются до финиша, а не до конца журнала',
+    забегПосле.windows === 2, JSON.stringify(забегПосле.windows));
+  check('инференс забега тоже не разбавлен', забегПосле.infer === 88,
+    JSON.stringify(забегПосле.infer));
+  /* Ровность хода — главное число сравнения двух забегов, и в строке забега её
+     не было вовсе: 21 октября 50 против 33 мс пришлось считать руками. */
+  check('у забега есть своя ровность хода', забегПосле.gap === 50,
+    JSON.stringify(забегПосле.gap));
+  check('и сводка её печатает', /ровность 50 мс/.test(format(послеФиниша)),
+    format(послеФиниша));
+  /* А политика экрана по-прежнему видит, что случилось ПОСЛЕ финиша: окно у
+     неё своё, до следующего запуска. */
+  check('а потерю блокировки после финиша забег всё равно считает своей',
+    забегПосле.wakeLost === 1, JSON.stringify(забегПосле.wakeLost));
+  /* Брошенный забег финиша не имеет, и окно ему закрыть нечем. Тогда оно
+     остаётся прежним — до следующего запуска: иначе у забега без финиша не
+     стало бы кадров вовсе, а это ровно те журналы, по которым ищут падение. */
+  const брошен = report(сессия([
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20, screenRun: 'awake' },
+    { t: 2000, type: 'health', stage: 'run', fps: 31, hz: 9, drop: 0, ok: 1, vis: 1,
+      S: 0.24, p50: 120, p95: 140, draw50: 0, draw95: 1, gap95: 67, u: 0, v: 0, panSpan: 1.2 },
+  ]));
+  check('у брошенного забега кадры остались', брошен.runs[0].fps === 31,
+    JSON.stringify(брошен.runs[0].fps));
 
   const отказ = report(сессия([
     { t: 500, type: 'pose.ready', pipeline: 'stream', delegate: 'GPU', initMs: 3300, warmupP50: 18 },

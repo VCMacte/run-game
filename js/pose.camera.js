@@ -175,7 +175,6 @@ export async function createCameraSource({ hz = POSE.hz, onSample, onStatus }) {
     delegate: info?.delegate ?? null,
     initMs: info?.initMs ?? null,
     warmupP50: info?.warmupP50 ?? null,
-    looksLikeCpu: info?.looksLikeCpu ?? null,
     cam: { w: cam.settings.width, h: cam.settings.height, fps: Math.round(cam.settings.frameRate || 0) },
   });
   onStatus?.({ ready: true, source: 'camera', pipeline: mode, ...info });

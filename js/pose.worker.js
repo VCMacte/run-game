@@ -168,8 +168,6 @@ async function init(msg) {
     delegate: msg.delegate,
     initMs,
     warmupP50,
-    // Больше порога — считает процессор, что бы ни было написано в ответе.
-    looksLikeCpu: warmupP50 != null && warmupP50 > msg.pose.warmupCpuMs,
   });
 
   if (msg.stream) pump(msg.stream);

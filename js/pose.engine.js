@@ -35,7 +35,6 @@ export async function createEngine({ delegate = 'GPU' } = {}) {
     delegate,
     initMs,
     warmupP50,
-    looksLikeCpu: warmupP50 != null && warmupP50 > POSE.warmupCpuMs,
 
     /** Одна поза: 132 числа или null. `frame` — видео, VideoFrame или ImageBitmap. */
     infer(frame, atMs) {
