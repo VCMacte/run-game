@@ -1,0 +1,63 @@
+# Шаг 1 замера среды: собрать официальный пример MediaPipe Pose Landmarker
+# под Android и отдать APK артефактом.
+#
+# Зачем здесь, в репозитории «Шустрика»: это замер, а не игра. Он отвечает на
+# один вопрос — быстрее ли нативный инференс, чем нынешние 85–89 мс в WASM, —
+# и с равной вероятностью закрывает всю ветку с нативной оболочкой. Ставить
+# ради этого Android Studio на 8 ГБ рано: сборка идёт здесь, APK скачивается
+# на телефон из артефактов, кабель не нужен.
+#
+# Разбор замера и порог решения — docs/superpowers/specs/2026-10-21-new-engine-research.md
+#
+# Запускается РУКАМИ: вкладка Actions → этот рабочий процесс → Run workflow.
+
+name: APK примера MediaPipe Pose
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ветка или коммит google-ai-edge/mediapipe-samples'
+        default: 'main'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Взять пример Google
+        # Свой код здесь не нужен вовсе: собирается чужой пример без правок.
+        # Так и задумано — правка примера сделала бы число несравнимым с тем,
+        # что показывают другие.
+        run: |
+          git clone --depth 1 \
+            --branch "${{ github.event.inputs.ref || 'main' }}" \
+            https://github.com/google-ai-edge/mediapipe-samples.git samples
+
+      - name: JDK 17
+        # Android SDK на ubuntu-latest уже стоит, JDK нужной версии — нет.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Собрать debug APK
+        working-directory: samples/examples/pose_landmarker/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Показать, что собралось
+        # Имя файла у примера меняется от версии к версии; пусть журнал сборки
+        # скажет его прямо, а не оставляет искать в артефакте.
+        run: find samples -name '*.apk' -print -exec ls -lh {} \;
+
+      - name: Отдать APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-landmarker-debug-apk
+          path: samples/examples/pose_landmarker/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
