@@ -1,4 +1,4 @@
-// Разбор: docs/log-and-storage.md, docs/menu-and-navigation.md
+// Разбор: docs/debug-knobs.md, docs/log-and-storage.md, docs/menu-and-navigation.md
 
 import { flag } from './util.js';
 

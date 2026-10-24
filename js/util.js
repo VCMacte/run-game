@@ -4,7 +4,7 @@
 // должны уметь не ждать вечно, а импортировать их из app.js значило бы
 // замкнуть круг camera → app → train → camera.
 //
-// Разбор: docs/log-and-storage.md
+// Разбор: docs/debug-knobs.md, docs/log-and-storage.md
 
 /* Куда сообщать о несостоявшихся обещаниях.
 

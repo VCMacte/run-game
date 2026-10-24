@@ -12,7 +12,7 @@
 // когда появился `stepObstacles`; шапка пережила свой проект на полтора
 // десятка коммитов. Устаревший разбор дороже дефекта — он врёт уверенно.
 //
-// Разбор: docs/calibration.md, docs/difficulty.md, docs/menu-and-navigation.md, docs/presence-and-pause.md, docs/rings.md, docs/view-and-zones.md
+// Разбор: docs/calibration.md, docs/debug-knobs.md, docs/difficulty.md, docs/menu-and-navigation.md, docs/presence-and-pause.md, docs/rings.md, docs/view-and-zones.md
 
 import { SIGNALS as S, VIEW, POSE, OBSTACLES as O, FINISH as FIN } from './config.js';
 import { makeTracker, makeFollower, geometry } from './signals.js';
