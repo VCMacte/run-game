@@ -694,6 +694,44 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
    а ножка и подставка, которых код не трогает, рисовались верно. */
 .cup rect[data-lv] { fill: var(--dim); }
 
+/* С сеткой медалей под кубком чаша ниже: «Назад» обязана остаться видна без
+   прокрутки, а сетка добавляет пять строк. */
+#trophy .cup { height: calc(var(--vh) * 0.34); }
+
+/* Звезда второго круга — над чашей, крупной плоской заливкой. Прячется
+   стилем: el.hidden на SVG не работает. */
+#trophyStar { fill: var(--accent); }
+.cup:not(.circle2) #trophyStar { display: none; }
+
+/* Медали: строка — мир, столбец — уровень. Взятая — заливкой акцента,
+   пустая — приглушённой: различает их светлота (0.47 против 0.11), а не
+   рамка, которую Miracast съест. Запертый уровень гаснет, но виден. */
+/* Клетка — меньшее из двух: от высоты, чтобы «Назад» осталась видна, и от
+   ширины, чтобы семь столбцов с именами миров влезли в телефон без
+   горизонтальной прокрутки (на 412 px по высоте они не влезали). */
+.medals {
+  --cell: min(calc(var(--vh) * 0.04), 7.5vw);
+  display: grid;
+  grid-template-columns: minmax(0, auto) repeat(var(--cols, 7), var(--cell));
+  gap: calc(var(--vh) * 0.008) min(calc(var(--vh) * 0.012), 1.5vw);
+  max-width: 100%;
+  justify-content: center;
+  align-items: center;
+  margin: calc(var(--vh) * 0.01) auto;
+  font-weight: 700;
+  font-size: min(calc(var(--vh) * 0.022), 4vw);
+}
+.medal-head { text-align: center; color: var(--dim); }
+.medal-world { text-align: right; padding-right: 1vw; line-height: 1.1; }
+.medal {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 50%;
+  background: var(--dim);
+}
+.medal.got { background: var(--accent); }
+.medal.locked { opacity: 0.35; }
+
 /* Список выбора: четыре мира или пять уровней сложности столбиком, кнопка
    «Назад» под ними и без прокрутки. Потолок от --vh, как у списков рекордов и
    игроков, и по той же причине.

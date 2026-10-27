@@ -21,11 +21,12 @@ import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 import {
-  TROPHY, activeWorld, levelAt, nextAt, prizeName, unlockedAt, worldsAt,
+  TROPHY, CIRCLE, activeWorld, activeStep, circleAt, levelAt, medalFor, nextAt, prizeName,
+  stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
 } from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
 import { isOurCache, isOurScope } from './vendor.js';
-import { LEVELS, clampStep, STEP_MAX } from './difficulty.js';
+import { LEVELS } from './difficulty.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -891,6 +892,14 @@ function renderRunHud(h = {}) {
         взят = { level: lv, name: prizeName(row) };
         log.event('trophy.level', { level: lv, at: row.at, id: row.id, bank });
       }
+      /* Медаль — тем же разом и под тем же запретом синтетики. Исход едет в
+         журнал только у НОВОЙ: повтор ничего не меняет, а событие на каждый
+         чистый забег сделало бы «медаль взята» неотличимым от «уже была». */
+      const ключ = medalFor(result, result.world);
+      if (ключ && players.addMedal(ключ)) {
+        медаль = { step: result.step, world: result.world };
+        log.event('medal', медаль);
+      }
     }
     $('runResult').innerHTML = [
       /* Когда известно, сколько колец было, существительное уходит совсем:
@@ -919,6 +928,9 @@ function renderRunHud(h = {}) {
          в каждом забеге, а без фильтра `null` напечатался бы ребёнку словом
          «null» — ровно в обычном забеге, где уровень не взят. */
       взят ? `<div class="stars">Новый уровень! Открылось: ${взят.name}</div>` : null,
+      медаль
+        ? `<div class="stars">Новая медаль: ${LEVELS[медаль.step]?.name} · ${WORLDS[медаль.world]?.name}!</div>`
+        : null,
     ].filter(Boolean).join('');
     /* Записать результат можно один раз, и только пока есть что записывать.
 
@@ -987,6 +999,7 @@ async function startRun() {
   recordError = false;
   // Прошлая награда не должна объявиться на результате следующего забега.
   взят = null;
+  медаль = null;
   const { wantedSource } = await import('./pose.js');
   const want = wantedSource();
 
@@ -1048,8 +1061,12 @@ async function startRun() {
     /* Уровень сложности едет СЮДА, а не читается внутри забега. Так пришлось
        сделать, когда скорость стала различаться по уровням: вид получает её
        при создании. Заодно дирижёр забега перестал знать про хранилище и в
-       этой части — ровно как он не знает его про мир и призы. */
-    step: players.step(),
+       этой части — ровно как он не знает его про мир и призы.
+
+       Через `activeStep`, как мир через `activeWorld`: ступень, выбранная
+       при большей копилке (сменили игрока), заперта, и забег уходит на
+       верхнюю открытую — ту, что отмечена на экране выбора. */
+    step: activeStep(bankNow, players.step()),
   });
   renderRunHud({ stage: 'setup', score: 0 });
   await training.start({ source: want.source, script: want.script });
@@ -1348,6 +1365,10 @@ let bankedResult = null;
    исчезнуть к следующему забегу. */
 let взят = null;
 
+/* Новая медаль этого забега — по той же причине, что `взят`: экран
+   результата рисуется много раз, а медаль берётся один. */
+let медаль = null;
+
 /** Длина забега словами. Берётся из тех же вариантов, что в настройках. */
 function runLengthLabel(seconds) {
   const s = Math.round(seconds || 0);
@@ -1356,7 +1377,10 @@ function runLengthLabel(seconds) {
 }
 
 function renderWho() {
-  $('whoV').textContent = players.name();
+  /* Звание второго круга едет рядом с именем: «я Бегун» ребёнок видит в
+     меню каждый раз, а не только в кубке. */
+  const звание = titleAt(players.bank());
+  $('whoV').textContent = звание ? `${players.name()} · ${звание}` : players.name();
   /* Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
      по которой длина забега показана в двух местах сразу.
 
@@ -1547,14 +1571,17 @@ let recordsFrom = 'menu';
    пробежал их, зашёл в «Рекорды» и увидел пустую таблицу пяти минут. Выглядит
    это как «рекорд не записался», то есть как потеря ровно того, ради чего
    таблица существует. Путь с финиша переставляет `recLen` сам. */
-/* Кубок. Полосы красятся по таблице, а не по списку в разметке: тринадцатая
-   ступень иначе осталась бы без полосы молча — именно это и сторожит тест,
-   сверяя число полос с длиной таблицы.
+/* Кубок. Полосы красятся по таблице, а не по списку в разметке, и полос
+   столько, сколько ступеней в КРУГЕ — это сторожит тест. Здесь было
+   «тринадцатая ступень иначе осталась бы без полосы», и с 27 октября
+   тринадцатая есть: она первая полоса второго круга.
 
-   Копилка выше вершины заливает все полосы и не ищет тринадцатую. */
+   Копилка выше вершины заливает все полосы и не ищет двадцать пятую. */
 function renderTrophy() {
   const bank = players.bank();
-  const lv = levelAt(bank);
+  /* Полосы — ступени ТЕКУЩЕГО круга. Второй круг перекрашивает те же
+     двенадцать полос своей лестницей цвета и начинает её с нижней. */
+  const { circle, inCircle: lv, level } = circleAt(bank);
   for (const el of document.querySelectorAll('#trophyBars rect[data-lv]')) {
     const n = Number(el.dataset.lv);
     // Взятая полоса — своим цветом; запертая оставлена стилю, где она --dim.
@@ -1563,22 +1590,64 @@ function renderTrophy() {
        которое красит запертую полосу. Проверено в браузере — полосы
        оставались серыми при любой копилке, а ножка с подставкой, которых код
        не трогает, рисовались верно. Отказ самомаскирующийся. */
-    if (n <= lv) el.style.fill = TROPHY[n - 1].color;
+    if (n <= lv) el.style.fill = TROPHY[circle * CIRCLE + n - 1].color;
     else el.style.removeProperty('fill');
   }
-  /* Вершина взята — кубок золотеет. ОБВОДКОЙ, а не заливкой: светлота полос
-     строго возрастает и этим сообщает рост, а сплошное золото перебило бы эту
-     лестницу и отняло у кубка единственный признак, который переживает
+  /* Вершина круга взята — кубок золотеет. ОБВОДКОЙ, а не заливкой: светлота
+     полос строго возрастает и этим сообщает рост, а сплошное золото перебило
+     бы эту лестницу и отняло у кубка единственный признак, который переживает
      Miracast. */
-  $('trophyCup').classList.toggle('gold', lv >= TROPHY.length);
+  $('trophyCup').classList.toggle('gold', lv >= CIRCLE);
+  /* Второй круг отмечен ЗВЕЗДОЙ над чашей, а не только тоном полос:
+     цветность Miracast режет первой, а крупная плоская фигура переживает. */
+  $('trophyCup').classList.toggle('circle2', circle > 0);
 
-  $('trophyNow').textContent = lv > 0
-    ? `Собрано ${bank} ${plural(bank, RINGS)}, уровень ${lv}`
-    : `Собрано ${bank} ${plural(bank, RINGS)}`;
+  $('trophyNow').textContent = circle > 0
+    ? `Собрано ${bank} ${plural(bank, RINGS)} · второй круг, уровень ${lv}`
+    : level > 0
+      ? `Собрано ${bank} ${plural(bank, RINGS)}, уровень ${level}`
+      : `Собрано ${bank} ${plural(bank, RINGS)}`;
+  renderMedals(bank);
   const next = nextAt(bank);
   $('trophyNext').textContent = next
     ? `Следующий: ${next.name} — ещё ${next.left} ${plural(next.left, RINGS)}`
     : 'Кубок собран целиком!';
+}
+
+/* Сетка медалей: строка — мир, столбец — уровень сложности. Строится по
+   реестрам WORLDS и LEVELS: число клеток задают они, второй список в разметке
+   разъехался бы с ними.
+
+   Взятая медаль — заливкой, пустая — тусклой заливкой: тонкая рамка под
+   Miracast исчезнет. Запертый уровень виден, но гаснет целым столбцом —
+   ребёнок видит, за что бежит, как с мирами. */
+function renderMedals(bank) {
+  const есть = players.medals();
+  const grid = $('medalGrid');
+  grid.innerHTML = '';
+  grid.style.setProperty('--cols', String(LEVELS.length));
+  grid.appendChild(document.createElement('span'));
+  LEVELS.forEach((_, i) => {
+    const h = document.createElement('span');
+    h.className = 'medal-head';
+    h.textContent = String(i + 1);
+    grid.appendChild(h);
+  });
+  for (const w of Object.values(WORLDS)) {
+    const name = document.createElement('span');
+    name.className = 'medal-world';
+    name.textContent = w.name;
+    grid.appendChild(name);
+    LEVELS.forEach((_, i) => {
+      const c = document.createElement('span');
+      c.className = 'medal'
+        + (есть[`${i}:${w.id}`] ? ' got' : '')
+        + (stepOpen(bank, i) ? '' : ' locked');
+      grid.appendChild(c);
+    });
+  }
+  const n = Object.keys(есть).length;
+  $('medalNow').textContent = `Медали за забег без удара: ${n} из ${LEVELS.length * Object.keys(WORLDS).length}`;
 }
 
 /* Список миров. Строится по реестру WORLDS, а порог берётся из таблицы
@@ -1637,28 +1706,38 @@ $('worldsBack').onclick = BACK.worlds = () => show('menu');
 /* Выбор сложности — экран-близнец выбора мира, и это не совпадение формы:
    ребёнок уже умеет им пользоваться, а взрослый находит его там же.
 
-   Открыты ВСЕ ПЯТЬ сразу, без порога по кольцам, и у кнопки поэтому два
-   состояния, а не три. Запереть сложность значило бы вернуть машину,
-   решающую за ребёнка, — ровно то, что правка 18 октября убирает, — и
-   сделать платным путь ВНИЗ. А он обязан быть открыт всегда: «слишком
-   трудно» здесь худший класс дефекта, «слишком легко» всего лишь скучно.
+   Пять нижних открыты сразу, без порога по кольцам: путь ВНИЗ обязан быть
+   открыт всегда — «слишком трудно» здесь худший класс дефекта, «слишком
+   легко» всего лишь скучно.
 
-   Кубок остаётся при своём: он открывает МИРЫ. Две разные вещи за одним
-   порогом сделали бы непонятными обе («почему, набрав колец, игра стала
-   труднее?»). */
+   Здесь было «Открыты ВСЕ ПЯТЬ сразу… у кнопки два состояния, а не три» и
+   «Кубок открывает МИРЫ. Две разные вещи за одним порогом сделали бы
+   непонятными обе („почему, набрав колец, игра стала труднее?“)». 27 октября
+   шестой и седьмой уровни стали призами второго круга, и у кнопки три
+   состояния, как у мира. Довод против запирания был против того, чтобы
+   игра делала себя труднее сама, — здесь она этого не делает: уровень за
+   кольца ОТКРЫВАЕТСЯ, а выбирает его ребёнок кнопкой. Решение заказчика:
+   верхний уровень надо заслужить. */
 function renderLevels() {
-  const выбран = clampStep(players.step());
+  const bank = players.bank();
+  const выбран = activeStep(bank, players.step());
   const list = $('levelList');
   list.innerHTML = '';
   LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
-    b.innerHTML = `${i + 1} · ${lv.name}<small>${lv.hint}</small>`;
-    if (i === выбран) b.className = 'chosen';
-    b.onclick = () => {
-      players.setStep(i);
-      renderLevels();
-      refreshMenuLevel();
-    };
+    if (stepOpen(bank, i)) {
+      b.innerHTML = `${i + 1} · ${lv.name}<small>${lv.hint}</small>`;
+      if (i === выбран) b.className = 'chosen';
+      b.onclick = () => {
+        players.setStep(i);
+        renderLevels();
+        refreshMenuLevel();
+      };
+    } else {
+      const left = stepThreshold(i) - Math.max(0, bank);
+      b.innerHTML = `${i + 1} · ${lv.name}<small>ещё ${left} ${plural(left, RINGS)}</small>`;
+      b.disabled = true;
+    }
     list.appendChild(b);
   });
 }
@@ -1667,7 +1746,7 @@ function renderLevels() {
    где уровень едет числом; слово ребёнку. Прецедент прямой: «Кубок: уровень
    3» — голое число в столбце соседних кнопок читается как что угодно. */
 function refreshMenuLevel() {
-  const i = clampStep(players.step());
+  const i = activeStep(players.bank(), players.step());
   $('levelV').textContent = `${i + 1} · ${LEVELS[i]?.name ?? LEVELS[0].name}`;
 }
 

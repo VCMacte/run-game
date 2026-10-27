@@ -96,6 +96,10 @@ function fresh(name) {
        Общая ступень означала бы, что один вечер игры взрослого делает игру
        ребёнка труднее. */
     step: 0,
+    /* Медали за чистый забег: ключ «ступень:мир» → true. Своё поле, а не
+       вывод из рекордов: в рекорде нет мира, пишется он по кнопке и
+       вытесняется худшими. Медаль же взята раз — и навсегда. */
+    medals: {},
   };
 }
 
@@ -181,6 +185,11 @@ function shape(raw) {
       // здесь мы не знаем, сколько их. Нечисло — значит профиль старый, и
       // начинать ему с нуля правильно.
       step: Number.isInteger(p.step) && p.step > 0 ? p.step : 0,
+      // Берутся только ключи вида «ступень:мир» со значением true: мусор
+      // медалью не становится. Есть ли такой мир — решает js/awards.js.
+      medals: Object.fromEntries(Object.entries(
+        p.medals && typeof p.medals === 'object' ? p.medals : {},
+      ).filter(([k, v]) => v === true && /^\d+:[a-z]+$/.test(k))),
     }));
   if (list.length === 0) return null;
   const currentId = list.some((p) => p.id === raw.currentId) ? raw.currentId : list[0].id;
@@ -460,6 +469,23 @@ export const players = {
     p.step = n;
     persist();
     return p.step;
+  },
+
+  // ── медали ──
+
+  medals: () => ({ ...(me()?.medals || {}) }),
+
+  /* Отдаёт true, только если медаль НОВАЯ: экран результата празднует её
+     один раз. Ключ строит js/awards.js (`medalFor`), здесь его только
+     хранят. */
+  addMedal(key) {
+    const p = me();
+    if (!p || typeof key !== 'string' || !key) return false;
+    if (!p.medals) p.medals = {};
+    if (p.medals[key]) return false;
+    p.medals[key] = true;
+    persist();
+    return true;
   },
 
   addToBank(stars) {

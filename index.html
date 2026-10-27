@@ -284,9 +284,16 @@
       <!-- Ножка и подставка: крупные плоские формы, как требует сжатие. -->
       <rect x="46" y="108" width="8" height="22" fill="#8a6a2f" />
       <rect x="30" y="130" width="40" height="10" fill="#6b5024" />
+      <!-- Звезда второго круга: первый пройден. Видна только у .circle2 —
+           el.hidden на SVG не работает, прячет её стиль. -->
+      <polygon id="trophyStar" points="50.0,0.5 51.4,4.1 55.2,4.3 52.2,6.7 53.2,10.4 50.0,8.3 46.8,10.4 47.8,6.7 44.8,4.3 48.6,4.1" />
     </svg>
     <div id="trophyNow" class="when">—</div>
     <div id="trophyNext" class="when">—</div>
+    <!-- Медали за забег без удара: клетки собирает код по реестрам миров и
+         уровней. -->
+    <div id="medalNow" class="when">—</div>
+    <div id="medalGrid" class="medals"></div>
     <div class="row center"><button id="trophyBack" class="ghost">Назад</button></div>
   </section>
 

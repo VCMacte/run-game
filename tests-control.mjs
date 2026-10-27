@@ -17,14 +17,15 @@ import { fieldPosition, coverFit } from './js/preview.js';
 import { makeLevel, telegraph, isSafe, LOOKS, looksFor, telegraphDebt } from './js/level.js';
 import { tuneFor, breatherFor, clampStep, STEP_MAX, LEVELS } from './js/difficulty.js';
 import {
-  TROPHY, STEP_RINGS, TOP_LEVEL, levelAt, unlockedAt, nextAt, worldsAt, prizeName,
-  activeWorld,
+  TROPHY, STEP_RINGS, STEP_RINGS_2, CIRCLE, TOP_LEVEL, thresholdOf, levelAt, circleAt,
+  unlockedAt, nextAt, worldsAt, prizeName, activeWorld, titleAt, activeStep, stepOpen,
+  stepThreshold, LOCKED_STEPS, medalFor,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
-import { describe, motifFor, motifNameFor } from './js/audio.js';
+import { describe, motifFor, motifNameFor, VARIANTS } from './js/audio.js';
 import { OPTIONS, poseDelegate } from './js/settings.js';
 import { delegateLadder } from './js/pose.pack.js';
 import { isOurCache, isOurScope } from './js/vendor.js';
@@ -3339,6 +3340,15 @@ group('ступень', () => {
       'заказчик назвал ровно два уровня, где растёт скорость: третий и пятый');
     check('пятый быстрее четвёртого', скорость(4) > скорость(3),
       `${скорость(3)} → ${скорость(4)}`);
+    /* Шестой и седьмой — призы второго круга, и растёт у них именно
+       скорость: размах упёрся в потолок 0.49 ещё на пятом. */
+    check('шестой быстрее пятого', скорость(5) > скорость(4),
+      `${скорость(4)} → ${скорость(5)}`);
+    check('седьмой быстрее шестого', скорость(6) > скорость(5),
+      `${скорость(5)} → ${скорость(6)}`);
+    check('размах выше пятого не растёт',
+      tuneFor(5).blockFrac === tuneFor(4).blockFrac && tuneFor(6).blockFrac === tuneFor(4).blockFrac,
+      'потолок 0.49 держит запас на исполнение жеста');
   }
 
   /* ── скорость не трогает время на решение ──
@@ -3694,7 +3704,7 @@ group('звук', () => {
      то, что длинный звук позволен только финишу: он терминальный, после него
      не решают ничего. */
   {
-    const финишные = ['finish', 'finishFanfare', 'finishGold'];
+    const финишные = ['finish', 'finishFanfare', 'finishGold', 'finishFinale', 'finishClean'];
     const прочие = Object.entries(m).filter(([k]) => !финишные.includes(k));
     check('финишные мотивы длиннее всех прочих',
       Math.min(...финишные.map((k) => m[k].length)) > Math.max(...прочие.map(([, v]) => v.length)),
@@ -3735,6 +3745,39 @@ group('звук', () => {
   check('и фанфара вершины идёт вверх',
     m.finishGold.every((n, i, a) => i === 0 || n[0] >= a[i - 1][0]),
     'вниз она читалась бы как проигрыш');
+
+  /* ── звуки второго круга ── Те же правила: подмена события, число нот
+     события, финиш вверх и не длиннее фанфары вершины. */
+  check('колокольчик — две ноты, как у кольца', m.starBell?.length === m.star.length,
+    `${m.starBell?.length} против ${m.star.length}`);
+  check('и звонче звонкого сбора', m.starBell.at(-1)[2] > m.starChime.at(-1)[2]);
+  check('звон большого — три ноты, как у большого', m.starBigBell?.length === m.starBig.length);
+  check('и звонче большого', m.starBigBell.at(-1)[2] > m.starBig.at(-1)[2]);
+  for (const k of ['finishFinale', 'finishClean']) {
+    check(`«${k}» идёт вверх`, m[k].every((n, i, a) => i === 0 || n[0] >= a[i - 1][0]),
+      'вниз финиш читался бы как проигрыш');
+    check(`«${k}» не длиннее фанфары вершины`, m[k].length <= m.finishGold.length);
+  }
+  check('колокольчик сильнее звонкого сбора',
+    motifNameFor('star', { chime: true, bell: true }) === 'starBell');
+  check('у большого кольца свой вариант', motifNameFor('starBig', { bigbell: true }) === 'starBigBell');
+  check('без приза большое звучит как было', motifNameFor('starBig', {}) === 'starBig');
+  check('большая фанфара сильнее вершины первого круга',
+    motifNameFor('finish', { fanfare: true, gold: true, finale: true }) === 'finishFinale');
+  check('песня чистого забега сильнее всех',
+    motifNameFor('finish', { fanfare: true, gold: true, finale: true, clean: true }) === 'finishClean');
+  check('а погашенная — уступает большой фанфаре',
+    motifNameFor('finish', { fanfare: true, gold: true, finale: true, clean: false }) === 'finishFinale',
+    'с ударом в забеге песня чистого забега звучать не вправе');
+  /* Каждый звуковой приз таблицы назван в VARIANTS: иначе ступень обещает
+     звук, которого нет. */
+  {
+    const звуковые = ['chime', 'fanfare', 'gold', 'bell', 'finale', 'bigbell', 'clean'];
+    const вТаблице = Object.values(VARIANTS).flatMap((v) => Object.keys(v));
+    for (const id of звуковые) {
+      check(`приз «${id}» звучит`, вТаблице.includes(id) && TROPHY.some((r) => r.id === id));
+    }
+  }
 
   /* Выключенный в родительском меню звук СИЛЬНЕЕ любого приза. Из node
      проверить исполнением нельзя — Web Audio здесь нет, — поэтому сторож
@@ -4291,14 +4334,21 @@ group('порядок маляра', () => {
    не имеет, и приз, пропавший от прибавки колец, — худшее, что здесь может
    случиться с ребёнком. */
 group('кубок', () => {
-  check('двенадцать ступеней', TROPHY.length === TOP_LEVEL, `${TROPHY.length}`);
-  check('шаг сотня', STEP_RINGS === 100, `${STEP_RINGS}`);
+  check('вершина — последняя строка таблицы', TROPHY.length === TOP_LEVEL, `${TROPHY.length}`);
+  check('два круга по двенадцать', TROPHY.length === 2 * CIRCLE, `${TROPHY.length}`);
+  check('шаг первого круга сотня', STEP_RINGS === 100, `${STEP_RINGS}`);
+  /* Решение заказчика 27 октября: «новые уровни кубка должны проходиться за
+     большее количество монет. Один шаг новых уровней надо сделать в 300». */
+  check('шаг второго круга триста', STEP_RINGS_2 === 300, `${STEP_RINGS_2}`);
 
-  // Порог ступени — её номер, умноженный на шаг. Проверяется формулой, а не
-  // списком: список был бы второй копией таблицы.
+  // Порог ступени — формулой, а не списком: список был бы второй копией
+  // таблицы. Формула же проверяется по точкам, где живут ошибки на единицу.
+  for (const [i, at] of [[0, 100], [11, 1200], [12, 1500], [13, 1800], [23, 4800]]) {
+    check(`формула порога: ступень ${i + 1} — ${at}`, thresholdOf(i) === at, `${thresholdOf(i)}`);
+  }
   TROPHY.forEach((row, i) => {
-    check(`ступень ${i + 1}: порог ${(i + 1) * STEP_RINGS}`,
-      row.at === (i + 1) * STEP_RINGS, `${row.at}`);
+    check(`ступень ${i + 1}: порог ${thresholdOf(i)}`,
+      row.at === thresholdOf(i), `${row.at}`);
     check(`ступень ${i + 1}: есть цвет`, /^#[0-9a-f]{6}$/.test(row.color || ''), row.color);
     check(`ступень ${i + 1}: есть имя`, prizeName(row).length > 0);
   });
@@ -4309,7 +4359,8 @@ group('кубок', () => {
 
   // Границы. Именно здесь живут все ошибки на единицу.
   for (const [bank, lv] of [[0, 0], [1, 0], [99, 0], [100, 1], [199, 1], [200, 2],
-                            [1199, 11], [1200, 12], [5000, 12], [100000, 12]]) {
+                            [1199, 11], [1200, 12], [1499, 12], [1500, 13], [1625, 13],
+                            [1799, 13], [1800, 14], [4799, 23], [4800, 24], [100000, 24]]) {
     check(`копилка ${bank} → уровень ${lv}`, levelAt(bank) === lv, `${levelAt(bank)}`);
   }
   /* Мусор вместо числа даёт нулевой уровень, а не NaN. Копилка читается из
@@ -4320,12 +4371,12 @@ group('кубок', () => {
 
   /* Монотонность открытого — главная проверка этой группы. */
   let прошлый = unlockedAt(0);
-  for (let bank = 50; bank <= 1500; bank += 50) {
+  for (let bank = 50; bank <= 5000; bank += 50) {
     const нынешний = unlockedAt(bank);
     for (const [k, v] of Object.entries(прошлый)) {
-      if (k === 'worlds') {
+      if (Array.isArray(v)) {
         for (const w of v) {
-          check(`копилка ${bank}: мир ${w} не отобран`, нынешний.worlds.includes(w));
+          check(`копилка ${bank}: ${k} ${w} не отобран`, нынешний[k].includes(w));
         }
       } else if (v) {
         check(`копилка ${bank}: приз ${k} не отобран`, нынешний[k] === true);
@@ -4340,7 +4391,16 @@ group('кубок', () => {
   check('искры открываются ровно на сотне',
     unlockedAt(99).sparks === false && unlockedAt(100).sparks === true);
 
-  check('на вершине следующего уровня нет', nextAt(1200) === null);
+  check('на вершине следующего уровня нет', nextAt(4800) === null);
+  /* Вершина первого круга больше не вершина: копилка 1200 видит впереди
+     второй круг, а не «кубок собран целиком». */
+  check('с вершины первого круга следующий — второй круг',
+    nextAt(1200)?.level === 13 && nextAt(1200)?.at === 1500, JSON.stringify(nextAt(1200)));
+  {
+    const n = nextAt(1625);
+    check('у копилки ребёнка следующий — «Ураган» через 175',
+      n?.at === 1800 && n?.left === 175 && n?.name === 'уровень «Ураган»', JSON.stringify(n));
+  }
   check('и выше вершины тоже нет', nextAt(9999) === null);
   const n0 = nextAt(0);
   check('у нового игрока следующий — первый уровень',
@@ -4362,13 +4422,65 @@ group('кубок', () => {
      «наливается» даже когда Miracast съел цветность. Проверяется той же
      функцией, что и палитра коридора, и с зазором: слипшиеся по светлоте
      полосы на телевизоре неразличимы, хотя формально «возрастают». */
+  /* Подъём ВНУТРИ круга: второй круг перекрашивает те же двенадцать полос и
+     начинает лестницу заново, с тёмной. Сквозной подъём на 24 полосы не
+     влез бы в светлоту с зазором 0.04 без пересжатия первого круга. */
   let прошлая = -1;
-  for (const row of TROPHY) {
+  TROPHY.forEach((row, i) => {
+    if (i % CIRCLE === 0) прошлая = -1;
     const l = luminance(row.color);
-    check(`${row.id}: светлее предыдущей полосы минимум на 0.04`, l - прошлая >= 0.04,
+    check(`${row.id}: светлее предыдущей полосы круга минимум на 0.04`, l - прошлая >= 0.04,
       `${l.toFixed(4)} после ${прошлая.toFixed(4)}`);
     прошлая = l;
+  });
+
+  // ── круг на экране ──
+  check('копилка 1200 — полный первый круг',
+    JSON.stringify(circleAt(1200)) === JSON.stringify({ circle: 0, inCircle: 12, level: 12 }),
+    JSON.stringify(circleAt(1200)));
+  check('копилка 1500 — первая полоса второго',
+    circleAt(1500).circle === 1 && circleAt(1500).inCircle === 1, JSON.stringify(circleAt(1500)));
+  check('вершина — полный второй круг',
+    circleAt(4800).circle === 1 && circleAt(4800).inCircle === 12, JSON.stringify(circleAt(4800)));
+
+  // ── звания ──
+  check('до второго круга звания нет', titleAt(1499) === null, String(titleAt(1499)));
+  check('на 1500 — «Бегун»', titleAt(1500) === 'Бегун', String(titleAt(1500)));
+  check('показывается последнее взятое', titleAt(4800) === 'Легенда', String(titleAt(4800)));
+  check('звание называется в кавычках', prizeName(TROPHY[12]) === 'звание «Бегун»',
+    prizeName(TROPHY[12]));
+
+  // ── ступени сложности за кольца ──
+  check('заперты ровно шестой и седьмой уровни', String(LOCKED_STEPS) === '5,6',
+    String(LOCKED_STEPS));
+  check('и это два верхних', LOCKED_STEPS.every((x) => x >= STEP_MAX - 1));
+  check('пороги — 1800 и 3300', stepThreshold(5) === 1800 && stepThreshold(6) === 3300,
+    `${stepThreshold(5)}, ${stepThreshold(6)}`);
+  /* Путь вниз бесплатный всегда: «слишком трудно» здесь худший класс
+     дефекта, и запереть лёгкий уровень значит отнять выход из него. */
+  for (let s1 = 0; s1 < 5; s1++) {
+    check(`уровень ${s1 + 1} открыт у нового игрока`, stepOpen(0, s1));
   }
+  check('«Ураган» закрыт до 1800', !stepOpen(1799, 5) && stepOpen(1800, 5));
+  check('«Буря» закрыта до 3300', !stepOpen(3299, 6) && stepOpen(3300, 6));
+  check('закрытая ступень уходит на верхнюю открытую', activeStep(1625, 6) === 4,
+    `${activeStep(1625, 6)}`);
+  check('открытая остаётся собой', activeStep(1800, 5) === 5 && activeStep(0, 3) === 3);
+  check('«Буря» при копилке «Урагана» — «Ураган»', activeStep(2000, 6) === 5,
+    `${activeStep(2000, 6)}`);
+  check('мусор вместо ступени — первая', activeStep(5000, 'x') === 0);
+  check('имя уровня-приза берётся из реестра уровней',
+    prizeName(TROPHY.find((r) => r.kind === 'level')) === `уровень «${LEVELS[5].name}»`);
+
+  // ── медали ──
+  const чистый = { hits: 0, durationS: 300, step: 4 };
+  check('чистый забег даёт медаль', medalFor(чистый, 'ice') === '4:ice', String(medalFor(чистый, 'ice')));
+  check('удар — медали нет', medalFor({ ...чистый, hits: 1 }, 'ice') === null);
+  check('отладочная длина медали не даёт', medalFor({ ...чистый, durationS: 20 }, 'ice') === null);
+  check('длина с дробью округляется', medalFor({ ...чистый, durationS: 180.4 }, 'hills') === '4:hills');
+  check('неизвестный мир — медали нет', medalFor(чистый, 'moon') === null);
+  check('без ступени — медали нет', medalFor({ hits: 0, durationS: 300 }, 'ice') === null);
+  check('без результата — медали нет', medalFor(null, 'ice') === null);
 
   /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
      зоны; мир без арта честно говорит это полем zones: null, а не пустым
@@ -4517,7 +4629,7 @@ group('кубок', () => {
      сумму весов: при нуле выходит NaN, возвращается последний вид списка — то
      есть обочина не падает, а ВРЁТ, и поймать это глазами нечем. */
   for (const z of ZONES_ALL) {
-    for (const prizes of [{}, { bloom: true }, unlockedAt(1200)]) {
+    for (const prizes of [{}, { bloom: true }, unlockedAt(TROPHY[TROPHY.length - 1].at)]) {
       const ks = kindsFor(z, prizes);
       check(`зона ${z}: состав не пуст при наборе ${Object.keys(prizes).length} призов`,
         ks.length > 0 && ks.reduce((acc, k) => acc + k.weight, 0) > 0,
@@ -5037,7 +5149,7 @@ group('бюджет кадра', () => {
      мерить надо кадр ребёнка с собранной лестницей, а не пустой профиль.
      Пустой профиль не увидел бы ни одного нового приза вовсе, то есть счётчик
      мерил бы игру, в которую через месяц играть не будут. */
-  const prizes = unlockedAt(1200);
+  const prizes = unlockedAt(TROPHY[TROPHY.length - 1].at);
   /* И по КАЖДОМУ собранному миру. Счётчик брал зоны первого мира умолчанием,
      то есть зоны нового мира в бюджет не попадали вовсе — перебор в них был
      бы не виден. Берутся только миры с собранным артом: у остальных зон нет,
@@ -6505,6 +6617,14 @@ group('игроки', () => {
     check('хранилище своего потолка не выдумывает', players.step() === 99);
     check('а зажимает его difficulty.js', clampStep(99) === STEP_MAX);
     players.setStep(0);
+
+    /* ── медали ── Медаль берётся один раз: экран результата празднует
+       только НОВУЮ, иначе каждый чистый забег кричал бы «новая медаль». */
+    check('у нового игрока медалей нет', Object.keys(players.medals()).length === 0);
+    check('первая медаль — новая', players.addMedal('4:ice') === true);
+    check('вторая такая же — уже не новая', players.addMedal('4:ice') === false);
+    check('медаль видна', players.medals()['4:ice'] === true);
+    check('пустой ключ медалью не становится', players.addMedal('') === false);
 
     /* Запись рекорда помнит ступень, а старая запись НЕ получает нуль:
        отсутствие поля значит «сделана до тихой адаптации», и нулём это

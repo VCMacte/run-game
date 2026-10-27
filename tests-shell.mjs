@@ -16,9 +16,11 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEME, luminance } from './js/theme.js';
-import { TROPHY } from './js/awards.js';
+import { TROPHY, CIRCLE } from './js/awards.js';
 
-const TROPHY_LEN = TROPHY.length;
+/* Полос у кубка столько, сколько ступеней в КРУГЕ: второй круг перекрашивает
+   те же полосы, а не рисует новые. */
+const TROPHY_LEN = CIRCLE;
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -672,6 +674,10 @@ group('экран результата', () => {
      при каждой перезагрузке, а заметить это можно только на второй сессии.
      Из node не проверить вовсе (localStorage там нет), поэтому сторож
      текстовый и требует поле в ОБОИХ местах. */
+  /* Медали — третье такое поле, и мина та же. */
+  check('медали заводятся у нового игрока', /medals: \{\},/.test(pl));
+  check('и восстанавливаются при чтении профиля', /medals: Object\.fromEntries/.test(pl),
+    'read() собирает профиль поимённо — забытое поле пропадает молча');
   check('выбранный мир заводится у нового игрока', /world: 'hills',/.test(pl));
   check('и восстанавливается при чтении профиля',
     /world: typeof p\.world === 'string'/.test(pl),
@@ -694,8 +700,8 @@ group('экран результата', () => {
 group('кубок на экране', () => {
   const app = read('js/app.js');
   const полосы = [...html.matchAll(/data-lv="(\d+)"/g)].map((m) => Number(m[1]));
-  check('полос столько же, сколько ступеней', полосы.length === TROPHY_LEN,
-    `${полосы.length} полос при ${TROPHY_LEN} ступенях`);
+  check('полос столько же, сколько ступеней в круге', полосы.length === TROPHY_LEN,
+    `${полосы.length} полос при ${TROPHY_LEN} ступенях в круге`);
   check('полосы пронумерованы подряд с единицы',
     String(полосы.slice().sort((a, b) => a - b)) === String(
       Array.from({ length: TROPHY_LEN }, (_, i) => i + 1)),
