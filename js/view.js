@@ -1282,7 +1282,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
       } else if (ob.look === 'icicles') {
         drawIcicles(ob, z, cam, elapsed, { project, quad, mscale });
       } else if (ob.look === 'ribs') {
-        drawRibs(ob, z, cam, { project, quad });
+        drawRibs(ob, z, cam, elapsed, { project, quad, mscale });
       } else if (ob.look === 'comet') {
         // Имя внешности историческое, фигура — метеорный дождь; разбор в
         // шапке `drawMeteors`.
@@ -1587,9 +1587,15 @@ function drawIcicles(ob, z, cam, elapsed, { project, quad, mscale }) {
 }
 
 /* Рёбра затонувшего кита — вода. Хребет вдоль плиты и пять рёбер вниз.
-   Неподвижны: кость не шевелится, и в этом вся разница с медузой на той же
-   глубине. */
-function drawRibs(ob, z, cam, { project, quad }) {
+
+   Рёбра КОЛЫШУТСЯ. Здесь стояло: «Неподвижны: кость не шевелится, и в этом
+   вся разница с медузой на той же глубине». Опроверг это заказчик 29
+   октября. Он видит в рёбрах водоросли: «каждая водорослина должна двигаться
+   влево, потом на исходную, потом вправо». Поэтому конец каждого ребра ходит
+   маятником вокруг своего места, а корень на хребте стоит. Это колебание на
+   месте, а не езда вдоль плиты: езда вбок и была дефектом кометы. Соседние
+   рёбра сдвинуты по фазе на десятую маха, и по ряду идёт волна течения. */
+function drawRibs(ob, z, cam, elapsed, { project, quad, mscale }) {
   const top = WALL;
   const bottom = O.duckHeight;
   const ph = top - bottom;
@@ -1614,10 +1620,12 @@ function drawRibs(ob, z, cam, { project, quad }) {
     // вырождается в треугольник и кость читается костью.
     const w = HALF * 0.07;
     const len = ph * (0.34 + 0.16 * wobble(ob.at, i + 17));
+    const sway = HALF * MOTION.ribSwayFrac * mscale
+      * Math.sin(2 * Math.PI * (elapsed * MOTION.ribSwayHz + ob.at + 0.1 * i));
     quad(
       project(x - w, spine, z, cam), project(x + w, spine, z, cam),
-      project(x + w * 0.35, spine - len, z, cam),
-      project(x - w * 0.35, spine - len, z, cam),
+      project(x + w * 0.35 + sway, spine - len, z, cam),
+      project(x - w * 0.35 + sway, spine - len, z, cam),
       COLORS.blockDeep,
     );
   }
