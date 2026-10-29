@@ -1085,20 +1085,15 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
        Качание берут готовый `palmSway` — второй источник фазы был бы второй
        копией понятия. */
     } else if (d.kind === 'kelp') {
-      /* Водоросль: две ленты от дна, обе колышутся из стороны в сторону.
-         Верх уже низа — стебель «стелется», а не стоит столбом. Две
-         заливки, то есть дешевле ели, которую она заменяет.
-
-         Колыхание своё (`MOTION.kelpSwayHz`, `kelpSwayM`), разбор — там же.
-         Ленты сдвинуты на четверть маха: одна идёт, пока другая
-         разворачивается, и куст колышется, а не кренится целиком. */
-      for (const [dx, w, len, lag] of [[-0.10, 0.09, 1.0, 0], [0.10, 0.07, 0.78, 0.25]]) {
+      /* Водоросль: две ленты от дна, обе качаются. Верх уже низа и уведён
+         течением — стебель «стелется», а не стоит столбом. Две заливки, то
+         есть дешевле ели, которую она заменяет. */
+      for (const [dx, w, len] of [[-0.10, 0.09, 1.0], [0.10, 0.07, 0.78]]) {
         const bx = d.x + dx;
         const tp = base + d.h * len;
-        const kx = kelpSway(elapsed, d.phase + lag, mscale) * len;
         quad(
           pr(bx - w, base, z), pr(bx + w, base, z),
-          pr(bx + w * 0.4 + kx, tp, z), pr(bx - w * 0.4 + kx, tp, z),
+          pr(bx + w * 0.4 + sway * 1.6, tp, z), pr(bx - w * 0.4 + sway * 1.6, tp, z),
           dx < 0 ? C.kelp : C.grassDark,
         );
       }
@@ -2649,11 +2644,6 @@ export function rainbowOf(base, t, scale = 1) {
     никто с настройкой не свяжет. */
 export const buddyFlap = (t, scale = 1) =>
   0.5 + 0.5 * Math.sin(t * MOTION.buddyHz * 2 * Math.PI) * scale;
-
-/** Колыхание верхушки водоросли, метры. Разбор чисел — у `MOTION.kelpSwayHz`. */
-export function kelpSway(t, phase = 0, scale = 1) {
-  return MOTION.kelpSwayM * scale * Math.sin(2 * Math.PI * (t * MOTION.kelpSwayHz + phase));
-}
 
 export function palmSway(t, phase = 0, scale = 1) {
   return MOTION.palmSwayM * scale * Math.sin(2 * Math.PI * (t * MOTION.palmSwayHz + phase));
