@@ -215,6 +215,7 @@ node. Амплитуда жмётся через `motionScale`, но не в н�
 | [`docs/calibration.md`](docs/calibration.md) | стадии калибровки, нейтраль, зона-цель, ширина игрового поля |
 | [`docs/obstacles.md`](docs/obstacles.md) | расписание препятствий, приговор, обочина, разнос, звуковые мотивы |
 | [`docs/obstacle-looks.md`](docs/obstacle-looks.md) | фигуры на плите: пары внешностей миров, бадник, створка, общие правила фигур |
+| [`docs/pixel-world.md`](docs/pixel-world.md) | пиксельный мир: `pixelSprite`, порог клетки, кадровая анимация, слизень и арка |
 | [`docs/rings.md`](docs/rings.md) | расстановка колец, фразы, запретные окна, большое кольцо |
 | [`docs/view-and-zones.md`](docs/view-and-zones.md) | панорама, проекция, пол и обрывы, палитра, три зоны |
 | [`docs/sky-and-art.md`](docs/sky-and-art.md) | фоновые растры, их сборка инструментами, анимации |

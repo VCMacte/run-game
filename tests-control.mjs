@@ -22,7 +22,7 @@ import {
   stepThreshold, LOCKED_STEPS, medalFor,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
-import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear } from './js/view.js';
+import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
 import { describe, motifFor, motifNameFor, VARIANTS } from './js/audio.js';
@@ -111,6 +111,9 @@ function painter() {
     lineTo: add,
     ellipse(x, y) { add(x, y); },
     quadraticCurveTo(x1, y1, x2, y2) { add(x1, y1); add(x2, y2); },
+    /* Квадратики пиксельного спрайта: много `rect` в одном пути, одна
+       заливка на цвет. Габарит фигуры — по углам всех квадратиков. */
+    rect(x, y, w, h) { add(x, y); add(x + w, y + h); },
     drawImage(im) { images.push(im); },
     /* Пустышки преобразований. Нужны с тех пор, как вторая копия растра неба
        кладётся зеркально: без них отрисовка падает в node, то есть набор
@@ -5597,7 +5600,7 @@ group('небо не красит невидимое', () => {
       get fillStyle() { return style; },
       set fillStyle(v) { style = v; },
       beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
-      ellipse() {}, quadraticCurveTo() {}, fill() {},
+      ellipse() {}, quadraticCurveTo() {}, rect() {}, fill() {},
       /* Преобразования записываются, а не выбрасываются: вторая копия растра
          кладётся зеркально, и без этой записи проверить зеркало нечем. */
       save() { ops.push('save'); }, restore() { ops.push('restore'); },
@@ -8723,6 +8726,23 @@ group('лестница делегатов', () => {
   ]));
   check('а разошедшийся исход называет прямо',
     /вышло GPU/.test(format(отказ)), format(отказ));
+});
+
+group('пиксельный спрайт', () => {
+  /* Цена спрайта — число его цветов, а не квадратиков: на каждый цвет один
+     путь из `rect` и одна заливка. Края — на целых пикселях от общего начала,
+     иначе швы между квадратиками дрожат при приближении. */
+  const g = ['.AA.', 'ABBA', 'ABBA', '.AA.'];
+  const pal = { A: '#111111', B: '#222222' };
+  const { canvas, fills, shapes } = painter();
+  const n = pixelSprite(canvas.getContext('2d'), g, pal, 10.4, 20.6, 8);
+  check('спрайт платит по цвету, а не по клетке', n === 2 && fills.length === 2,
+    `${n} / ${fills.length}`);
+  check('края клеток на целых пикселях',
+    shapes.every((s) => Number.isInteger(s.minX) && Number.isInteger(s.minY)));
+  check('габарит спрайта 4 клетки', shapes[0].w === 32, String(shapes[0].w));
+  check('мелкая клетка не рисуется',
+    pixelSprite(painter().canvas.getContext('2d'), g, pal, 0, 0, 1.9) === 0);
 });
 
 // ─────────────────────────── итог ───────────────────────────

@@ -16,7 +16,7 @@
 //     минимумом текстур смотреть больше не на что, и без них кажется, что
 //     стоишь на месте.
 //
-// Разбор: docs/difficulty.md, docs/frame-budget.md, docs/identity-and-icons.md, docs/obstacle-looks.md, docs/obstacles.md, docs/prizes-and-cost.md, docs/rings.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
+// Разбор: docs/difficulty.md, docs/frame-budget.md, docs/identity-and-icons.md, docs/obstacle-looks.md, docs/obstacles.md, docs/pixel-world.md, docs/prizes-and-cost.md, docs/rings.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 // FIN, а не F: F здесь уже занято фокусным расстоянием.
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
@@ -1374,6 +1374,47 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
       );
     }
   }
+}
+
+/**
+ * Пиксельный спрайт: сетка символов, по одной заливке на цвет.
+ *
+ * `grid` — строки одной длины, `.` — пусто, прочий символ — ключ в `palette`.
+ * На каждый цвет один путь из `rect` и один `fill()`, поэтому цена спрайта —
+ * число его цветов, а не квадратиков. Края клеток считаются от ОДНОГО
+ * округлённого начала (`ox + round(i·cell)`), а не округляются у каждой
+ * клетки: тогда соседние квадратики стыкуются без швов, и сетка не дрожит
+ * при приближении. Цвета идут в порядке первого появления в сетке.
+ *
+ * Клетка мельче `MOTION.pixelMinCell` не рисуется вовсе: такую деталь съест
+ * сжатие. Возвращает число сделанных заливок.
+ *
+ * Разбор — docs/pixel-world.md.
+ */
+export function pixelSprite(ctx, grid, palette, x, y, cell) {
+  if (!(cell >= MOTION.pixelMinCell)) return 0;
+  const ox = Math.round(x);
+  const oy = Math.round(y);
+  const ex = (i) => ox + Math.round(i * cell);
+  const ey = (j) => oy + Math.round(j * cell);
+  const order = [];
+  for (const row of grid) {
+    for (const c of row) if (c !== '.' && !order.includes(c)) order.push(c);
+  }
+  let n = 0;
+  for (const c of order) {
+    ctx.fillStyle = palette[c];
+    ctx.beginPath();
+    for (let j = 0; j < grid.length; j++) {
+      const row = grid[j];
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] === c) ctx.rect(ex(i), ey(j), ex(i + 1) - ex(i), ey(j + 1) - ey(j));
+      }
+    }
+    ctx.fill();
+    n++;
+  }
+  return n;
 }
 
 /* Шипы по верхней кромке плиты.

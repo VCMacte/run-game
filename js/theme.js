@@ -5,7 +5,7 @@
 // Здесь живёт покраска. Смешать значит получить правку палитры в том же diff,
 // что правка порога, и потом не знать, что из этого сломало забег.
 //
-// Разбор: docs/frame-budget.md, docs/identity-and-icons.md, docs/obstacle-looks.md, docs/obstacles.md, docs/prizes-and-cost.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
+// Разбор: docs/frame-budget.md, docs/identity-and-icons.md, docs/obstacle-looks.md, docs/obstacles.md, docs/pixel-world.md, docs/prizes-and-cost.md, docs/sky-and-art.md, docs/trophy-and-worlds.md, docs/view-and-zones.md
 
 /* ──────────────────────────── светлота ────────────────────────────
    Относительная светлота по WCAG. Нужна не для красоты: Miracast режет
@@ -1071,6 +1071,12 @@ export const MOTION = {
      проверки стояли на фазе максимума и мигания не видели. Вертикальная
      полуось от вращения не зависит, поэтому ободок — свойство РАССТОЯНИЯ. */
   rimMinR: 14,
+
+  /* Порог видимости ПИКСЕЛЬНОГО спрайта — в экранных пикселях на клетку.
+     Клетка мельче двух пикселей — это деталь мельче «пикселя» спрайта, её
+     Miracast съест кашей. Пока так, препятствие остаётся голой плитой и
+     заливками не платит. Разбор — docs/pixel-world.md. */
+  pixelMinCell: 2,
 
   /* Порог видимости ПЯТНА под кольцом — в пикселях вертикальной полуоси
      кольца, как и у ободка. Вблизи пятно — самая большая отдача на пиксель во
