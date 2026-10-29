@@ -762,6 +762,103 @@ cloudTop: {
       ],
     },
   },
+
+  /* ───────── Мир «Пиксельная страна» (ступень 3000 второго круга) ─────────
+
+     Первый мир второго круга, решение заказчика 29 октября. Стиль 8-битной
+     приставки: плоские цвета, мало оттенков. Палитра проверяется светлотой
+     тем же порогом, что у всех зон. Разбор — docs/pixel-world.md. */
+  pixelDay: {
+    id: 'pixelDay',
+    name: 'Пиксельный день',
+    skyMotif: 'clouds',
+    ...DECISION,
+    sky: '#5a8ef0', skyLow: '#94b8f4', hills: '#1c6a26', cloud: '#c4d6f6',
+    starSky: '#a8bce6', grass: '#3fb03a', grassDark: '#24802a', earthL: '#a4582a',
+    earthR: '#7e3f1c', earthDeep: '#3a1c0a', floorA: '#c8743a', floorB: '#7a3c18',
+    floorMid: '#a85a2a', floorFar: '#904c22', shadow: '#4a2410', palmTrunk: '#6b4a2a',
+    palmLeaf: '#2f8a3a', flower: '#e07a5a', totem: '#a87a4a', post: '#b07a50',
+    postMark: '#d6a46a', cactus: '#3f9a4a', rock: '#8a8a8a', spruce: '#1f6a2a',
+    firefly: '#8a9a4a', buddy: '#3a2a1a', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    spike: '#c8c8d0', critter: '#4a1a08', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#2f7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#7d93a6',
+    drift: '#9fb3c0', crystal: '#6a74b8', shard: '#5f6bb0', icicle: '#b8dcf0',
+    decor: {
+      kinds: [
+        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
+        { kind: 'post', weight: 0.19, height: 2.6 },
+        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+      ],
+    },
+  },
+
+
+  pixelCave: {
+    id: 'pixelCave',
+    name: 'Подземелье',
+    skyMotif: 'night',
+    ...DECISION,
+    skyClampTo: 0.30,
+    sky: '#10183a', skyLow: '#1c2a5a', hills: '#0a0e22', cloud: '#26346a',
+    starSky: '#8a9ad6', grass: '#4a5ca8', grassDark: '#34488e', earthL: '#2a3466',
+    earthR: '#18204a', earthDeep: '#0c1028', floorA: '#4a5cb0', floorB: '#1a2458',
+    floorMid: '#36468e', floorFar: '#2a3874', shadow: '#121a3e', palmTrunk: '#3a2c20',
+    palmLeaf: '#2a5a4a', flower: '#8a4a7a', totem: '#4a5a96', post: '#5a6aa8',
+    postMark: '#8a9ad6', cactus: '#2a6a5a', rock: '#3f4a80', spruce: '#1a4a5a',
+    firefly: '#8aa0e0', buddy: '#9aa8e0', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    spike: '#a8b4e0', critter: '#d4913f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#245a4c', coral: '#7a3a60', anemone: '#6a3256', spire: '#5a6a84',
+    drift: '#6b7b96', crystal: '#6a74c8', shard: '#4a5490', icicle: '#b8dcf0',
+    decor: {
+      kinds: [
+        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
+        { kind: 'post', weight: 0.19, height: 2.6 },
+        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+      ],
+    },
+  },
+
+
+  pixelCastle: {
+    id: 'pixelCastle',
+    name: 'Замок',
+    skyMotif: 'night',
+    ...DECISION,
+    skyStars: true,
+    skyClampTo: 0.30,
+    sky: '#140a1e', skyLow: '#5a1420', hills: '#0e060c', cloud: '#3a1a2e',
+    starSky: '#d6c2ea', grass: '#5a4a5c', grassDark: '#4a3a50', earthL: '#4a3a46',
+    earthR: '#2a1e28', earthDeep: '#140c14', floorA: '#7a6470', floorB: '#2e2028',
+    floorMid: '#5a4854', floorFar: '#463640', shadow: '#1e1418', palmTrunk: '#3a2c20',
+    palmLeaf: '#3f5a4a', flower: '#a04a5a', totem: '#6a5a66', post: '#7a6a76',
+    postMark: '#a8949e', cactus: '#3f6a56', rock: '#5a4a56', spruce: '#2a4a4a',
+    firefly: '#e0a050', buddy: '#c2a8b8', badnik: '#4a1f3a', badnikMouth: '#240f1c',
+    spike: '#c8b8c4', critter: '#e0a04f', shade: '#0b0d14',
+    /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
+       `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
+       соседней фигуры. */
+    kelp: '#245a4c', coral: '#7a3a60', anemone: '#6a3256', spire: '#5a6a84',
+    drift: '#6b7b96', crystal: '#9a7ac0', shard: '#6a5290', icicle: '#b8dcf0',
+    decor: {
+      kinds: [
+        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
+        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
+        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
+        { kind: 'post', weight: 0.19, height: 2.6 },
+        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+      ],
+    },
+  },
 };
 
 /* Реестр МИРОВ. Мир — это полный набор из трёх зон на весь забег; ребёнок
@@ -788,7 +885,18 @@ export const WORLDS = {
            zones: ['reefShallow', 'kelpDeep', 'abyssGlow'] },
   stars: { id: 'stars', name: 'Звёздная дорога',
            zones: ['cloudTop', 'cometBelt', 'nebula'] },
+  pixel: { id: 'pixel', name: 'Пиксельная страна',
+           zones: ['pixelDay', 'pixelCave', 'pixelCastle'] },
 };
+
+/** Мир, которому принадлежит зона. Неизвестная зона — холмы, молча: звук и
+    монетка не вправе уронить забег из-за имени зоны. */
+export function worldOf(zone) {
+  for (const w of Object.values(WORLDS)) {
+    if (w.zones?.includes(zone)) return w.id;
+  }
+  return 'hills';
+}
 
 /** Собран ли арт этого мира. Открытый, но несобранный мир показывает «скоро». */
 export function worldReady(world) {
@@ -878,6 +986,9 @@ export const SKY_FILES = {
   cloudTop: 'sky-cloudtop.webp',
   cometBelt: 'sky-comet.webp',
   nebula: 'sky-nebula.webp',
+  pixelDay: 'sky-pixel-day.webp',
+  pixelCave: 'sky-pixel-cave.webp',
+  pixelCastle: 'sky-pixel-castle.webp',
 };
 
 /**

@@ -39,7 +39,7 @@ import {
 } from './js/players.js';
 import {
   THEME, DECOR, MOTION, GAP_GUARD, DECISION_KEYS, BACKGROUND_KEYS, skyClamp,
-  WORLDS, zonesOf, worldReady, kindsFor, SKY_FILES, zoneAt, luminance, motionScale,
+  WORLDS, zonesOf, worldReady, kindsFor, SKY_FILES, zoneAt, luminance, motionScale, worldOf,
 } from './js/theme.js';
 import { report, reportAll, format } from './tools/log-report.mjs';
 import { withTimeout, reportWaits } from './js/util.js';
@@ -4632,7 +4632,11 @@ group('кубок', () => {
 
   // Миры стоят на каждом третьем уровне, вершина — не мир.
   const миры = TROPHY.filter((r) => r.kind === 'world').map((r) => r.at);
-  check('миры на 300, 600, 900', String(миры) === '300,600,900', String(миры));
+  check('миры на 300, 600, 900, 3000', String(миры) === '300,600,900,3000', String(миры));
+  /* Ступень 3000 — мир вместо звания «Молния», решение заказчика 29 октября.
+     Звание удалено совсем: его не открыл ни один профиль. */
+  check('звания «Молния» больше нет', !TROPHY.some((r) => r.id === 'title-bolt'));
+  check('на 3000 звание прежнее', titleAt(3000) === 'Скороход', String(titleAt(3000)));
 
   // Границы. Именно здесь живут все ошибки на единицу.
   for (const [bank, lv] of [[0, 0], [1, 0], [99, 0], [100, 1], [199, 1], [200, 2],
@@ -4664,7 +4668,8 @@ group('кубок', () => {
 
   check('у нового игрока открыт только первый мир',
     String(worldsAt(0)) === 'hills', String(worldsAt(0)));
-  check('и на 900 открыты все четыре', worldsAt(900).length === 4, String(worldsAt(900)));
+  check('на 900 открыты четыре, на 3000 — пять',
+    worldsAt(900).length === 4 && worldsAt(3000).length === 5, String(worldsAt(3000)));
   check('искры открываются ровно на сотне',
     unlockedAt(99).sparks === false && unlockedAt(100).sparks === true);
 
@@ -4762,7 +4767,9 @@ group('кубок', () => {
   /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
      зоны; мир без арта честно говорит это полем zones: null, а не пустым
      списком — пустой список неотличим от забытого. */
-  check('четыре мира', Object.keys(WORLDS).length === 4, String(Object.keys(WORLDS)));
+  check('пять миров', Object.keys(WORLDS).length === 5, String(Object.keys(WORLDS)));
+  check('worldOf знает зону', worldOf('pixelCave') === 'pixel', String(worldOf('pixelCave')));
+  check('worldOf мусора — холмы', worldOf('нет такой') === 'hills', String(worldOf('нет такой')));
   check('первый мир собран', worldReady('hills'));
   for (const [id, w] of Object.entries(WORLDS)) {
     check(`мир ${id}: есть имя`, typeof w.name === 'string' && w.name.length > 0);
@@ -4822,6 +4829,9 @@ group('кубок', () => {
   })());
   check('мусор уходит в первый мир',
     ['', null, undefined, 42, 'нет такого'].every((b) => activeWorld(900, b) === 'hills'));
+  check('пиксельный мир недоступен на 2999', activeWorld(2999, 'pixel') === 'hills',
+    activeWorld(2999, 'pixel'));
+  check('и доступен на 3000', activeWorld(3000, 'pixel') === 'pixel', activeWorld(3000, 'pixel'));
   check('и startRun зовёт именно её, а не повторяет правило',
     /activeWorld\(/.test(readFileSync(join(ROOT, 'js/app.js'), 'utf8'))
     && !/worldsAt\([^)]*\)\.includes/.test(readFileSync(join(ROOT, 'js/app.js'), 'utf8')),
@@ -5004,10 +5014,10 @@ group('кубок', () => {
     WORLDS.stars.zones = сохранено;
   }
 
-  check('все четыре мира собраны',
+  check('все пять миров собраны',
     Object.keys(WORLDS).every((w) => worldReady(w)),
     Object.keys(WORLDS).filter((w) => !worldReady(w)).join(', ') || 'все');
-  check('зон стало двенадцать', Object.keys(THEME).length === 12,
+  check('зон стало пятнадцать', Object.keys(THEME).length === 15,
     `${Object.keys(THEME).length}`);
 
   /* Потолок растра пришпилен У КАЖДОЙ зоны, где он задан полем.

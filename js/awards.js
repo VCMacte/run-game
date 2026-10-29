@@ -79,7 +79,7 @@ export const TROPHY = [
   { at: 2100, kind: 'cosmetic', id: 'bell',         name: 'Колокольчик',     color: '#4379dc' },
   { at: 2400, kind: 'title',    id: 'title-walker', name: 'Скороход',        color: '#5a8fdd' },
   { at: 2700, kind: 'cosmetic', id: 'finale',       name: 'Большая фанфара', color: '#6ea1de' },
-  { at: 3000, kind: 'title',    id: 'title-bolt',   name: 'Молния',          color: '#83b2e0' },
+  { at: 3000, kind: 'world',    id: 'world-pixel',  world: 'pixel',          color: '#83b2e0' },
   { at: 3300, kind: 'level',    id: 'level-7',      step: 6,                 color: '#97c1e3' },
   { at: 3600, kind: 'cosmetic', id: 'bigbell',      name: 'Звон большого кольца', color: '#aacee5' },
   { at: 3900, kind: 'title',    id: 'title-champ',  name: 'Чемпион',         color: '#bbd9e9' },
