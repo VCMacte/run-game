@@ -235,9 +235,9 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
         small: COLORS.star, smallDim: COLORS.starDim,
         big: COLORS.starBig, bigDim: COLORS.starBigDim,
       };
-      /* Пиксельный мир рисует кольцо монеткой. Мир спрашивается один раз на
-         кадр — по зоне, которой кадр уже красится. */
-      const монетки = worldOf(zoneNow) === 'pixel';
+      /* Пиксельный мир: кольцо — монеткой, небо — без сглаживания. Мир
+         спрашивается один раз на кадр, по зоне, которой кадр уже красится. */
+      const пиксели = worldOf(zoneNow) === 'pixel';
 
       const cam = camera(u, v);
 
@@ -247,7 +247,7 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
       // В экранных координатах, а не через проекцию: они на бесконечности, и
       // проекция дала бы им нулевой размер. Параллакс здесь — разная скорость
       // слоёв, ровно как в комиксе того же автора.
-      drawSky(ctx, cam, travel, elapsed, backdrops?.[zoneNow] ?? null, mscale);
+      drawSky(ctx, cam, travel, elapsed, backdrops?.[zoneNow] ?? null, mscale, пиксели);
 
       /* Спутник — приз десятого уровня: птица, летящая рядом. Две заливки:
          тело и крыло, и крыло машет функцией времени с фазой — состояния не
@@ -511,7 +511,7 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
            клеток её же сетки, цена та же, что у кольца. Мельче порога клетки
            рисуется прежнее кольцо. Разбор — docs/rings.md. */
         const клетка = (2 * r) / 10;
-        if (монетки && клетка >= MOTION.pixelMinCell) {
+        if (пиксели && клетка >= MOTION.pixelMinCell) {
           const кадр = pixelFrame(elapsed, MOTION.coinFps, s.x * 7 + s.z, 3, mscale);
           const сетка = (сОбодком ? COIN_RIM : COIN)[кадр];
           pixelSprite(ctx, сетка, { R: colDim, Y: colr, D: colDim },
@@ -583,7 +583,7 @@ export function skyGaps(hy, backdrop) {
   };
 }
 
-function drawSky(ctx, cam, travel, elapsed, backdrop, mscale) {
+function drawSky(ctx, cam, travel, elapsed, backdrop, mscale, crisp = false) {
   const hy = HORIZON + cam.pitch;
   const gaps = skyGaps(hy, backdrop);
 
@@ -636,6 +636,12 @@ function drawSky(ctx, cam, travel, elapsed, backdrop, mscale) {
        декодировщика.
 
        Заливок не добавляется, `drawImage` по-прежнему два. */
+    /* Пиксельное небо растягивается БЕЗ сглаживания: растр там нарочно
+       мелкий (×8 меньше кадра), и сглаженный крупный пиксель расплылся бы в
+       пятно. Прежнее значение возвращается сразу после неба. Разбор —
+       docs/sky-and-art.md. */
+    const smooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = !crisp;
     const shift = Math.round(-(travel * MOTION.farParallax * 40 + cam.x * 30) % W);
     ctx.drawImage(backdrop, shift, gaps.dy, W, gaps.dh);
     const x2 = shift + (shift > 0 ? -W : W);
@@ -644,6 +650,7 @@ function drawSky(ctx, cam, travel, elapsed, backdrop, mscale) {
     ctx.scale(-1, 1);
     ctx.drawImage(backdrop, 0, gaps.dy, W, gaps.dh);
     ctx.restore();
+    ctx.imageSmoothingEnabled = smooth;
     return;
   }
 

@@ -88,6 +88,7 @@ function painter() {
   const shapes = [];
   const images = [];
   const rects = [];
+  const smooth = [];
   let style = null;
   let pts = [];
   const add = (x, y) => pts.push([x, y]);
@@ -115,7 +116,8 @@ function painter() {
     /* Квадратики пиксельного спрайта: много `rect` в одном пути, одна
        заливка на цвет. Габарит фигуры — по углам всех квадратиков. */
     rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); },
-    drawImage(im) { images.push(im); },
+    drawImage(im) { images.push(im); smooth.push(ctx.imageSmoothingEnabled); },
+    imageSmoothingEnabled: true,
     /* Пустышки преобразований. Нужны с тех пор, как вторая копия растра неба
        кладётся зеркально: без них отрисовка падает в node, то есть набор
        перестаёт видеть кадр целиком. Геометрию они не трогают — экранные
@@ -124,7 +126,7 @@ function painter() {
     fill() { done(); },
     fillRect(x, y, w, h) { pts = [[x, y], [x + w, y + h]]; done(); },
   };
-  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images, rects };
+  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images, rects, smooth };
 }
 
 /** Один кадр поддельным холстом. Умолчания — пустая сцена без ничего. */
@@ -8883,6 +8885,21 @@ group('пиксельные фигуры', () => {
     кольцо('pixelDay', { prizes: { gold: true } }).rects.includes(rainbowOf(C.star, 0.5, 1)));
   check('большая монетка цвета starBig',
     кольцо('pixelDay', { worth: 2 }).rects.includes(C.starBig));
+
+  // ── небо без сглаживания ──
+  /* Растр пиксельного неба растягивается без сглаживания: иначе крупный
+     пиксель размоется в пятно. После неба сглаживание возвращается. */
+  {
+    const растр = { width: 168, height: 96 };
+    const день = paintFrame({ zone: 'pixelDay', backdrops: { pixelDay: растр } });
+    const холмы = paintFrame({ zone: 'greenHill', backdrops: { greenHill: растр } });
+    check('небо пиксельного мира без сглаживания',
+      день.smooth.length === 2 && день.smooth.every((v) => v === false), String(день.smooth));
+    check('а у холмов сглаживание прежнее',
+      холмы.smooth.length === 2 && холмы.smooth.every((v) => v === true), String(холмы.smooth));
+    const { canvas } = день;
+    check('после неба сглаживание возвращено', canvas.getContext('2d').imageSmoothingEnabled === true);
+  }
 
   // ── пиксельная обочина ──
   /* Своя у каждой из трёх зон, по две заливки на вид. Фигура обочины
