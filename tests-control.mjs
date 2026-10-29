@@ -30,7 +30,7 @@ import { OPTIONS, poseDelegate } from './js/settings.js';
 import { delegateLadder } from './js/pose.pack.js';
 import { isOurCache, isOurScope } from './js/vendor.js';
 import {
-  makeDecor, ringSquash, palmSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
+  makeDecor, ringSquash, palmSway, kelpSway, warnBlink, wallNearEdgeX, starAllowed, buddyFlap, buddyPos,
   rainbowOf,
   skyGaps, CORRIDOR_HALF, CLIFF_TOP, decorYMask,
 } from './js/view.js';
@@ -6237,6 +6237,20 @@ group('анимации', () => {
     motionScale(true) > 0 && motionScale(true) < 0.2);
   check('сжатие действует на качание',
     Math.abs(palmSway(1.7, 0, motionScale(true))) < Math.abs(palmSway(1.7, 0, 1)));
+
+  /* Водоросль колышется заметно: прежние ±0.19 м за 4 с заказчик не увидел
+     (29 октября, «добавь анимацию колыхания из стороны в сторону»). */
+  const мах = [];
+  for (let t = 0; t < 1 / MOTION.kelpSwayHz; t += 0.02) мах.push(kelpSway(t, 0.3));
+  check('водоросль колышется шире прежнего',
+    Math.max(...мах) - Math.min(...мах) > 2 * 1.6 * MOTION.palmSwayM * 1.5,
+    `${(Math.max(...мах) - Math.min(...мах)).toFixed(2)} м`);
+  check('и чаще пальмы', MOTION.kelpSwayHz > MOTION.palmSwayHz);
+  check('колыхание — вокруг своего места',
+    Math.abs(kelpSway(0, 0.1) + kelpSway(1 / MOTION.kelpSwayHz / 2, 0.1)) < 1e-9);
+  check('сжатие действует на колыхание',
+    Math.abs(kelpSway(0.7, 0, motionScale(true))) < Math.abs(kelpSway(0.7, 0, 1))
+    && Math.abs(kelpSway(0.7, 0, motionScale(true))) > 0);
   check('сжатие действует на кольцо',
     1 - ringSquash(1.7, 0, motionScale(true)) < 1 - ringSquash(1.7, 0, 1));
 
