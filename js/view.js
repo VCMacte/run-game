@@ -1449,8 +1449,11 @@ function drawTeeth(ob, z, cam, { project, quad }) {
    как у медведя. Нижний край тела останавливается над кромкой приговора, в
    щель приседа зверь не опускается.
 
-   Пасть красная (`blockDark`), как у медведя, и стоит под глазами: голову
-   ребёнок читает лицом к себе. Закрытая пасть — четырёхугольник нулевой
+   Пасть красная (`blockDark`), как у медведя, и стоит НАД глазами: зверь
+   висит вниз головой, и морда у него перевёрнута. Здесь стояло «стоит под
+   глазами: голову ребёнок читает лицом к себе». Опроверг это заказчик на
+   стенде в тот же день: «рот у летучей мыши не там, она же перевёрнута
+   вверх ногами». Закрытая пасть — четырёхугольник нулевой
    высоты, поэтому заливок всегда одинаково, и цена фигуры от фазы не
    зависит. */
 function drawBat(ob, dt, z, cam, elapsed, { project, quad, mscale }) {
@@ -1494,17 +1497,8 @@ function drawBat(ob, dt, z, cam, elapsed, { project, quad, mscale }) {
     );
   }
 
-  // Пасть под глазами раскрывается вниз, к кромке, по мере спуска.
-  const mouthTop = bodyBot + ph * 0.10;
-  const mouthBot = mouthTop - ph * 0.07 * s;
-  quad(
-    project(-bodyW * 0.55, mouthTop, z, cam), project(bodyW * 0.55, mouthTop, z, cam),
-    project(bodyW * 0.35, mouthBot, z, cam), project(-bodyW * 0.35, mouthBot, z, cam),
-    COLORS.blockDark,
-  );
-
   // Глаза. Два, и мелкие: светлое на плите — это заём у проёма.
-  const eyeY = bodyBot + ph * 0.13;
+  const eyeY = bodyBot + ph * 0.06;
   const eyeW = bodyW * 0.22;
   const eyeH = ph * 0.05;
   for (const dir of [-1, 1]) {
@@ -1515,6 +1509,16 @@ function drawBat(ob, dt, z, cam, elapsed, { project, quad, mscale }) {
       COLORS.badnikEye,
     );
   }
+
+  /* Пасть над глазами: морда перевёрнута. Губа у глаз широкая, и пасть
+     раскрывается вверх, к телу, по мере спуска. */
+  const mouthBot = eyeY + eyeH + ph * 0.025;
+  const mouthTop = mouthBot + ph * 0.07 * s;
+  quad(
+    project(-bodyW * 0.55, mouthBot, z, cam), project(bodyW * 0.55, mouthBot, z, cam),
+    project(bodyW * 0.35, mouthTop, z, cam), project(-bodyW * 0.35, mouthTop, z, cam),
+    COLORS.blockDark,
+  );
 }
 
 /* ─────────────── свои внешности миров: присед ───────────────
