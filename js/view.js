@@ -2063,7 +2063,10 @@ const COIN_RIM = COIN.map((g) => g.map((row, j) => [...row].map((c, i) => {
    `mscale` здесь — частота смены кадра, а не амплитуда: при «меньше
    движения» кадр меняется реже, но не замирает совсем. */
 function pixelFrame(elapsed, fps, phase, n, mscale) {
-  return Math.floor(elapsed * fps * mscale + phase) % n;
+  // Фаза бывает отрицательной, а `%` оставляет знак: индекс −2 — это
+  // `undefined` вместо сетки и упавший кадр. Поэтому остаток приводится.
+  const k = Math.floor(elapsed * fps * mscale + phase) % n;
+  return (k + n) % n;
 }
 
 function drawSlime(ob, z, cam, elapsed, { ctx, project, x0, x1, mscale }) {
