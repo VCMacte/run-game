@@ -25,7 +25,7 @@ import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
 import { OBSTACLES as O, FINISH, CAMERA } from './js/config.js';
 import { framing, frameAspect } from './js/camera.js';
-import { describe, motifFor, motifNameFor, VARIANTS } from './js/audio.js';
+import { describe, motifFor, motifNameFor, VARIANTS, shapeFor } from './js/audio.js';
 import { OPTIONS, poseDelegate } from './js/settings.js';
 import { delegateLadder } from './js/pose.pack.js';
 import { isOurCache, isOurScope } from './js/vendor.js';
@@ -8881,6 +8881,22 @@ group('пиксельные фигуры', () => {
     кольцо('pixelDay', { prizes: { gold: true } }).rects.includes(rainbowOf(C.star, 0.5, 1)));
   check('большая монетка цвета starBig',
     кольцо('pixelDay', { worth: 2 }).rects.includes(C.starBig));
+});
+
+group('чиптюн-тембр', () => {
+  /* Мир меняет ТЕМБР, а не мотив: ноты, длительности и число нот прежние.
+     Удар остаётся жёстким: мягкий тембр подсказок, жёсткий — события. */
+  check('удар в пиксельном мире жёсткий', shapeFor('hit', 'pixel') === 'sawtooth');
+  check('прочее в пиксельном мире — квадрат', shapeFor('star', 'pixel') === 'square');
+  check('в холмах — треугольник', shapeFor('star', 'hills') === 'triangle');
+  check('неизвестный мир — треугольник', shapeFor('star', 'мусор') === 'triangle');
+  check('удар в холмах жёсткий', shapeFor('hit', 'hills') === 'sawtooth');
+  check('ноты мотива не зависят от мира', motifNameFor.length <= 2,
+    `motifNameFor принимает ${motifNameFor.length} аргументов`);
+  check('и train.js передаёт мир во все вызовы звука',
+    [...readFileSync(join(ROOT, 'js/train.js'), 'utf8').matchAll(/audio\.play\(([^;]*)\);/g)]
+      .every((m) => /, world$/.test(m[1].trim())),
+    'вызов без мира играет треугольником и в пиксельном мире');
 });
 
 // ─────────────────────────── итог ───────────────────────────
