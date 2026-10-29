@@ -779,7 +779,7 @@ cloudTop: {
     floorMid: '#a85a2a', floorFar: '#904c22', shadow: '#4a2410', palmTrunk: '#6b4a2a',
     palmLeaf: '#2f8a3a', flower: '#e07a5a', totem: '#a87a4a', post: '#b07a50',
     postMark: '#d6a46a', cactus: '#3f9a4a', rock: '#8a8a8a', spruce: '#1f6a2a',
-    firefly: '#8a9a4a', buddy: '#3a2a1a', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    firefly: '#8a9a4a', buddy: '#3a2a1a', badnik: '#1f5a2a', badnikMouth: '#0c2410',
     spike: '#c8c8d0', critter: '#4a1a08', shade: '#0b0d14',
     /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
@@ -810,7 +810,7 @@ cloudTop: {
     floorMid: '#36468e', floorFar: '#2a3874', shadow: '#121a3e', palmTrunk: '#3a2c20',
     palmLeaf: '#2a5a4a', flower: '#8a4a7a', totem: '#4a5a96', post: '#5a6aa8',
     postMark: '#8a9ad6', cactus: '#2a6a5a', rock: '#3f4a80', spruce: '#1a4a5a',
-    firefly: '#8aa0e0', buddy: '#9aa8e0', badnik: '#3a1f33', badnikMouth: '#1c0f18',
+    firefly: '#8aa0e0', buddy: '#9aa8e0', badnik: '#1f5a2a', badnikMouth: '#0c2410',
     spike: '#a8b4e0', critter: '#d4913f', shade: '#0b0d14',
     /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
@@ -842,7 +842,7 @@ cloudTop: {
     floorMid: '#5a4854', floorFar: '#463640', shadow: '#1e1418', palmTrunk: '#3a2c20',
     palmLeaf: '#3f5a4a', flower: '#a04a5a', totem: '#6a5a66', post: '#7a6a76',
     postMark: '#a8949e', cactus: '#3f6a56', rock: '#5a4a56', spruce: '#2a4a4a',
-    firefly: '#e0a050', buddy: '#c2a8b8', badnik: '#4a1f3a', badnikMouth: '#240f1c',
+    firefly: '#e0a050', buddy: '#c2a8b8', badnik: '#1f5a2a', badnikMouth: '#0c2410',
     spike: '#c8b8c4', critter: '#e0a04f', shade: '#0b0d14',
     /* Формы новых миров. Задаются во ВСЕХ зонах, включая те, где формы нет:
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
@@ -1236,6 +1236,9 @@ export const MOTION = {
      мерцание в этой игре занято телеграфом. */
   // Медуза всплывает и опускается: это её единственное движение, и оно
   // медленное намеренно — заказчик просил «плавает вверх-вниз», а не дёргается.
+  /* Кадры кубика-слизня в секунду: «рывками», как на приставке. */
+  slimeFps: 5,
+
   jellyBobHz: 0.5,
   // Насколько всплывает, в долях ВЫСОТЫ ПЛИТЫ. Доля, а не метры: плита
   // меняется со ступенью, и купол в метрах однажды вылез бы в проём.

@@ -1338,6 +1338,8 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
         drawBadnik(ob, dt, z, cam, elapsed, { project, quad, x0, x1, safe, still, mscale });
       } else if (ob.look === 'jelly') {
         drawJelly(ob, z, cam, elapsed, { project, quad, x0, x1, mscale });
+      } else if (ob.look === 'slime') {
+        drawSlime(ob, z, cam, elapsed, { ctx, project, x0, x1, mscale });
       } else if (ob.look === 'floe') {
         drawFloe(ob, dt, z, cam, elapsed, { project, quad, x0, x1, mscale });
       } else if (ob.look === 'asteroid') {
@@ -1794,6 +1796,59 @@ function drawMeteors(ob, z, cam, elapsed, { project, quad, mscale }) {
    вместо зверя. Доли — от самой плиты (`x0`…`x1`), как у створки: ширина плиты
    меняется со ступенью (`blockFrac`), и фигура в метрах на узкой плите вылезла
    бы в проём. Проверяется это по ВСЕМУ циклу анимации, а не в одной фазе. */
+
+/* Кубик-слизень — пиксельный мир. Квадратное желе с глазами и бликом, два
+   кадра: «сплющен» (шире и ниже) и «подпрыгнул» (уже и выше, оторван от
+   плиты на две клетки). Сетка 12×10, клетка — четырнадцатая доля ширины
+   плиты на экране: по клетке запаса с каждого бока в обоих кадрах.
+
+   Три цвета — три заливки: тело `badnik`, тень и зрачки `badnikMouth`, глаза
+   и блик `badnikEye`. Цвета прежних владельцев, новых ключей палитры нет.
+   Разбор — docs/pixel-world.md. */
+const SLIME = [
+  [
+    '............',
+    '............',
+    '............',
+    '..BBBBBBBB..',
+    '.BEBBBBBBBB.',
+    'BBEEBBBBEEBB',
+    'BBEDBBBBEDBB',
+    'BBBBBBBBBBBB',
+    'BBBBBBBBBBBB',
+    '.DDDDDDDDDD.',
+  ],
+  [
+    '...BBBBBB...',
+    '..BEBBBBBB..',
+    '.BBBBBBBBBB.',
+    '.BEEBBBBEEB.',
+    '.BEDBBBBEDB.',
+    '.BBBBBBBBBB.',
+    '.BBBBBBBBBB.',
+    '..DDDDDDDD..',
+    '............',
+    '............',
+  ],
+];
+
+/* Кадр пиксельной анимации: функция времени с фазой, состояние не копится.
+   `mscale` здесь — частота смены кадра, а не амплитуда: при «меньше
+   движения» кадр меняется реже, но не замирает совсем. */
+function pixelFrame(elapsed, fps, phase, n, mscale) {
+  return Math.floor(elapsed * fps * mscale + phase) % n;
+}
+
+function drawSlime(ob, z, cam, elapsed, { ctx, project, x0, x1, mscale }) {
+  const a = project(x0, 0, z, cam);
+  const b = project(x1, 0, z, cam);
+  const cell = (b.sx - a.sx) / 14;
+  const grid = SLIME[pixelFrame(elapsed, MOTION.slimeFps, ob.at * 3, SLIME.length, mscale)];
+  pixelSprite(ctx, grid, { B: COLORS.badnik, D: COLORS.badnikMouth, E: COLORS.badnikEye },
+    /* Полпикселя вверх: `pixelSprite` округляет начало и края, и без запаса
+       нижний ряд выезжал на пиксель ниже кромки плиты. */
+    a.sx + cell, a.sy - grid.length * cell - 0.5, cell);
+}
 
 /* Медуза — вода. Купол, щупальца и два пятна свечения; плавает вверх-вниз.
    Ровно то, что просил заказчик, и движение здесь несёт смысл: боковое

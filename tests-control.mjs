@@ -8755,6 +8755,76 @@ group('пиксельный спрайт', () => {
     pixelSprite(painter().canvas.getContext('2d'), g, pal, 0, 0, 1.9) === 0);
 });
 
+group('пиксельные фигуры', () => {
+  /* Фигуры пятого мира. Зона — пиксельная, а не холмы умолчанием: проверяются
+     те цвета, которые у фигур в игре. Почему фаза и расстояние разведены — в
+     шапке `кадрВнешности`. */
+  const ZONE = 'pixelDay';
+  const C = THEME[ZONE];
+  const плитаКадра = (shapes) => {
+    const плиты = shapes.filter((f) => f.style === C.block);
+    return плиты.reduce((m, f) => (f.w * f.h > m.w * m.h ? f : m), плиты[0]);
+  };
+  /* Полный цикл кадров с шагом 1/60 с: у фигуры два кадра, и проверка одной
+     фазы видит только один из них. */
+  const фазы = [];
+  for (let e = 0.1; e < 1.3; e += 1 / 60) фазы.push(e);
+
+  const фигура = (kind, look, side) => {
+    const заливок = new Set();
+    const наружу = [];
+    let пустых = 0;
+    let плитаЦела = true;
+    /* Глубина 2.5 с, а не 3.0 по умолчанию: на ровно 3.0 с погрешность
+       сложения `at = elapsed + dt` в части фаз уводит плиту в телеграф, и
+       кадр выходит без плиты вовсе. */
+    for (const e of фазы) {
+      const пусто = кадрВнешности({ zone: ZONE, kind, look: 'beam', side, elapsed: e, dt: 2.5 });
+      const кадр = кадрВнешности({ zone: ZONE, kind, look, side, elapsed: e, dt: 2.5 });
+      const плита = плитаКадра(пусто.shapes);
+      const своя = плитаКадра(кадр.shapes);
+      if (!своя || своя.w !== плита.w || своя.h !== плита.h) плитаЦела = false;
+      заливок.add(кадр.fills.length - пусто.fills.length);
+      const фиг = своёВнешности({ zone: ZONE, kind, look, side, elapsed: e, dt: 2.5 });
+      if (фиг.length === 0) пустых++;
+      for (const f of фиг) {
+        if (f.minX < плита.minX || f.maxX > плита.maxX || f.minY < плита.minY || f.maxY > плита.maxY) {
+          наружу.push(`${e.toFixed(2)}с ${f.minX}…${f.maxX}×${f.minY}…${f.maxY}`);
+        }
+      }
+    }
+    return { заливок: [...заливок], наружу, пустых, плитаЦела };
+  };
+
+  /* Дальняя фигура — голая плита. В игре клетка у плиты не мельче десяти
+     пикселей (6 м при 2 м/с), поэтому порог проверяется кадром нарочно
+     далёким: быстрая скорость и узкая плита. */
+  const дальняя = (kind, look, side) => {
+    const кадр = (l) => {
+      const { canvas, fills } = painter();
+      createView(canvas, { speed: 10 }).render({
+        u: 0, v: 0, travel: 0, elapsed: 1, zone: ZONE,
+        obstacles: [{ at: 1 + 2.95, kind, look: l, side, edge: 0.5 }], stars: [],
+      });
+      return fills.length;
+    };
+    return кадр(look) - кадр('beam');
+  };
+
+  // ── кубик-слизень ──
+  check('слизень в паре пиксельного мира', looksFor('pixel', 'side')[1] === 'slime',
+    String(looksFor('pixel', 'side')));
+  const слизень = фигура('side', 'slime', 1);
+  check('слизень рисуется во всех кадрах', слизень.пустых === 0, `${слизень.пустых} пустых`);
+  check('слизень не выезжает за плиту ни в одном кадре', слизень.наружу.length === 0,
+    слизень.наружу.slice(0, 3).join(', '));
+  check('слизень стоит не больше 4 заливок', Math.max(...слизень.заливок) <= 4,
+    String(слизень.заливок));
+  check('плита под слизнем цвета block и целиком', слизень.плитаЦела);
+  check('дальний слизень — голая плита', дальняя('side', 'slime', 1) === 0,
+    String(дальняя('side', 'slime', 1)));
+});
+
 // ─────────────────────────── итог ───────────────────────────
 
 if (failed) {

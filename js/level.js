@@ -5,7 +5,7 @@
 // обязаны держаться на любом уровне. Непроходимый уровень на глаз не заметен
 // — он заметен ребёнку, который не понимает, почему проиграл.
 //
-// Разбор: docs/difficulty.md, docs/obstacle-looks.md, docs/obstacles.md, docs/presence-and-pause.md, docs/rings.md
+// Разбор: docs/difficulty.md, docs/obstacle-looks.md, docs/obstacles.md, docs/pixel-world.md, docs/presence-and-pause.md, docs/rings.md
 
 import { OBSTACLES as O } from './config.js';
 import { obstacleEdge } from './view.js';
@@ -61,14 +61,15 @@ const OWN = {
   ice: { duck: 'icicles', side: 'floe' },
   deep: { duck: 'ribs', side: 'jelly' },
   stars: { duck: 'comet', side: 'asteroid' },
+  pixel: { duck: 'bat', side: 'slime' },
 };
 
 /* Полный перечень внешностей — ВЫВОДИТСЯ, а не ведётся руками. Второй список
    разошёлся бы с первым, и разошёлся бы молча: внешность, забытая в перечне,
    продолжала бы выпадать в забеге, а проверка отрисовки её бы не видела. */
 export const LOOKS = {
-  duck: [COMMON.duck, ...Object.values(OWN).map((o) => o.duck)],
-  side: [COMMON.side, ...Object.values(OWN).map((o) => o.side)],
+  duck: [...new Set([COMMON.duck, ...Object.values(OWN).map((o) => o.duck)])],
+  side: [...new Set([COMMON.side, ...Object.values(OWN).map((o) => o.side)])],
 };
 
 /** Пара внешностей этого мира на это действие: общая плюс своя.
