@@ -173,7 +173,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2f7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#7d93a6',
-    drift: '#9fb3c0', crystal: '#6a74b8', shard: '#5f6bb0',
+    drift: '#9fb3c0', crystal: '#6a74b8', shard: '#5f6bb0', icicle: '#b8dcf0',
     decor: {
       kinds: [
         /* `bloomWeight` — вес при открытом призе «цветущая обочина» (уровень
@@ -241,7 +241,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2f6a58', coral: '#b55a80', anemone: '#9a4a6e', spire: '#6f7f94',
-    drift: '#8f9fae', crystal: '#5f68a8', shard: '#55609e',
+    drift: '#8f9fae', crystal: '#5f68a8', shard: '#55609e', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'cactus', weight: 0.40, bloomWeight: 0.30, height: 1.6, out: 0.45 },
@@ -341,7 +341,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#1e4a3c', coral: '#6a3a50', anemone: '#5a3048', spire: '#43566a',
-    drift: '#52657a', crystal: '#3f4878', shard: '#39416c',
+    drift: '#52657a', crystal: '#3f4878', shard: '#39416c', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.44, bloomWeight: 0.34, height: 2.4 },
@@ -400,7 +400,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#3f8a74', coral: '#c97aa0', anemone: '#b06a90', spire: '#8aa2b6',
-    drift: '#bdd1de', crystal: '#7a84c4', shard: '#6f79ba',
+    drift: '#bdd1de', crystal: '#7a84c4', shard: '#6f79ba', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'spruce', weight: 0.42, bloomWeight: 0.32, height: 2.4 },
@@ -441,7 +441,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#4a9480', coral: '#d08cae', anemone: '#b87a9c', spire: '#7d93a6',
-    drift: '#c8dae6', crystal: '#8089c8', shard: '#757ebe',
+    drift: '#c8dae6', crystal: '#8089c8', shard: '#757ebe', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'rock', weight: 0.40, height: 0.6, out: 0.10 },
@@ -520,7 +520,7 @@ export const THEME = {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#235a48', coral: '#70405c', anemone: '#5e3650', spire: '#6f90a8',
-    drift: '#597f96', crystal: '#454e80', shard: '#3e4774',
+    drift: '#597f96', crystal: '#454e80', shard: '#3e4774', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'spire', weight: 0.46, bloomWeight: 0.36, height: 2.4, out: 0.55 },
@@ -562,7 +562,7 @@ reefShallow: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2f7a6a', coral: '#e07aa8', anemone: '#b85c96', spire: '#8aa6b4',
-    drift: '#b7cdd6', crystal: '#6f79be', shard: '#646eb4',
+    drift: '#b7cdd6', crystal: '#6f79be', shard: '#646eb4', icicle: '#b8dcf0',
     decor: {
       kinds: [
         /* Сумма правимых весов не меняется (0.62), и это нужно НЕ ВЕЗДЕ, а
@@ -611,7 +611,7 @@ reefShallow: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2a7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#5f7f92',
-    drift: '#7d97a6', crystal: '#5a64a8', shard: '#525c9e',
+    drift: '#7d97a6', crystal: '#5a64a8', shard: '#525c9e', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'kelp', weight: 0.44, bloomWeight: 0.34, height: 2.4, out: 0.55 },
@@ -652,7 +652,7 @@ reefShallow: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2a6a5c', coral: '#8a4a68', anemone: '#7a4060', spire: '#4a6a7a',
-    drift: '#5c7d8c', crystal: '#4a5490', shard: '#434c86',
+    drift: '#5c7d8c', crystal: '#4a5490', shard: '#434c86', icicle: '#b8dcf0',
     decor: {
       kinds: [
         /* Сумма правимых весов не меняется (0.50) — по той же причине, что в
@@ -691,7 +691,7 @@ cloudTop: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#3f8a74', coral: '#c97aa0', anemone: '#b06a90', spire: '#8aa2b6',
-    drift: '#c3d2e2', crystal: '#6a74b8', shard: '#5f6bb0',
+    drift: '#c3d2e2', crystal: '#6a74b8', shard: '#5f6bb0', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'crystal', weight: 0.34, bloomWeight: 0.40, height: 1.6, out: 0.45 },
@@ -722,7 +722,7 @@ cloudTop: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#2a6a58', coral: '#8a4a70', anemone: '#78406a', spire: '#6a7a92',
-    drift: '#7d8da6', crystal: '#8f97c8', shard: '#6a73a8',
+    drift: '#7d8da6', crystal: '#8f97c8', shard: '#6a73a8', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'shard', weight: 0.40, height: 0.6, out: 0.10 },
@@ -752,7 +752,7 @@ cloudTop: {
        `undefined` в `fillStyle` Canvas проглатывает молча, оставляя цвет
        соседней фигуры. */
     kelp: '#245a4c', coral: '#7a3a60', anemone: '#6a3256', spire: '#5a6a84',
-    drift: '#6b7b96', crystal: '#9a7ac0', shard: '#6a5290',
+    drift: '#6b7b96', crystal: '#9a7ac0', shard: '#6a5290', icicle: '#b8dcf0',
     decor: {
       kinds: [
         { kind: 'shard', weight: 0.32, height: 0.6, out: 0.10 },
@@ -922,6 +922,12 @@ export const BACKGROUND_KEYS = [
      кристалл, обломок. Неотнесённый цвет не проверяется светлотой НИЧЕМ —
      именно так однажды появилась бы белая декорация, спорящая с «иди сюда». */
   'kelp', 'coral', 'anemone', 'spire', 'drift', 'crystal', 'shard',
+  /* Сосульки ледяных гор — СВЕТЛЫЕ, по просьбе заказчика 29 октября: «сделай
+     сосульки светлей, чтобы было понятно, что это сосульки, а не серые
+     конусы». Поэтому цвет стоит в наборе фона, под потолком GAP_GUARD, а не
+     темнее лица плиты, как прочие фигуры. Один цвет на все зоны: лёд
+     светлый и ночью. */
+  'icicle',
   'badnik', 'badnikMouth', 'spike', 'critter', 'shadow', 'shade',
 ];
 
