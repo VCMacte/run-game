@@ -1278,7 +1278,7 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
       if (ob.look === 'ceiling') {
         drawTeeth(ob, z, cam, { project, quad });
       } else if (ob.look === 'bat') {
-        drawBat(ob, z, cam, elapsed, { project, quad, mscale });
+        drawBat(ob, dt, z, cam, elapsed, { project, quad, mscale });
       } else if (ob.look === 'icicles') {
         drawIcicles(ob, z, cam, elapsed, { project, quad, mscale });
       } else if (ob.look === 'ribs') {
@@ -1438,8 +1438,22 @@ function drawTeeth(ob, z, cam, { project, quad }) {
 
    Крылья — `blockDeep`, тем же цветом и по той же причине, что детали створки:
    впятеро темнее лица плиты, и это единственное, что переживает сжатие
-   Miracast. Светлее делать нельзя — спорило бы с проёмом. */
-function drawBat(ob, z, cam, elapsed, { project, quad, mscale }) {
+   Miracast. Светлее делать нельзя — спорило бы с проёмом.
+
+   Спуск и пасть — по просьбе заказчика 29 октября: «сделай летучей мыши
+   анимацию опускания к нижней части препятствия, тайминги как у медведя,
+   добавь открывающийся рот по мере приближения к нижней границе». Поэтому
+   спуск идёт по тем же числам, что подъём медведя (`MOTION.bearRiseFromS`,
+   `bearRiseToS`), а не по своим: две копии одного числа разъехались бы.
+   Зверь срывается с крюка и опускается, пока плита подходит, — угроза растёт,
+   как у медведя. Нижний край тела останавливается над кромкой приговора, в
+   щель приседа зверь не опускается.
+
+   Пасть красная (`blockDark`), как у медведя, и стоит под глазами: голову
+   ребёнок читает лицом к себе. Закрытая пасть — четырёхугольник нулевой
+   высоты, поэтому заливок всегда одинаково, и цена фигуры от фазы не
+   зависит. */
+function drawBat(ob, dt, z, cam, elapsed, { project, quad, mscale }) {
   const top = WALL;
   const bottom = O.duckHeight;
   const ph = top - bottom;
@@ -1451,8 +1465,13 @@ function drawBat(ob, z, cam, elapsed, { project, quad, mscale }) {
     COLORS.badnikMouth,
   );
 
+  // Доля спуска 0…1, сглаженная: трогается и останавливается без рывка.
+  const r = clamp((MOTION.bearRiseFromS - dt) / (MOTION.bearRiseFromS - MOTION.bearRiseToS), 0, 1);
+  const s = r * r * (3 - 2 * r);
+
   const bodyW = HALF * 0.22;
-  const bodyTop = top - ph * 0.10;
+  // Внизу тело стоит на 0.03 плиты над кромкой: 0.44 − 0.41 = 0.03.
+  const bodyTop = top - ph * (0.10 + 0.41 * s);
   const bodyBot = bodyTop - ph * 0.46;
   quad(
     project(-bodyW, bodyBot, z, cam), project(bodyW, bodyBot, z, cam),
@@ -1475,8 +1494,17 @@ function drawBat(ob, z, cam, elapsed, { project, quad, mscale }) {
     );
   }
 
+  // Пасть под глазами раскрывается вниз, к кромке, по мере спуска.
+  const mouthTop = bodyBot + ph * 0.10;
+  const mouthBot = mouthTop - ph * 0.07 * s;
+  quad(
+    project(-bodyW * 0.55, mouthTop, z, cam), project(bodyW * 0.55, mouthTop, z, cam),
+    project(bodyW * 0.35, mouthBot, z, cam), project(-bodyW * 0.35, mouthBot, z, cam),
+    COLORS.blockDark,
+  );
+
   // Глаза. Два, и мелкие: светлое на плите — это заём у проёма.
-  const eyeY = bodyBot + ph * 0.06;
+  const eyeY = bodyBot + ph * 0.13;
   const eyeW = bodyW * 0.22;
   const eyeH = ph * 0.05;
   for (const dir of [-1, 1]) {
