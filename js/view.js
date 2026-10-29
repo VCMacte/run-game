@@ -1209,9 +1209,11 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
    ширины, поэтому фигура не залезает в коридор.
 
    Обрыв закрывает низ обочины. Квадратик по маске не режется, поэтому
-   отбрасываются целые нижние ряды, которые ушли за кромку. Маска берётся по
-   середине фигуры: по дальнему краю она срезала бы низкий вид целиком.
-   Разбор — docs/view-and-zones.md. */
+   отбрасывается каждый квадратик, чей низ ушёл за кромку у его середины.
+   Кромка на экране наклонная, и срез выходит лесенкой вдоль неё. Здесь
+   стоял срез целыми рядами по маске в середине фигуры, и ревью его
+   опровергло: внешний угол ложился на стену обрыва на сотни пикселей, а под
+   внутренним краем оставалась щель. Разбор — docs/view-and-zones.md. */
 const PIXEL_DECOR = {
   /* Ступенчатый холм: трава и тёмные пятна. Сетка квадратная, а не
      широкая: низкий широкий вид с отступом в полширины уходит за обрыв
@@ -1297,15 +1299,13 @@ function drawPixelDecor(ctx, d, z, top, C, cam, side, elapsed, mscale, project) 
   const hc = d.h / grid.length;
   const wx = grid[0].length * hc;
   const left = d.x - wx / 2;
-  const mask = decorYMask(d.x, cam, side);
-  let keep = grid.length;
-  while (keep > 0 && top - keep * hc < mask - hc / 2) keep--;
-  if (keep <= 0) return;
+  const masks = [...grid[0]].map((_, i) => decorYMask(left + (i + 0.5) * hc, cam, side));
+  const cut = grid.map((row, j) => [...row]
+    .map((c, i) => (top - (j + 1) * hc < masks[i] - hc / 2 ? '.' : c)).join(''));
   const palette = {};
   for (const [ch, key] of Object.entries(вид.colors)) palette[ch] = C[key];
   const p = project(left, top, z, cam);
-  pixelSprite(ctx, keep < grid.length ? grid.slice(0, keep) : grid, palette,
-    p.sx, p.sy, hc * p.scale);
+  pixelSprite(ctx, cut, palette, p.sx, p.sy, hc * p.scale);
 }
 
 /**

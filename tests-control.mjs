@@ -88,6 +88,7 @@ function painter() {
   const shapes = [];
   const images = [];
   const rects = [];
+  const boxes = [];
   const smooth = [];
   let style = null;
   let pts = [];
@@ -115,7 +116,7 @@ function painter() {
     quadraticCurveTo(x1, y1, x2, y2) { add(x1, y1); add(x2, y2); },
     /* Квадратики пиксельного спрайта: много `rect` в одном пути, одна
        заливка на цвет. Габарит фигуры — по углам всех квадратиков. */
-    rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); },
+    rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); boxes.push({ x, y, w, h }); },
     drawImage(im) { images.push(im); smooth.push(ctx.imageSmoothingEnabled); },
     imageSmoothingEnabled: true,
     /* Пустышки преобразований. Нужны с тех пор, как вторая копия растра неба
@@ -126,7 +127,7 @@ function painter() {
     fill() { done(); },
     fillRect(x, y, w, h) { pts = [[x, y], [x + w, y + h]]; done(); },
   };
-  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images, rects, smooth };
+  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images, rects, boxes, smooth };
 }
 
 /** Один кадр поддельным холстом. Умолчания — пустая сцена без ничего. */
@@ -8929,6 +8930,29 @@ group('пиксельные фигуры', () => {
         Math.max(...цены) <= 2 && Math.min(...цены) > 0, [...цены].join(', '));
       check(`${zone}: вид «${k.kind}» (${side > 0 ? 'справа' : 'слева'}) не залезает в коридор`,
         внутрь.length === 0, внутрь.join(', '));
+
+      /* И не налезает на обрыв. Кромка обрыва на экране наклонная, а низ
+         сетки горизонтальный: квадратик ниже кромки лёг бы на стену обрыва.
+         Каждый квадратик сверяется с кромкой у своей середины, допуск —
+         полклетки (квадратик режется целиком) и пиксель округления. */
+      const ниже = [];
+      for (const u of [-1, 0, 1]) {
+        for (const z of [1.5, 3, 6]) {
+          const cam = camera(u, 0);
+          const el = { kind: k.kind, zone, side, x: side * (CORRIDOR_HALF + (k.out ?? DECOR.outM)),
+            y: CLIFF_TOP, h: k.height, z, at: 0, phase: 0.3 };
+          const с = paintFrame({ zone, u, decor: [el] });
+          const масштаб = project(0, 0, z, cam).scale;
+          const центр = project(cam.x, 0, z, cam).sx;
+          for (const b of с.boxes) {
+            const x = cam.x + (b.x + b.w / 2 - центр) / масштаб;
+            const кромка = project(x, decorYMask(x, cam, side), z, cam).sy;
+            if (b.y + b.h > кромка + b.h / 2 + 1) ниже.push(`u=${u} z=${z} на ${(b.y + b.h - кромка).toFixed(0)} px`);
+          }
+        }
+      }
+      check(`${zone}: вид «${k.kind}» (${side > 0 ? 'справа' : 'слева'}) не налезает на обрыв`,
+        ниже.length === 0, ниже.slice(0, 3).join(', '));
     }
   }
 });
