@@ -61,15 +61,15 @@ const OWN = {
   ice: { duck: 'icicles', side: 'floe' },
   deep: { duck: 'ribs', side: 'jelly' },
   stars: { duck: 'comet', side: 'asteroid' },
-  pixel: { duck: 'bat', side: 'slime' },
+  pixel: { duck: 'bricks', side: 'slime' },
 };
 
 /* Полный перечень внешностей — ВЫВОДИТСЯ, а не ведётся руками. Второй список
    разошёлся бы с первым, и разошёлся бы молча: внешность, забытая в перечне,
    продолжала бы выпадать в забеге, а проверка отрисовки её бы не видела. */
 export const LOOKS = {
-  duck: [...new Set([COMMON.duck, ...Object.values(OWN).map((o) => o.duck)])],
-  side: [...new Set([COMMON.side, ...Object.values(OWN).map((o) => o.side)])],
+  duck: [COMMON.duck, ...Object.values(OWN).map((o) => o.duck)],
+  side: [COMMON.side, ...Object.values(OWN).map((o) => o.side)],
 };
 
 /** Пара внешностей этого мира на это действие: общая плюс своя.

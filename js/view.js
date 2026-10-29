@@ -1287,6 +1287,8 @@ function drawObstacles(ctx, cam, obstacles, elapsed,
         // Имя внешности историческое, фигура — метеорный дождь; разбор в
         // шапке `drawMeteors`.
         drawMeteors(ob, z, cam, elapsed, { project, quad, mscale });
+      } else if (ob.look === 'bricks') {
+        drawBricks(ob, z, cam, elapsed, { ctx, project, mscale });
       }
     } else {
       const x0 = ob.side > 0 ? edge : -HALF;
@@ -1455,6 +1457,51 @@ function drawTeeth(ob, z, cam, { project, quad }) {
       COLORS.spike,
     );
   }
+}
+
+/* Кирпичная арка — пиксельный мир. Кладка поверх плиты: плита и есть
+   кирпич, а швы и зубчатый нижний край — фигура поверх неё. Сетка 24 клетки
+   на всю ширину коридора, 15 рядов над кромкой приседа и один под ней.
+   Клетка — 0.1 м, то есть край свисает меньше `teethM`: арка не учит
+   приседать глубже, чем просят (проверяется против зубьев).
+
+   Два кадра: в одном средний кирпич нижнего ряда вздрагивает на клетку вниз,
+   крошка с края — в другом месте. Цвета прежних владельцев: швы `blockDeep`,
+   как детали створки; уступы края `block`, как сама плита; крошка
+   `blockDark`. Три заливки. Разбор — docs/pixel-world.md. */
+const BRICKS = [0, 1].map((frame) => {
+  const rows = [];
+  for (let r = 0; r < 15; r++) {
+    let row = '';
+    for (let c = 0; c < 24; c++) {
+      const course = Math.floor(r / 3);
+      const seam = r % 3 === 2 || (c + 3 * (course % 2)) % 6 === 3;
+      row += seam ? 'S' : '.';
+    }
+    rows.push(row);
+  }
+  let edge = '';
+  for (let c = 0; c < 24; c++) edge += c % 4 === 1 || c % 4 === 2 ? 'B' : '.';
+  const put = (r, c0, c1, ch) => {
+    rows[r] = rows[r].slice(0, c0) + ch.repeat(c1 - c0) + rows[r].slice(c1);
+  };
+  rows.push(edge);
+  if (frame === 1) {
+    // Средний кирпич нижнего ряда (клетки 10…14) съехал на клетку вниз.
+    put(12, 10, 15, 'S');
+    put(14, 10, 15, '.');
+  }
+  put(15, frame ? 4 : 12, frame ? 5 : 13, 'C');
+  return rows;
+});
+
+function drawBricks(ob, z, cam, elapsed, { ctx, project, mscale }) {
+  const a = project(-HALF, O.duckHeight, z, cam);
+  const b = project(HALF, O.duckHeight, z, cam);
+  const cell = (b.sx - a.sx) / 24;
+  const grid = BRICKS[pixelFrame(elapsed, MOTION.bricksFps, ob.at * 3, BRICKS.length, mscale)];
+  pixelSprite(ctx, grid, { S: COLORS.blockDeep, B: COLORS.block, C: COLORS.blockDark },
+    a.sx, a.sy - 15 * cell, cell);
 }
 
 /* Висящий зверь — вторая внешность приседа, на месте голой плиты.
