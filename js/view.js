@@ -514,7 +514,7 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
         if (пиксели && клетка >= MOTION.pixelMinCell) {
           const кадр = pixelFrame(elapsed, MOTION.coinFps, s.x * 7 + s.z, 3, mscale);
           const сетка = (сОбодком ? COIN_RIM : COIN)[кадр];
-          pixelSprite(ctx, сетка, { R: colDim, Y: colr, D: colDim },
+          pixelSprite(ctx, сетка, { Y: colr, D: colDim },
             p.sx - 5 * клетка, cy - 5 * клетка, клетка);
           continue;
         }
@@ -2013,8 +2013,10 @@ const SLIME = [
 /* Монетка пиксельного мира: три кадра поворота — круг, овал 80% и 60%.
    Уже 60% нельзя: Miracast съедает тонкое, а ловят монетку весь забег.
    Сетка 10×10 на диаметр кольца, тело `Y`, прорезь `D`. Вариант с ободком
-   красит внешний слой клеток в `R` — та же цена, что кайма у кольца.
-   Разбор — docs/rings.md. */
+   красит внешний слой клеток в `D` и прорези не имеет: в узком кадре ободок
+   и прорезь вместе оставляли две жёлтые полоски в клетку (поймано ревью).
+   Ободок и прорезь одного цвета, поэтому монетка с ободком стоит две
+   заливки — дешевле кольца с каймой. Разбор — docs/rings.md. */
 const COIN = [
   [
     '...YYYY...',
@@ -2054,9 +2056,9 @@ const COIN = [
   ],
 ];
 const COIN_RIM = COIN.map((g) => g.map((row, j) => [...row].map((c, i) => {
-  if (c !== 'Y') return c;
+  if (c === '.') return c;
   const out = (jj, ii) => (g[jj]?.[ii] ?? '.') === '.';
-  return out(j - 1, i) || out(j + 1, i) || out(j, i - 1) || out(j, i + 1) ? 'R' : 'Y';
+  return out(j - 1, i) || out(j + 1, i) || out(j, i - 1) || out(j, i + 1) ? 'D' : 'Y';
 }).join('')));
 
 /* Кадр пиксельной анимации: функция времени с фазой, состояние не копится.

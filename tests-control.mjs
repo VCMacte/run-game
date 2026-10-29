@@ -116,7 +116,7 @@ function painter() {
     quadraticCurveTo(x1, y1, x2, y2) { add(x1, y1); add(x2, y2); },
     /* Квадратики пиксельного спрайта: много `rect` в одном пути, одна
        заливка на цвет. Габарит фигуры — по углам всех квадратиков. */
-    rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); boxes.push({ x, y, w, h }); },
+    rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); boxes.push({ style, x, y, w, h }); },
     drawImage(im) { images.push(im); smooth.push(ctx.imageSmoothingEnabled); },
     imageSmoothingEnabled: true,
     /* Пустышки преобразований. Нужны с тех пор, как вторая копия растра неба
@@ -8886,6 +8886,21 @@ group('пиксельные фигуры', () => {
     кольцо('pixelDay', { prizes: { gold: true } }).rects.includes(rainbowOf(C.star, 0.5, 1)));
   check('большая монетка цвета starBig',
     кольцо('pixelDay', { worth: 2 }).rects.includes(C.starBig));
+  /* С «Ободком» монетка не теряет цвет решения. Ободок — внешний слой клеток,
+     и в узком кадре вместе с прорезью он оставлял две жёлтые полоски в
+     клетку: после Miracast это не монетка, а тёмное пятно. Жёлтого в каждом
+     кадре не меньше половины площади монетки. */
+  {
+    const бедные = [];
+    for (let e = 0; e < 1.2; e += 1 / 60) {
+      const b = кольцо('pixelDay', { elapsed: e, prizes: { rim: true } }).boxes;
+      const пл = (f) => b.filter(f).reduce((a, q) => a + q.w * q.h, 0);
+      const доля = пл((q) => q.style === C.star) / пл(() => true);
+      if (!(доля >= 0.5)) бедные.push(`${e.toFixed(2)}с ${доля.toFixed(2)}`);
+    }
+    check('монетка с ободком остаётся жёлтой во всех кадрах', бедные.length === 0,
+      бедные.slice(0, 3).join(', '));
+  }
   /* Фаза кадра бывает отрицательной (`s.x · 7 + s.z` у левого кольца
      вблизи), а `%` в JS отрицательное оставляет отрицательным. Индекс −2
      дал бы `undefined` вместо сетки, и `render` упал бы посреди забега. */
