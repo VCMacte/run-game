@@ -1,0 +1,174 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Стенд препятствий</title>
+<!--
+  Стенд своих внешностей миров: все восемь в движении на одной странице.
+
+  Зачем: фигуру препятствия в забеге видно три секунды, и смотрит на неё
+  ребёнок, а не тот, кто её правит. Прошлый стенд для звёздной дороги рисовал
+  фигуры своими копиями — тогда фигур в коде ещё не было. Этот стенд рисует
+  НАСТОЯЩИМ `createView` из js/view.js, тем же путём, что tools/frame.html:
+  копия фигуры разошлась бы с кодом молча, и стенд хвалил бы то, чего в игре
+  нет.
+
+  Карточки ВЫВОДЯТСЯ из реестров: миры — из WORLDS (js/theme.js), внешность
+  мира — из looksFor (js/level.js). Новый мир или новая пара появятся здесь
+  сами; список руками не ведётся.
+
+  Препятствие в цикле подъезжает от момента, когда проявляется в кадре
+  (OBSTACLES.visibleS), до камеры. Время стенда идёт по своим часам, и
+  анимация фигуры — функция этого времени, как в забеге. «Держать» замирает
+  на расстоянии, а анимация продолжается: так видно фигуру вблизи в движении.
+
+  Открывать через `node serve.js`: http://localhost:8099/tools/stand.html
+  Инструмент разработки: в офлайн-кэш не попадает, tools/ туда не берут.
+
+  Разбор: docs/obstacle-looks.md
+-->
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px system-ui; }
+  .bar { position: sticky; top: 0; z-index: 1; background: #111; display: flex;
+         flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 10px; }
+  button { font: inherit; padding: 4px 10px; background: #2a2a2a; color: #ddd;
+           border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+  button.on { background: #4a4a20; border-color: #aa9; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+          gap: 10px; padding: 0 10px 10px; }
+  figure { margin: 0; background: #1a1a1a; border-radius: 4px; overflow: hidden; }
+  canvas { display: block; width: 100%; }
+  figcaption { padding: 6px 10px; }
+  figcaption b { color: #fff; }
+  .muted { color: #888; }
+</style>
+<div class="bar">
+  <button id="pause">Пауза</button>
+  <button id="slow">Замедлить ×0.35</button>
+  <span>Зона:</span>
+  <button data-zone="0" class="on">1</button>
+  <button data-zone="1">2</button>
+  <button data-zone="2">3</button>
+  <button id="side">Боковое справа</button>
+  <label><input type="checkbox" id="hold"> Держать за</label>
+  <input type="range" id="dt" min="0.3" max="3" step="0.05" value="1.2">
+  <span id="dtOut">1.20 с</span>
+  <span class="muted" id="frames">кадров 0</span>
+</div>
+<div class="grid" id="grid"></div>
+<script type="module">
+  import { createView, makeDecor } from '../js/view.js';
+  import { VIEW, OBSTACLES as O } from '../js/config.js';
+  import { WORLDS, SKY_FILES } from '../js/theme.js';
+  import { looksFor } from '../js/level.js';
+
+  const KINDS = { side: 'Шаг в сторону', duck: 'Присед' };
+
+  /* Цикл: от проявления в кадре до момента, когда плита ушла за ближнюю
+     плоскость, плюс короткий пустой хвост, чтобы начало цикла было видно. */
+  const DT_FROM = O.visibleS + 0.2;
+  const DT_TO = -0.3;
+  const SPAN = DT_FROM - DT_TO;
+
+  const state = { rate: 1, paused: false, zone: 0, side: 1, hold: false, holdDt: 1.2 };
+
+  /* Небо — растр зоны, как в игре. Нет файла — зона уходит на векторный путь,
+     ровно как в забеге, и стенд от этого не падает. */
+  const skies = {};
+  async function sky(zone) {
+    if (zone in skies) return skies[zone];
+    const im = new Image();
+    im.src = `/assets/${SKY_FILES[zone]}`;
+    try { await im.decode(); skies[zone] = im; } catch { skies[zone] = null; }
+    return skies[zone];
+  }
+
+  const cards = [];
+  const grid = document.getElementById('grid');
+  for (const world of Object.values(WORLDS)) {
+    for (const kind of Object.keys(KINDS)) {
+      const look = looksFor(world.id, kind)[1];
+      const fig = document.createElement('figure');
+      const canvas = document.createElement('canvas');
+      const cap = document.createElement('figcaption');
+      cap.innerHTML = `<b>${world.name}</b> · ${KINDS[kind]} · <code>${look}</code>`
+        + ' <span class="muted"></span>';
+      fig.append(canvas, cap);
+      grid.append(fig);
+      cards.push({ world, kind, look, canvas, out: cap.querySelector('.muted'),
+                   view: null, zone: null, decor: makeDecor({ durationS: 600, world: world.id }) });
+    }
+  }
+
+  /* Вид пересоздаётся при смене зоны: растр неба приходит в createView
+     картой, и это единственный вход для него. */
+  async function setZone(i) {
+    state.zone = i;
+    for (const c of cards) {
+      const zone = c.world.zones[i] ?? c.world.zones[0];
+      const im = await sky(zone);
+      c.view = createView(c.canvas, { backdrops: im ? { [zone]: im } : {} });
+      c.zone = zone;
+    }
+  }
+  /* Без await: кнопки ниже подключаются сразу, а не после загрузки неба.
+     Карточка без вида просто пропускает кадр. */
+  setZone(0);
+
+  let t = 0, last = performance.now(), frames = 0;
+  const outFrames = document.getElementById('frames');
+  function frame(now) {
+    const step = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (!state.paused) t += step * state.rate;
+
+    const dt = state.hold ? state.holdDt : DT_FROM - (t % SPAN);
+    const elapsed = t;
+    for (const c of cards) {
+      if (!c.view) continue;
+      try {
+        c.view.render({
+          elapsed,
+          travel: elapsed * VIEW.speed,
+          obstacles: [{
+            kind: c.kind, look: c.look, side: state.side, at: elapsed + dt,
+            passed: false, hit: false, verdictAt: null,
+          }],
+          decor: c.decor,
+          zone: c.zone,
+          safe: true,
+        });
+        c.out.textContent = `${c.zone} · до препятствия ${dt.toFixed(2)} с`;
+      } catch (e) {
+        // Упавшая карточка не останавливает остальные: каждая в своей песочнице.
+        c.out.textContent = `ошибка: ${e.message}`;
+      }
+    }
+    outFrames.textContent = `кадров ${++frames}`;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const $ = (id) => document.getElementById(id);
+  $('pause').onclick = (e) => {
+    state.paused = !state.paused;
+    e.target.classList.toggle('on', state.paused);
+  };
+  $('slow').onclick = (e) => {
+    state.rate = state.rate === 1 ? 0.35 : 1;
+    e.target.classList.toggle('on', state.rate !== 1);
+  };
+  for (const b of document.querySelectorAll('[data-zone]')) {
+    b.onclick = async () => {
+      for (const x of document.querySelectorAll('[data-zone]')) x.classList.toggle('on', x === b);
+      await setZone(Number(b.dataset.zone));
+    };
+  }
+  $('side').onclick = (e) => {
+    state.side = -state.side;
+    e.target.textContent = state.side > 0 ? 'Боковое справа' : 'Боковое слева';
+  };
+  $('hold').onchange = (e) => { state.hold = e.target.checked; };
+  $('dt').oninput = (e) => {
+    state.holdDt = Number(e.target.value);
+    $('dtOut').textContent = `${state.holdDt.toFixed(2)} с`;
+  };
+</script>
