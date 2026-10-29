@@ -87,6 +87,7 @@ function painter() {
   const fills = [];
   const shapes = [];
   const images = [];
+  const rects = [];
   let style = null;
   let pts = [];
   const add = (x, y) => pts.push([x, y]);
@@ -113,7 +114,7 @@ function painter() {
     quadraticCurveTo(x1, y1, x2, y2) { add(x1, y1); add(x2, y2); },
     /* Квадратики пиксельного спрайта: много `rect` в одном пути, одна
        заливка на цвет. Габарит фигуры — по углам всех квадратиков. */
-    rect(x, y, w, h) { add(x, y); add(x + w, y + h); },
+    rect(x, y, w, h) { add(x, y); add(x + w, y + h); rects.push(style); },
     drawImage(im) { images.push(im); },
     /* Пустышки преобразований. Нужны с тех пор, как вторая копия растра неба
        кладётся зеркально: без них отрисовка падает в node, то есть набор
@@ -123,7 +124,7 @@ function painter() {
     fill() { done(); },
     fillRect(x, y, w, h) { pts = [[x, y], [x + w, y + h]]; done(); },
   };
-  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images };
+  return { canvas: { width: 0, height: 0, getContext: () => ctx }, fills, shapes, images, rects };
 }
 
 /** Один кадр поддельным холстом. Умолчания — пустая сцена без ничего. */
@@ -8850,6 +8851,36 @@ group('пиксельные фигуры', () => {
     }
     check('нижний край арки не ниже кромки зубьев', ниже.length === 0, ниже.slice(0, 3).join(', '));
   }
+
+  // ── монетка вместо кольца ──
+  /* Кольцо на трёх метрах, по центру: клетка монетки там крупнее порога. */
+  const кольцо = (zone, { worth = 1, prizes = {}, elapsed = 0.5, stars = true } = {}) =>
+    paintFrame({ zone, elapsed, prizes,
+      stars: stars ? [{ x: 0, z: 3, worth, taken: false }] : [] });
+  const вклад = (zone, opts) => кольцо(zone, opts).fills.length
+    - кольцо(zone, { ...opts, stars: false }).fills.length;
+  check('в пиксельной зоне кольцо — монетка',
+    кольцо('pixelDay').rects.length > 0 && кольцо('greenHill').rects.length === 0,
+    `${кольцо('pixelDay').rects.length} / ${кольцо('greenHill').rects.length}`);
+  {
+    const узкие = [];
+    for (let e = 0; e < 1.2; e += 1 / 60) {
+      const тело = кольцо('pixelDay', { elapsed: e }).shapes.filter((f) => f.style === C.star);
+      const м = тело.reduce((a, f) => (f.w * f.h > a.w * a.h ? f : a), тело[0]);
+      /* Пиксель допуска: края клеток округлены до целых пикселей. */
+      if (!м || (м.w + 1) / м.h < 0.6) узкие.push(`${e.toFixed(2)}с ${м ? `${м.w}×${м.h}` : 'нет'}`);
+    }
+    check('монетка не уже 60% круга ни в одном кадре', узкие.length === 0, узкие.slice(0, 3).join(', '));
+  }
+  for (const prizes of [{}, { rim: true }, { rim: true, trail: true, gold: true }]) {
+    check(`монетка не дороже кольца при ${JSON.stringify(prizes)}`,
+      вклад('pixelDay', { prizes }) <= вклад('greenHill', { prizes }),
+      `${вклад('pixelDay', { prizes })} против ${вклад('greenHill', { prizes })}`);
+  }
+  check('золотой кубок красит монетку радугой',
+    кольцо('pixelDay', { prizes: { gold: true } }).rects.includes(rainbowOf(C.star, 0.5, 1)));
+  check('большая монетка цвета starBig',
+    кольцо('pixelDay', { worth: 2 }).rects.includes(C.starBig));
 });
 
 // ─────────────────────────── итог ───────────────────────────

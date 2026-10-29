@@ -22,7 +22,7 @@
 import { VIEW, OBSTACLES as O, FINISH as FIN, SIGNALS as S } from './config.js';
 import { clamp } from './util.js';
 import {
-  THEME, DECOR, MOTION, zonesOf, zoneAt, kindsFor, motionScale, rgba, luminance,
+  THEME, DECOR, MOTION, zonesOf, zoneAt, kindsFor, motionScale, rgba, luminance, worldOf,
 } from './theme.js';
 
 const EYE = 1.2;          // высота глаз ребёнка, условных метров
@@ -235,6 +235,9 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
         small: COLORS.star, smallDim: COLORS.starDim,
         big: COLORS.starBig, bigDim: COLORS.starBigDim,
       };
+      /* Пиксельный мир рисует кольцо монеткой. Мир спрашивается один раз на
+         кадр — по зоне, которой кадр уже красится. */
+      const монетки = worldOf(zoneNow) === 'pixel';
 
       const cam = camera(u, v);
 
@@ -502,6 +505,19 @@ export function createView(canvas, { backdrops = null, speed = VIEW.speed } = {}
         }
 
         const сОбодком = prizes.rim && r > MOTION.rimMinR;
+        /* Монетка вместо кольца — только форма: цвета те же (радуга
+           «Золотого кубка», `starBig` у большой), пятно, лучи, шлейф и искры
+           рисуются прежним кодом вокруг. Ободок у монетки — внешний слой
+           клеток её же сетки, цена та же, что у кольца. Мельче порога клетки
+           рисуется прежнее кольцо. Разбор — docs/rings.md. */
+        const клетка = (2 * r) / 10;
+        if (монетки && клетка >= MOTION.pixelMinCell) {
+          const кадр = pixelFrame(elapsed, MOTION.coinFps, s.x * 7 + s.z, 3, mscale);
+          const сетка = (сОбодком ? COIN_RIM : COIN)[кадр];
+          pixelSprite(ctx, сетка, { R: colDim, Y: colr, D: colDim },
+            p.sx - 5 * клетка, cy - 5 * клетка, клетка);
+          continue;
+        }
         if (сОбодком) {
           ring(w, r, colDim);
           ring(w * 0.82, r * 0.82, colr);
@@ -1878,6 +1894,55 @@ const SLIME = [
     '............',
   ],
 ];
+
+/* Монетка пиксельного мира: три кадра поворота — круг, овал 80% и 60%.
+   Уже 60% нельзя: Miracast съедает тонкое, а ловят монетку весь забег.
+   Сетка 10×10 на диаметр кольца, тело `Y`, прорезь `D`. Вариант с ободком
+   красит внешний слой клеток в `R` — та же цена, что кайма у кольца.
+   Разбор — docs/rings.md. */
+const COIN = [
+  [
+    '...YYYY...',
+    '.YYYYYYYY.',
+    '.YYYYYYYY.',
+    'YYYYDDYYYY',
+    'YYYYDDYYYY',
+    'YYYYDDYYYY',
+    'YYYYDDYYYY',
+    '.YYYYYYYY.',
+    '.YYYYYYYY.',
+    '...YYYY...',
+  ],
+  [
+    '...YYYY...',
+    '..YYYYYY..',
+    '.YYYYYYYY.',
+    '.YYYDDYYY.',
+    '.YYYDDYYY.',
+    '.YYYDDYYY.',
+    '.YYYDDYYY.',
+    '.YYYYYYYY.',
+    '..YYYYYY..',
+    '...YYYY...',
+  ],
+  [
+    '...YYYY...',
+    '..YYYYYY..',
+    '..YYYYYY..',
+    '..YYDDYY..',
+    '..YYDDYY..',
+    '..YYDDYY..',
+    '..YYDDYY..',
+    '..YYYYYY..',
+    '..YYYYYY..',
+    '...YYYY...',
+  ],
+];
+const COIN_RIM = COIN.map((g) => g.map((row, j) => [...row].map((c, i) => {
+  if (c !== 'Y') return c;
+  const out = (jj, ii) => (g[jj]?.[ii] ?? '.') === '.';
+  return out(j - 1, i) || out(j + 1, i) || out(j, i - 1) || out(j, i + 1) ? 'R' : 'Y';
+}).join('')));
 
 /* Кадр пиксельной анимации: функция времени с фазой, состояние не копится.
    `mscale` здесь — частота смены кадра, а не амплитуда: при «меньше
