@@ -5898,7 +5898,9 @@ group('тема', () => {
     const ЦВЕТ_ВИДА = { palm: 'palmLeaf', bush: 'grassDark', flower: 'flower', post: 'post',
       totem: 'totem', cactus: 'cactus', rock: 'rock', spruce: 'spruce',
       firefly: 'firefly', kelp: 'kelp', coral: 'coral', anemone: 'anemone',
-      spire: 'spire', drift: 'drift', crystal: 'crystal', shard: 'shard' };
+      spire: 'spire', drift: 'drift', crystal: 'crystal', shard: 'shard',
+      stepHill: 'grass', brickPost: 'post', brickColumn: 'post', pixelCrystal: 'crystal',
+      tower: 'totem', torch: 'firefly' };
     for (const k of new Set(t.decor.kinds.map((q) => q.kind))) {
       const цвет = ЦВЕТ_ВИДА[k];
       check(`${z}: у вида «${k}» назван главный цвет`, !!цвет,
@@ -8881,6 +8883,37 @@ group('пиксельные фигуры', () => {
     кольцо('pixelDay', { prizes: { gold: true } }).rects.includes(rainbowOf(C.star, 0.5, 1)));
   check('большая монетка цвета starBig',
     кольцо('pixelDay', { worth: 2 }).rects.includes(C.starBig));
+
+  // ── пиксельная обочина ──
+  /* Своя у каждой из трёх зон, по две заливки на вид. Фигура обочины
+     рисуется последней в пустом кадре, поэтому её заливки — хвост списка. */
+  const холмы = new Set(THEME.greenHill.decor.kinds.map((k) => k.kind));
+  const пиксельные = WORLDS.pixel.zones.flatMap((z) => THEME[z].decor.kinds.map((k) => [z, k]));
+  check('у пиксельных зон своя обочина', пиксельные.every(([, k]) => !холмы.has(k.kind)),
+    пиксельные.filter(([, k]) => холмы.has(k.kind)).map(([z, k]) => `${z}:${k.kind}`).join(', '));
+  for (const [zone, k] of пиксельные) {
+    for (const side of [-1, 1]) {
+      const цены = new Set();
+      const внутрь = [];
+      for (const e of [0, 0.13, 0.26, 0.4]) {
+        for (const z of [1.5, 3, 6]) {
+          const el = { kind: k.kind, zone, side, x: side * (CORRIDOR_HALF + (k.out ?? DECOR.outM)),
+            y: CLIFF_TOP, h: k.height, z, at: 0, phase: 0.3 };
+          const с = paintFrame({ zone, elapsed: e, decor: [el] });
+          const без = paintFrame({ zone, elapsed: e, decor: [] });
+          цены.add(с.fills.length - без.fills.length);
+          const край = project(side * CORRIDOR_HALF, 0, z, camera(0, 0)).sx;
+          for (const f of с.shapes.slice(без.shapes.length)) {
+            if (side > 0 ? f.minX < край - 0.5 : f.maxX > край + 0.5) внутрь.push(`z=${z}`);
+          }
+        }
+      }
+      check(`${zone}: вид «${k.kind}» не дороже 2 заливок и рисуется`,
+        Math.max(...цены) <= 2 && Math.min(...цены) > 0, [...цены].join(', '));
+      check(`${zone}: вид «${k.kind}» (${side > 0 ? 'справа' : 'слева'}) не залезает в коридор`,
+        внутрь.length === 0, внутрь.join(', '));
+    }
+  }
 });
 
 group('чиптюн-тембр', () => {

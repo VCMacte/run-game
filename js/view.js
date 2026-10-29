@@ -1189,8 +1189,116 @@ function drawDecor(ctx, cam, decor, travel, elapsed, { project, quad, far, mscal
         pr(d.x + 0.08, top, z), pr(d.x - 0.18, top, z),
         C.shard,
       );
+    } else if (PIXEL_DECOR[d.kind]) {
+      drawPixelDecor(ctx, d, z, top, C, cam, side, elapsed, mscale, project);
     }
   }
+}
+
+/* Пиксельная обочина пятого мира. Шесть видов, у каждого не больше двух
+   цветов, то есть не больше двух заливок — дешевле пальмы. Сетка ложится на
+   высоту вида (`d.h`): клетка — высота, делённая на число рядов, и ширина
+   выходит из той же клетки. Отступ вида (`out` в теме) не меньше половины
+   ширины, поэтому фигура не залезает в коридор.
+
+   Обрыв закрывает низ обочины. Квадратик по маске не режется, поэтому
+   отбрасываются целые нижние ряды, которые ушли за кромку. Маска берётся по
+   середине фигуры: по дальнему краю она срезала бы низкий вид целиком.
+   Разбор — docs/view-and-zones.md. */
+const PIXEL_DECOR = {
+  /* Ступенчатый холм: трава и тёмные пятна. Сетка квадратная, а не
+     широкая: низкий широкий вид с отступом в полширины уходит за обрыв
+     целиком (проверка «видно хотя бы треть»). */
+  stepHill: { colors: { G: 'grass', D: 'grassDark' }, frames: [[
+    '.GG.',
+    'GGDG',
+    'GDGG',
+    'GGGG',
+  ]] },
+  // Кирпичный столбик: тело и швы.
+  brickPost: { colors: { P: 'post', M: 'postMark' }, frames: [[
+    'MMM',
+    'PPP',
+    'PMP',
+    'PPP',
+    'MPM',
+    'PPP',
+    'PMP',
+    'PPP',
+  ]] },
+  // Кирпичная колонна подземелья: выше и шире столбика.
+  brickColumn: { colors: { P: 'post', M: 'postMark' }, frames: [[
+    'MMMM',
+    'PPPP',
+    'PMPP',
+    'PPPP',
+    'PPMP',
+    'PPPP',
+    'PMPP',
+    'PPPP',
+    'PPMP',
+    'PPPP',
+    'PMPP',
+    'MMMM',
+  ]] },
+  // Пиксельный кристалл: грань и тень грани.
+  pixelCrystal: { colors: { X: 'crystal', S: 'shard' }, frames: [[
+    '.XX.',
+    'XXSX',
+    'XXSX',
+    'XSXX',
+    'XSXX',
+    '.XX.',
+  ]] },
+  // Зубчатая башенка с окном.
+  tower: { colors: { T: 'totem', M: 'postMark' }, frames: [[
+    'T.T.T',
+    'TTTTT',
+    'TTTTT',
+    'TTMTT',
+    'TTMTT',
+    'TTTTT',
+    'TTTTT',
+    'TTTTT',
+    'TTTTT',
+    'TTTTT',
+  ]] },
+  // Факел: пламя в два кадра на древке.
+  torch: { colors: { F: 'firefly', P: 'post' }, fps: 4, frames: [[
+    '.F.',
+    'FFF',
+    '.F.',
+    '.P.',
+    '.P.',
+    '.P.',
+    '.P.',
+  ], [
+    '..F',
+    '.FF',
+    'FF.',
+    '.P.',
+    '.P.',
+    '.P.',
+    '.P.',
+  ]] },
+};
+
+function drawPixelDecor(ctx, d, z, top, C, cam, side, elapsed, mscale, project) {
+  const вид = PIXEL_DECOR[d.kind];
+  const n = вид.frames.length;
+  const grid = вид.frames[n > 1 ? pixelFrame(elapsed, вид.fps, d.phase * n, n, mscale) : 0];
+  const hc = d.h / grid.length;
+  const wx = grid[0].length * hc;
+  const left = d.x - wx / 2;
+  const mask = decorYMask(d.x, cam, side);
+  let keep = grid.length;
+  while (keep > 0 && top - keep * hc < mask - hc / 2) keep--;
+  if (keep <= 0) return;
+  const palette = {};
+  for (const [ch, key] of Object.entries(вид.colors)) palette[ch] = C[key];
+  const p = project(left, top, z, cam);
+  pixelSprite(ctx, keep < grid.length ? grid.slice(0, keep) : grid, palette,
+    p.sx, p.sy, hc * p.scale);
 }
 
 /**

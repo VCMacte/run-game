@@ -786,13 +786,12 @@ cloudTop: {
        соседней фигуры. */
     kelp: '#2f7a5e', coral: '#c76a92', anemone: '#a85a7e', spire: '#7d93a6',
     drift: '#9fb3c0', crystal: '#6a74b8', shard: '#5f6bb0', icicle: '#b8dcf0',
+    /* Обочина пиксельная: виды рисует `pixelSprite`, по две заливки. Отступ
+       `out` не меньше половины ширины сетки — фигура не лезет в коридор. */
     decor: {
       kinds: [
-        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
-        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
-        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
-        { kind: 'post', weight: 0.19, height: 2.6 },
-        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+        { kind: 'stepHill', weight: 0.5, height: 1.0, out: 0.55 },
+        { kind: 'brickPost', weight: 0.5, height: 1.6, out: 0.35 },
       ],
     },
   },
@@ -819,11 +818,8 @@ cloudTop: {
     drift: '#6b7b96', crystal: '#6a74c8', shard: '#4a5490', icicle: '#b8dcf0',
     decor: {
       kinds: [
-        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
-        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
-        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
-        { kind: 'post', weight: 0.19, height: 2.6 },
-        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+        { kind: 'brickColumn', weight: 0.5, height: 2.4, out: 0.45 },
+        { kind: 'pixelCrystal', weight: 0.5, height: 1.2, out: 0.45 },
       ],
     },
   },
@@ -851,11 +847,8 @@ cloudTop: {
     drift: '#6b7b96', crystal: '#9a7ac0', shard: '#6a5290', icicle: '#b8dcf0',
     decor: {
       kinds: [
-        { kind: 'palm', weight: 0.34, bloomWeight: 0.16, height: 2.2 },
-        { kind: 'bush', weight: 0.22, bloomWeight: 0.30, height: 0.7, out: 0.12 },
-        { kind: 'flower', weight: 0.18, bloomWeight: 0.32, height: 0.45, out: 0.22 },
-        { kind: 'post', weight: 0.19, height: 2.6 },
-        { kind: 'totem', weight: 0.07, height: 1.1, out: 0.35 },
+        { kind: 'tower', weight: 0.45, height: 2.0, out: 0.55 },
+        { kind: 'torch', weight: 0.55, height: 1.4, out: 0.35 },
       ],
     },
   },
