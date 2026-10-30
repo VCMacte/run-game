@@ -122,13 +122,24 @@ export function geometry(lm, aspect = 1) {
 
   const vis = (pv(lm, LM.lShoulder) + pv(lm, LM.rShoulder) + pv(lm, LM.lHip) + pv(lm, LM.rHip)) / 4;
 
+  /* Колено берётся ЛУЧШЕ ВИДИМОЕ, а не худшее из двух.
+
+     Здесь стояло «видимость коленей — меньшая из двух», и это отменено
+     журналом 30 октября. Ребёнок приседает и боком к камере, а боком одно
+     колено закрыто другой ногой. С меньшей видимостью голос колен молчал на
+     любом приседе боком, хотя ближнее колено было видно и согнуто. Тот же
+     присед лицом к камере этот голос получал. Когда видны оба, голосует
+     более согнутое, как и раньше. */
   const kneeL = angleAt(lm, LM.lHip, LM.lKnee, LM.lAnkle);
   const kneeR = angleAt(lm, LM.rHip, LM.rKnee, LM.rAnkle);
-  const kneeVis = Math.min(pv(lm, LM.lKnee), pv(lm, LM.rKnee));
+  const visL = pv(lm, LM.lKnee);
+  const visR = pv(lm, LM.rKnee);
+  const knee = Math.min(visL, visR) > 0.5 ? Math.min(kneeL, kneeR) : (visL >= visR ? kneeL : kneeR);
+  const kneeVis = Math.max(visL, visR);
 
   return {
     S: torso, cx, cxh, shoulderY, hipY, shoulderWidth, vis,
-    knee: Math.min(kneeL, kneeR), kneeVis,
+    knee, kneeVis,
     shoulderRatio: torso > 0 ? shoulderWidth / torso : 0,
   };
 }
@@ -555,8 +566,39 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
          что такое присед. */
       const uUnit = crouch && standS ? standS : unit;
       const uRaw = S.mirrorX * (g.cxh - cal.neutralX) / uUnit;
-      const vRaw = (g.shoulderY - cal.neutralShoulderY) / unit;
-      const vHip = (g.hipY - cal.neutralHipY) / unit;
+      let vRaw = (g.shoulderY - cal.neutralShoulderY) / unit;
+      let vHip = (g.hipY - cal.neutralHipY) / unit;
+
+      /* НЕЙТРАЛЬ НЕ НИЖЕ СТОЯЩЕГО.
+
+         Журнал 30 октября: нейтраль снята с первой позы забега, а ребёнок в
+         этот момент сидел с прямой спиной. Торс нормальный, поэтому запрет
+         «не брать нейтраль со сложенного торса» не сработал. Встав, ребёнок
+         давал `v` −1.38 весь забег, и присед поднимал его только до 0.1–0.2
+         при пороге 0.35: 16 ударов из 28 приседов. Дрейф это не исправил —
+         на ступени 5 его ворота «стоит в середине» почти не открываются.
+
+         Плечи выше нейтрали больше чем на `vExit` торса — не поза, а ошибка
+         нейтрали: присед плечи опускает, а не поднимает. Поэтому по вертикали
+         нейтраль подтягивается ВВЕРХ без ворот дрейфа, своей постоянной, и
+         только до `vExit`: прыжок длится доли секунды и после приземления не
+         должен читаться как присед. Вниз нейтраль по-прежнему ходит только
+         дрейфом с воротами — так согнутая поза в неё не впитывается.
+
+         Признак — только плечи, а нейтраль бёдер сдвигается на ту же
+         величину. Сидящий смещает их одинаково. Своё правило у бёдер
+         поднимало их нейтраль по странным кадрам (журнал 18 октября: торс
+         0.15, бёдра выше, чем стоя), и потом стоящий получал голос бёдер
+         «за». Шаг за кадр не длиннее 100 мс: после страницы в фоне один кадр
+         не переписывает нейтраль целиком. */
+      if (vRaw < -cal.vExit) {
+        const rise = 1 - Math.exp(-Math.min(dt * 1000, 100) / S.neutralRiseTauMs);
+        const d = rise * (g.shoulderY + cal.vExit * unit - cal.neutralShoulderY);
+        cal.neutralShoulderY += d;
+        cal.neutralHipY += d;
+        vRaw = (g.shoulderY - cal.neutralShoulderY) / unit;
+        vHip = (g.hipY - cal.neutralHipY) / unit;
+      }
 
       /* БОКОВОЕ ПОЛОЖЕНИЕ В ПРИСЕДЕ ИДЁТ МЕДЛЕННО, А НЕ СТОИТ.
 
@@ -757,9 +799,16 @@ export function makeTracker(calibration = {}, { aspect = 1 } = {}) {
       };
       const yes = (votes.sh ? 1 : 0) + (votes.hip ? 1 : 0) + (votes.knee ? 1 : 0);
 
-      // Ребёнок, подошедший к камере, тоже опускает плечи в кадре. Настоящий
-      // присед обязан уменьшить рост, не увеличив длину торса.
-      const scaleGuardOk = cal.S0 ? (g.S - cal.S0) / cal.S0 < S.scaleGuard : true;
+      /* Ребёнок, подошедший к камере, тоже опускает плечи в кадре. Настоящий
+         присед обязан уменьшить рост, не увеличив длину торса.
+
+         Длина торса здесь — ВЕРТИКАЛЬНАЯ, от плеч до бёдер по высоте кадра.
+         Здесь стояла полная длина, и журнал 30 октября её опроверг: ребёнок
+         лёг поперёк кадра, торс стал горизонтальным и длиннее, чем стоя, и
+         защита приняла лежащего за подошедшего. Подошедший вырастает по
+         вертикали, лежащий — нет. */
+      const torsoUp = g.hipY - g.shoulderY;
+      const scaleGuardOk = cal.S0 ? (torsoUp - cal.S0) / cal.S0 < S.scaleGuard : true;
 
       let crouchChanged = false;
       if (!crouch) {

@@ -106,7 +106,18 @@ export function report(session) {
      — без, и один журнал давал несогласованные между собой числа. Стоящий
      ребёнок даёт одинаковые окна буквально: все значения в `health` округлены,
      так что склейка на них срабатывает. */
-  const nums = (key) => windows.flatMap((w) => (typeof w?.[key] === 'number'
+  /* Окна, внутри которых страница уходила в фон. Кадров там не было вовсе, и
+     интервал до первого кадра после возврата — это время в фоне, а не провал
+     хода: журнал 30 октября печатал «худший за забег 251464 мс». В журнале
+     `gap95` сырой намеренно, а фон отделяет разбор — по событию `visibility`
+     между окном и предыдущим. */
+  const сФоном = new Set();
+  let былФон = false;
+  for (const e of log) {
+    if (e?.type === 'visibility') былФон = true;
+    else if (e?.type === 'health') { if (былФон) сФоном.add(e); былФон = false; }
+  }
+  const nums = (key, кроме = null) => windows.filter((w) => !кроме?.has(w)).flatMap((w) => (typeof w?.[key] === 'number'
     ? Array(occurrences(w)).fill(w[key])
     : []));
   /* Квантили в `health` посчитаны ВНУТРИ окна, и усреднять их нельзя: среднее
@@ -121,7 +132,7 @@ export function report(session) {
        здесь оба числа считаются по одному полю: типичное окно и худшее за
        забег. У журналов до 21 октября поля нет вовсе — тогда `null`, и строка
        не печатается: ноль читался бы как «кадры шли идеально ровно». */
-    gap: { med: median(nums('gap95')), worst: max(nums('gap95')) },
+    gap: { med: median(nums('gap95')), worst: max(nums('gap95', сФоном)) },
     hz: { med: median(nums('hz')), worst: min(nums('hz')) },
     fps: { med: median(nums('fps')), worst: min(nums('fps')) },
     drop: windows.reduce((s, w) => s + (w?.drop || 0) * occurrences(w), 0),
@@ -1030,8 +1041,10 @@ export function format(rep) {
        переходе, и для журнала с автоматикой так же верны. */
     const чисел = [s.faced, s.late, s.pauses, s.ringPct].every(Number.isFinite);
     if (чисел && s.faced >= D.minFacedDown && s.late >= D.lateDown) {
+      // На нижнем уровне советовать «ниже» некуда: причина не в сложности.
       L.push(`  ! на этой сложности ребёнку трудно: не успел ${count(s.late, TIMES)}`
-        + ` из ${s.faced} — предложите уровень ниже`);
+        + ` из ${s.faced} — ${s.to > 0 ? 'предложите уровень ниже'
+          : 'ниже уровня нет, ищите причину не в сложности: длина забега, усталость'}`);
     } else if (чисел && s.finished && s.faced >= D.minFacedUp && s.late === 0
       && s.pauses === 0 && s.ringPct >= D.ringPctUp) {
       L.push(`  ребёнок перерос эту сложность: чисто, пауз нет, колец ${s.ringPct}%`
