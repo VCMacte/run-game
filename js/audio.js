@@ -206,7 +206,23 @@ export function motifNameFor(name, prizes = {}) {
   return name;
 }
 
-export function play(name, prizes = {}) {
+/* Тембр мира. Форма волны несёт смысл «мягкий для подсказок, жёсткий для
+   событий», поэтому удар (`hit`) остаётся пилой в любом мире: в пиксельном
+   он иначе слился бы с подсказкой. Прочее в пиксельном мире звучит
+   квадратом — чиптюн, — а ноты и длительности не меняются: это тембр мира,
+   а не свой мотив. Неизвестный мир — прежний треугольник. Разбор —
+   docs/obstacles.md, «Звуковые мотивы». */
+export function shapeFor(name, world) {
+  if (name === 'hit') return 'sawtooth';
+  return world === 'pixel' ? 'square' : 'triangle';
+}
+
+/* Квадрат при той же амплитуде громче треугольника на слух: в нём больше
+   верхних гармоник. Поправка не даёт ему спорить с телеграфом. Начальное
+   число, подбирается на слух на телевизоре. */
+const SQUARE_GAIN = 0.6;
+
+export function play(name, prizes = {}, world = 'hills') {
   /* Выключенный звук проверяется ПЕРВЫМ, до отбора варианта: приз не вправе
      обойти настройку взрослого. Порядок сторожит тест в группе «звук». */
   const vol = settings.get('sound') ?? 0.8;
@@ -217,9 +233,9 @@ export function play(name, prizes = {}) {
   const имя = motifNameFor(name, prizes);
   const motif = MOTIFS[имя];
   if (!motif) return;
-  const gain = vol * (LEVEL[имя] ?? 0.2);
+  const shape = shapeFor(имя, world);
+  const gain = vol * (LEVEL[имя] ?? 0.2) * (shape === 'square' ? SQUARE_GAIN : 1);
   const t0 = c.currentTime + 0.005;
-  const shape = имя === 'hit' ? 'sawtooth' : 'triangle';
   for (const [freq, offset, dur] of motif) note(t0 + offset, freq, dur, gain, shape);
 }
 

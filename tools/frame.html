@@ -33,6 +33,14 @@
     // последний аргумент обязателен: без него облака останутся белыми.
     // Числом его не писать: потолок живёт в js/theme.js и у зон разный.
 
+  Пиксельное небо (мир «Пиксельная страна»): ?pixel=8&colors=10 в адресе.
+  Тогда toWebp перед зажимом уменьшает картинку в 8 раз ближайшим соседом и
+  сводит её к 10 цветам медианным сечением. Увеличивать обратно не нужно:
+  на экране растр растягивает drawImage без сглаживания.
+    tools/frame.html?pixel=8&colors=10
+    await toWebp('tools/painted/sky-pixel-day.png', 'assets/sky-pixel-day.webp',
+                 1, skyClamp('pixelDay'))
+
   Инструмент разработки: в офлайн-кэш не попадает, tools/ туда не берут.
 
   Разбор: docs/sky-and-art.md
@@ -105,16 +113,60 @@
     }
   };
 
+  /* Пикселизация для пиксельного неба: модель сетку не держит, поэтому
+     картинка уменьшается ближайшим соседом и сводится к малой палитре.
+     Палитра — медианное сечение: ящик цветов делится пополам по самому
+     широкому каналу, пока ящиков не станет N, цвет ящика — среднее. 16
+     цветов в пробе 29 октября дали кашу в листве, 8–12 — честную сетку. */
+  const PIXEL = num('pixel', 1);
+  const COLORS = num('colors', 0);
+  const quantize = (data, n) => {
+    const px = [];
+    for (let i = 0; i < data.length; i += 4) px.push([data[i], data[i + 1], data[i + 2]]);
+    let boxes = [px];
+    while (boxes.length < n) {
+      let best = -1;
+      let bestRange = -1;
+      let bestCh = 0;
+      boxes.forEach((b, bi) => {
+        if (b.length < 2) return;
+        for (let ch = 0; ch < 3; ch++) {
+          let lo = 255;
+          let hi = 0;
+          for (const p of b) { if (p[ch] < lo) lo = p[ch]; if (p[ch] > hi) hi = p[ch]; }
+          if (hi - lo > bestRange) { bestRange = hi - lo; best = bi; bestCh = ch; }
+        }
+      });
+      if (best < 0 || bestRange <= 0) break;
+      const b = boxes[best].sort((p, q) => p[bestCh] - q[bestCh]);
+      const mid = b.length >> 1;
+      boxes.splice(best, 1, b.slice(0, mid), b.slice(mid));
+    }
+    const pal = boxes.map((b) => [0, 1, 2].map((ch) => Math.round(b.reduce((s, p) => s + p[ch], 0) / b.length)));
+    for (let i = 0; i < data.length; i += 4) {
+      let bi = 0;
+      let bd = Infinity;
+      pal.forEach((c, k) => {
+        const d = (data[i] - c[0]) ** 2 + (data[i + 1] - c[1]) ** 2 + (data[i + 2] - c[2]) ** 2;
+        if (d < bd) { bd = d; bi = k; }
+      });
+      [data[i], data[i + 1], data[i + 2]] = pal[bi];
+    }
+    return pal.length;
+  };
+
   window.toWebp = async (src, dest, quality = 0.82, clampTo = null) => {
     const img = new Image();
     img.src = '/' + src;
     await img.decode();
     const off = document.createElement('canvas');
-    off.width = img.naturalWidth;
-    off.height = img.naturalHeight;
+    off.width = Math.round(img.naturalWidth / PIXEL);
+    off.height = Math.round(img.naturalHeight / PIXEL);
     const octx = off.getContext('2d');
-    octx.drawImage(img, 0, 0);
+    octx.imageSmoothingEnabled = PIXEL === 1;
+    octx.drawImage(img, 0, 0, off.width, off.height);
     const src0 = octx.getImageData(0, 0, off.width, off.height);
+    if (COLORS > 0) quantize(src0.data, COLORS);
 
     /* Зажим светлоты, ПРОВЕРЕННЫЙ ПО ФАКТУ КОДИРОВАНИЯ.
 

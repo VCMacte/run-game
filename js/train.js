@@ -666,7 +666,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           tally.star(s.worth ?? 1);
           log.event('star', { side: Math.sign(s.x), u: round(u), worth: s.worth ?? 1 });
           // Три ноты вместо двух: мотивы различаются числом нот, см. audio.js.
-          audio.play(s.worth > 1 ? 'starBig' : 'star', prizes);
+          audio.play(s.worth > 1 ? 'starBig' : 'star', prizes, world);
           hud();
         }
       }
@@ -761,7 +761,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
       // раньше картинки — у динамика телефона задержки нет.
       if (!ob.announced && phase.signal) {
         ob.announced = true;
-        audio.play(audio.motifFor(ob));
+        audio.play(audio.motifFor(ob), {}, world);
         /* `look` в журнале — не для полноты. Перекраска не меняет ни действия,
          ни приговора, но вполне может читаться хуже: силуэт, который ребёнок
          не узнаёт, даст лишние задетые препятствия, и отличить это от усталости
@@ -777,7 +777,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
         lastSafe = safe;
         if (!ob.calledAt) {
           ob.calledAt = now;
-          audio.play(safe ? 'ready' : 'warn');
+          audio.play(safe ? 'ready' : 'warn', {}, world);
         }
       }
 
@@ -799,7 +799,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
            наблюдением, а свойством кода. Поймано ревью. */
         const вОкне = ob.verdictAt !== null;
         if (вОкне) tally.forgive();
-        audio.play('clear');
+        audio.play('clear', {}, world);
         log.event('obstacle', {
           kind: ob.kind, look: ob.look ?? null, side: ob.side, result: 'clear',
           camX: round(camX),
@@ -825,7 +825,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
           tally.hit();
           invulnUntil = now + O.invulnMs;
           flash = MOTION.flashPeak;
-          audio.play('hit');
+          audio.play('hit', {}, world);
           hud();
         }
         log.event('obstacle', {
@@ -953,7 +953,7 @@ export function createTraining({ canvas, video, skeleton, field, fieldMark, onHu
     /* «Песня чистого забега» — приз, который звучит только без удара. Гасится
        он здесь, в наборе призов, а не новым событием: словарь звука не
        растёт, а судить «чистый ли забег» вправе только дирижёр. */
-    audio.play('finish', hits === 0 ? prizes : { ...prizes, clean: false });
+    audio.play('finish', hits === 0 ? prizes : { ...prizes, clean: false }, world);
     // Без аргумента намеренно: result теперь уходит из hud() всегда, и
     // передавать его здесь ещё раз значило бы намекать, что это единственный
     // путь — именно так и возник обнуляющийся экран результата.

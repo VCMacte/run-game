@@ -19,6 +19,8 @@
 // Запуск:
 //   node tools/ed-generate.mjs --prompt "..." --out assets/test.png
 //   node tools/ed-generate.mjs --prompt "..." --w 768 --h 448 --steps 30 --seed 7
+//   node tools/ed-generate.mjs --prompt "..." --sampler dpmpp_sde --steps 6 --cfg 2
+//   node tools/ed-generate.mjs --prompt "pixel art, ..." --lora pixel-art-xl --lora-weight 1.2
 //
 // Разбор: docs/sky-and-art.md
 
@@ -49,8 +51,11 @@ const opts = {
   height: +(a.h || 512),
   steps: +(a.steps || 25),
   guidance: +(a.cfg || 7.5),
+  sampler: a.sampler || 'euler_a', // Lightning-модели ждут dpmpp_sde, 4–8 шагов, cfg ≈ 2
   seed: a.seed ? +a.seed : Math.floor(Math.random() * 1e9),
   model: a.model || null,       // null — оставить тот, что выбран в настройках
+  lora: a.lora || null,         // имя файла из models/lora без расширения
+  loraWeight: +(a['lora-weight'] || 1),
   out: a.out || 'tools/out/test.png',
   init: a.init || null,         // img2img: от какой картинки отталкиваться
   strength: +(a.strength || 0.55),
@@ -96,7 +101,7 @@ async function render(model) {
     num_inference_steps: opts.steps,
     guidance_scale: opts.guidance,
     num_outputs: 1,
-    sampler_name: 'euler_a',
+    sampler_name: opts.sampler,
     use_stable_diffusion_model: model,
     output_format: 'png',
     session_id: 'cli-' + Date.now(),
@@ -106,6 +111,10 @@ async function render(model) {
     block_nsfw: false,
     vram_usage_level: 'balanced',
   };
+  if (opts.lora) {
+    body.use_lora_model = opts.lora;
+    body.lora_alpha = opts.loraWeight;
+  }
 
   // img2img: композиция берётся с готовой картинки, prompt_strength задаёт,
   // насколько сильно её переписывать. 0.5–0.6 сохраняет планы и линию земли.
