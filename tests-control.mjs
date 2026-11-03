@@ -19,7 +19,8 @@ import { tuneFor, breatherFor, clampStep, STEP_MAX, LEVELS } from './js/difficul
 import {
   TROPHY, STEP_RINGS, STEP_RINGS_2, CIRCLE, TOP_LEVEL, thresholdOf, levelAt, circleAt,
   unlockedAt, nextAt, worldsAt, prizeName, activeWorld, titleAt, activeStep, stepOpen,
-  stepThreshold, LOCKED_STEPS, medalFor,
+  stepThreshold, LOCKED_STEPS, medalFor, MASTER_STEP, MASTER_TITLE, GEMS, gemCount, gemsAt,
+  masterAt, gemTitle, GEM_MEDALS, gemMedals,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
@@ -4805,7 +4806,10 @@ group('кубок', () => {
   // ── ступени сложности за кольца ──
   check('заперты ровно шестой и седьмой уровни', String(LOCKED_STEPS) === '5,6',
     String(LOCKED_STEPS));
-  check('и это два верхних', LOCKED_STEPS.every((x) => x >= STEP_MAX - 1));
+  /* Здесь стояло «и это два верхних». С 3 ноября верхний — «Шторм», и его
+     запирают медали, а не кольца. За кольца заперты два уровня под ним. */
+  check('и это два уровня под «Штормом»',
+    LOCKED_STEPS.every((x) => x >= MASTER_STEP - 2 && x < MASTER_STEP));
   check('пороги — 1800 и 3300', stepThreshold(5) === 1800 && stepThreshold(6) === 3300,
     `${stepThreshold(5)}, ${stepThreshold(6)}`);
   /* Путь вниз бесплатный всегда: «слишком трудно» здесь худший класс
@@ -4833,6 +4837,51 @@ group('кубок', () => {
   check('неизвестный мир — медали нет', medalFor(чистый, 'moon') === null);
   check('без ступени — медали нет', medalFor({ hits: 0, durationS: 300 }, 'ice') === null);
   check('без результата — медали нет', medalFor(null, 'ice') === null);
+  check('чистый «Шторм» тоже даёт медаль',
+    medalFor({ ...чистый, step: MASTER_STEP }, 'deep') === `${MASTER_STEP}:deep`);
+
+  // ── кубок пяти миров ──
+  /* Медали мира — по одной на ступень ниже «Шторма». Все — и камень горит. */
+  const всеВ = (w) => Object.fromEntries(
+    Array.from({ length: MASTER_STEP }, (_, s1) => [`${s1}:${w}`, true]));
+  const всеМедали = Object.assign({}, ...Object.keys(WORLDS).map(всеВ));
+  check('«Шторм» — верхний уровень', MASTER_STEP === STEP_MAX && LEVELS[MASTER_STEP].name === 'Шторм');
+  check('медалей в камнях 35', GEM_MEDALS === 35 && gemMedals({ ...всеВ('ice'), '1:deep': true }) === 8);
+  check('шесть медалей мира — камня нет', gemCount({ ...всеВ('ice'), '6:ice': false }, 'ice') === 6
+    && !gemsAt({ ...всеВ('ice'), '6:ice': false }).includes('ice'));
+  check('семь медалей мира — камень горит', JSON.stringify(gemsAt(всеВ('ice'))) === '["ice"]',
+    JSON.stringify(gemsAt(всеВ('ice'))));
+  /* Медаль «Шторма» в камень не идёт: иначе приз требовал бы сам себя. */
+  check('медаль «Шторма» в камень не идёт',
+    gemCount({ [`${MASTER_STEP}:ice`]: true }, 'ice') === 0);
+  check('четыре камня — кубок не собран',
+    !masterAt(Object.assign({}, ...['hills', 'ice', 'deep', 'stars'].map(всеВ))));
+  check('пять камней — кубок собран', masterAt(всеМедали));
+  check('мусор вместо медалей — пусто', gemsAt(null).length === 0 && !masterAt('x'));
+
+  check('«Шторм» заперт без медалей, даже при любой копилке',
+    !stepOpen(100000, MASTER_STEP) && !stepOpen(100000, MASTER_STEP, всеВ('ice')));
+  check('«Шторм» открывают все медали', stepOpen(0, MASTER_STEP, всеМедали));
+  check('выбранный «Шторм» без медалей идёт «Бурей»',
+    activeStep(4800, MASTER_STEP, {}) === MASTER_STEP - 1, `${activeStep(4800, MASTER_STEP, {})}`);
+  check('с медалями «Шторм» остаётся собой', activeStep(4800, MASTER_STEP, всеМедали) === MASTER_STEP);
+  check('медали не открывают уровни за кольца', activeStep(0, 6, всеМедали) === 4);
+
+  check('собранный кубок даёт звание у имени', titleAt(0, всеМедали) === MASTER_TITLE
+    && titleAt(4800, всеМедали) === MASTER_TITLE);
+  check('без него — звание за кольца', titleAt(4800, всеВ('ice')) === 'Легенда');
+  for (const w of Object.values(WORLDS)) {
+    check(`${w.id}: звание камня в родительном падеже`,
+      typeof w.nameOf === 'string' && w.nameOf !== w.name && gemTitle(w.id) === `Мастер ${w.nameOf}`,
+      gemTitle(w.id));
+    /* Камень горит на тёмном гнезде (#14202c) и на чаше `--dim` (#41607a).
+       Различать его обязана светлота: цветность Miracast режет первой. */
+    check(`${w.id}: камень светлее чаши минимум на 0.25`,
+      typeof GEMS[w.id] === 'string' && luminance(GEMS[w.id]) - luminance('#41607a') >= 0.25,
+      `${GEMS[w.id]}: ${luminance(GEMS[w.id] || '#000').toFixed(3)}`);
+  }
+  check('камней столько же, сколько миров',
+    JSON.stringify(Object.keys(GEMS)) === JSON.stringify(Object.keys(WORLDS)));
 
   /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
      зоны; мир без арта честно говорит это полем zones: null, а не пустым

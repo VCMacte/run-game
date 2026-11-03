@@ -698,6 +698,19 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
    прокрутки, а сетка добавляет пять строк. */
 #trophy .cup { height: calc(var(--vh) * 0.34); }
 
+/* Кубок пяти миров стоит рядом с кубком за кольца, той же высоты. Чаша —
+   приглушённой заливкой, гнездо — темнее чаши, горящий камень — светлее и
+   крупнее гнезда: различает их светлота, а не рамка. Собранный кубок
+   надевает корону — крупную плоскую фигуру. Чаша остаётся тёмной: на
+   золотой чаше жёлтый камень «Звёздной дороги» пропал бы. */
+.cups { display: flex; justify-content: center; align-items: flex-end; gap: 4vw; }
+.cups .cup { margin: 0; }
+.master .bowl { fill: var(--dim); }
+#gemSlots circle { fill: #14202c; }
+#masterCrown { fill: var(--accent); }
+.master:not(.gold) #masterCrown { display: none; }
+.master.gold .bowl { stroke: var(--accent); stroke-width: 2.5; }
+
 /* Звезда второго круга — над чашей, крупной плоской заливкой. Прячется
    стилем: el.hidden на SVG не работает. */
 #trophyStar { fill: var(--accent); }
