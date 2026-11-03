@@ -870,16 +870,19 @@ cloudTop: {
    не впрок — их держит отдельная проверка на подделанном мире, потому что
    вторая половина `worldReady` про опечатку в имени зоны, а это `undefined` в
    палитре кадра, который Canvas глотает молча. Разбор лестницы, которая миры
-   открывает, — docs/trophy-and-worlds.md. */
+   открывает, — docs/trophy-and-worlds.md.
+
+   `nameOf` — имя в родительном падеже, для звания «Мастер Холмов». Падеж не
+   выводится из имени правилом: «горы» и «долина» склоняются по-разному. */
 export const WORLDS = {
-  hills: { id: 'hills', name: 'Холмы', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
-  ice:   { id: 'ice',   name: 'Ледяные горы',
+  hills: { id: 'hills', name: 'Холмы', nameOf: 'Холмов', zones: ['greenHill', 'sunsetDunes', 'nightHills'] },
+  ice:   { id: 'ice',   name: 'Ледяные горы', nameOf: 'Ледяных гор',
            zones: ['iceMorning', 'snowField', 'auroraNight'] },
-  deep: { id: 'deep', name: 'Подводная долина',
+  deep: { id: 'deep', name: 'Подводная долина', nameOf: 'Подводной долины',
            zones: ['reefShallow', 'kelpDeep', 'abyssGlow'] },
-  stars: { id: 'stars', name: 'Звёздная дорога',
+  stars: { id: 'stars', name: 'Звёздная дорога', nameOf: 'Звёздной дороги',
            zones: ['cloudTop', 'cometBelt', 'nebula'] },
-  pixel: { id: 'pixel', name: 'Пиксельная страна',
+  pixel: { id: 'pixel', name: 'Пиксельная страна', nameOf: 'Пиксельной страны',
            zones: ['pixelDay', 'pixelCave', 'pixelCastle'] },
 };
 

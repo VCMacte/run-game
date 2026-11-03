@@ -266,6 +266,9 @@
        el.hidden на SVG не работает. -->
   <section id="trophy" class="sheet screen center" hidden>
     <h1>Кубок</h1>
+    <!-- Два кубка рядом: за кольца и за медали. Рядом, а не друг под другом:
+         высоты на 1280×720 нет, а ширины хватает. -->
+    <div class="cups">
     <svg id="trophyCup" viewBox="0 0 100 150" class="cup" aria-hidden="true">
       <g id="trophyBars">
         <rect data-lv="12" x="14" y="12" width="72" height="7" />
@@ -288,6 +291,18 @@
            el.hidden на SVG не работает, прячет её стиль. -->
       <polygon id="trophyStar" points="50.0,0.5 51.4,4.1 55.2,4.3 52.2,6.7 53.2,10.4 50.0,8.3 46.8,10.4 47.8,6.7 44.8,4.3 48.6,4.1" />
     </svg>
+    <!-- Кубок пяти миров: широкая чаша с гнездом на мир. Гнёзда ставит код
+         по реестру миров. Корона видна только у собранного (.gold). -->
+    <svg id="masterCup" viewBox="0 0 100 150" class="cup master" aria-hidden="true">
+      <rect class="bowl" x="4" y="24" width="8" height="24" />
+      <rect class="bowl" x="88" y="24" width="8" height="24" />
+      <polygon class="bowl" points="8,20 92,20 84,66 64,84 36,84 16,66" />
+      <g id="gemSlots"></g>
+      <rect x="45" y="84" width="10" height="34" fill="#8a6a2f" />
+      <rect x="26" y="118" width="48" height="12" fill="#6b5024" />
+      <polygon id="masterCrown" points="30,16 30,2 40,10 50,0 60,10 70,2 70,16" />
+    </svg>
+    </div>
     <div id="trophyNow" class="when">—</div>
     <div id="trophyNext" class="when">—</div>
     <!-- Медали за забег без удара: клетки собирает код по реестрам миров и

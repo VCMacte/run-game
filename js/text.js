@@ -31,3 +31,4 @@ export const STARS = ['звезда', 'звезды', 'звёзд'];
 export const RINGS = ['кольцо', 'кольца', 'колец'];
 export const TIMES = ['раз', 'раза', 'раз'];
 export const RUNS = ['забег', 'забега', 'забегов'];
+export const MEDALS = ['медаль', 'медали', 'медалей'];

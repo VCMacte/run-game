@@ -19,7 +19,9 @@ import { tuneFor, breatherFor, clampStep, STEP_MAX, LEVELS } from './js/difficul
 import {
   TROPHY, STEP_RINGS, STEP_RINGS_2, CIRCLE, TOP_LEVEL, thresholdOf, levelAt, circleAt,
   unlockedAt, nextAt, worldsAt, prizeName, activeWorld, titleAt, activeStep, stepOpen,
-  stepThreshold, LOCKED_STEPS, medalFor,
+  stepThreshold, LOCKED_STEPS, medalFor, MASTER_STEP, MASTER_TITLE, GEMS, gemCount, gemsAt,
+  masterAt, gemTitle, GEM_MEDALS, gemMedals, awardsOf, masterMedals, GEM_SHAPES, GEM_SLOTS,
+  MASTER_GEM,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
@@ -4805,7 +4807,10 @@ group('кубок', () => {
   // ── ступени сложности за кольца ──
   check('заперты ровно шестой и седьмой уровни', String(LOCKED_STEPS) === '5,6',
     String(LOCKED_STEPS));
-  check('и это два верхних', LOCKED_STEPS.every((x) => x >= STEP_MAX - 1));
+  /* Здесь стояло «и это два верхних». С 3 ноября верхний — «Шторм», и его
+     запирают медали, а не кольца. За кольца заперты два уровня под ним. */
+  check('и это два уровня под «Штормом»',
+    LOCKED_STEPS.every((x) => x >= MASTER_STEP - 2 && x < MASTER_STEP));
   check('пороги — 1800 и 3300', stepThreshold(5) === 1800 && stepThreshold(6) === 3300,
     `${stepThreshold(5)}, ${stepThreshold(6)}`);
   /* Путь вниз бесплатный всегда: «слишком трудно» здесь худший класс
@@ -4833,6 +4838,80 @@ group('кубок', () => {
   check('неизвестный мир — медали нет', medalFor(чистый, 'moon') === null);
   check('без ступени — медали нет', medalFor({ hits: 0, durationS: 300 }, 'ice') === null);
   check('без результата — медали нет', medalFor(null, 'ice') === null);
+  check('чистый «Шторм» тоже даёт медаль',
+    medalFor({ ...чистый, step: MASTER_STEP }, 'deep') === `${MASTER_STEP}:deep`);
+
+  // ── кубок пяти миров ──
+  /* Медали мира — по одной на ступень ниже «Шторма». Все — и камень горит. */
+  const всеВ = (w) => Object.fromEntries(
+    Array.from({ length: MASTER_STEP }, (_, s1) => [`${s1}:${w}`, true]));
+  const всеМедали = Object.assign({}, ...Object.keys(WORLDS).map(всеВ));
+  check('«Шторм» — верхний уровень', MASTER_STEP === STEP_MAX && LEVELS[MASTER_STEP].name === 'Шторм');
+  check('медалей в камнях 35', GEM_MEDALS === 35 && gemMedals({ ...всеВ('ice'), '1:deep': true }) === 8);
+  check('шесть медалей мира — камня нет', gemCount({ ...всеВ('ice'), '6:ice': false }, 'ice') === 6
+    && !gemsAt({ ...всеВ('ice'), '6:ice': false }).includes('ice'));
+  check('семь медалей мира — камень горит', JSON.stringify(gemsAt(всеВ('ice'))) === '["ice"]',
+    JSON.stringify(gemsAt(всеВ('ice'))));
+  /* Медаль «Шторма» в камень не идёт: иначе приз требовал бы сам себя. */
+  check('медаль «Шторма» в камень не идёт',
+    gemCount({ [`${MASTER_STEP}:ice`]: true }, 'ice') === 0);
+  check('четыре камня — кубок не собран',
+    !masterAt(Object.assign({}, ...['hills', 'ice', 'deep', 'stars'].map(всеВ))));
+  check('пять камней — кубок собран', masterAt(всеМедали));
+  check('мусор вместо медалей — пусто', gemsAt(null).length === 0 && !masterAt('x'));
+
+  /* Праздник камня и кубка — разница медалей ДО и ПОСЛЕ. Ревью: в коде
+     экрана это правило тестами не видно. */
+  const безОдной = { ...всеМедали, '6:pixel': false };
+  check('последняя медаль мира зажигает камень',
+    JSON.stringify(awardsOf(всеВ('ice'), { ...всеВ('ice'), '0:deep': true }, 'deep'))
+      === '{"gem":false,"master":false}'
+    && awardsOf({ ...всеВ('ice'), '6:ice': false }, всеВ('ice'), 'ice').gem === true);
+  check('последняя медаль последнего мира собирает кубок',
+    JSON.stringify(awardsOf(безОдной, всеМедали, 'pixel')) === '{"gem":true,"master":true}');
+  check('повторная медаль горящего мира не празднуется',
+    JSON.stringify(awardsOf(всеМедали, всеМедали, 'pixel')) === '{"gem":false,"master":false}');
+  check('медаль «Шторма» не празднуется камнем',
+    !awardsOf(всеМедали, { ...всеМедали, [`${MASTER_STEP}:ice`]: true }, 'ice').gem);
+  check('медали «Шторма» считаются отдельно',
+    masterMedals({ ...всеМедали, [`${MASTER_STEP}:ice`]: true }) === 1 && masterMedals(null) === 0);
+
+  check('«Шторм» заперт без медалей, даже при любой копилке',
+    !stepOpen(100000, MASTER_STEP) && !stepOpen(100000, MASTER_STEP, всеВ('ice')));
+  check('«Шторм» открывают все медали', stepOpen(0, MASTER_STEP, всеМедали));
+  check('выбранный «Шторм» без медалей идёт «Бурей»',
+    activeStep(4800, MASTER_STEP, {}) === MASTER_STEP - 1, `${activeStep(4800, MASTER_STEP, {})}`);
+  check('с медалями «Шторм» остаётся собой', activeStep(4800, MASTER_STEP, всеМедали) === MASTER_STEP);
+  check('медали не открывают уровни за кольца', activeStep(0, 6, всеМедали) === 4);
+
+  check('собранный кубок даёт звание у имени', titleAt(0, всеМедали) === MASTER_TITLE
+    && titleAt(4800, всеМедали) === MASTER_TITLE);
+  check('без него — звание за кольца', titleAt(4800, всеВ('ice')) === 'Легенда');
+  for (const w of Object.values(WORLDS)) {
+    check(`${w.id}: звание камня в родительном падеже`,
+      typeof w.nameOf === 'string' && w.nameOf !== w.name && gemTitle(w.id) === `Мастер ${w.nameOf}`,
+      gemTitle(w.id));
+    // Светлоту камня против чаши и гнезда сверяет tests-shell.mjs: оба цвета
+    // живут в css/style.css, и копия их здесь разошлась бы с ним молча.
+  }
+  check('камней столько же, сколько миров',
+    JSON.stringify(Object.keys(GEMS)) === JSON.stringify(Object.keys(WORLDS)));
+  /* Форма — второй различитель после светлоты, поэтому у каждого мира своя,
+     и главный камень ни с одной не совпадает. */
+  check('у каждого мира своя форма камня',
+    JSON.stringify(Object.keys(GEM_SHAPES)) === JSON.stringify(Object.keys(WORLDS))
+    && new Set([...Object.values(GEM_SHAPES), MASTER_GEM.shape]).size === Object.keys(WORLDS).length + 1,
+    JSON.stringify(GEM_SHAPES));
+  /* Пирамида 3–2–1: гнёзд ровно по миру, нижний ряд из трёх, средний из
+     двух, главный камень один и выше всех. Шестой мир сломает эту проверку,
+     и это правильно: раскладку под него придётся рисовать заново. */
+  const ряды = new Map();
+  for (const [, y] of GEM_SLOTS) ряды.set(y, (ряды.get(y) || 0) + 1);
+  check('пирамида: гнездо на каждый мир, ряды 3 и 2, главный выше',
+    GEM_SLOTS.length === Object.keys(WORLDS).length
+    && JSON.stringify([...ряды.entries()].sort((a, b) => b[0] - a[0]).map((r) => r[1])) === '[3,2]'
+    && GEM_SLOTS.every(([, y]) => y > MASTER_GEM.y),
+    JSON.stringify(GEM_SLOTS));
 
   /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
      зоны; мир без арта честно говорит это полем zones: null, а не пустым
@@ -7646,6 +7725,51 @@ group('разбор журнала', () => {
   check('переучивание на ходу тоже видно',
     переучили.notes.some((n) => /переучена на ходу/.test(n)), переучили.notes.join(' | '));
 
+  /* Форма кадра при закрытой камере — шум. Журнал 3 ноября: после каждого
+     финиша камера закрывается, и кадр на 1–3 с становится портретным. Это
+     дало 16 пар записок «переучена» и «расходятся», ни одной в забеге, и
+     настоящий сигнал в них тонул. Такие смены сводятся в одну строку с
+     числом. Окно шума — от конца забега до следующего `cam.open`. */
+  const закрытиеКамеры = report(сессия([
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 1.78, w: 640, h: 360 },
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
+    { t: 61000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 60 },
+    { t: 70000, type: 'cam.aspect', aspect: 0.56, was: 1.78, said: 1.78, w: 360, h: 640 },
+    { t: 72000, type: 'cam.aspect', aspect: 1.78, was: 0.56, said: 1.78, w: 640, h: 360 },
+    { t: 89000, type: 'cam.open' },
+    { t: 90000, type: 'cam.aspect', aspect: 1.78, said: 1.78, w: 640, h: 360 },
+    { t: 91000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
+    { t: 120000, type: 'cam.aspect', aspect: 0.56, was: 1.78, said: 1.78, w: 360, h: 640 },
+    { t: 151000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 60 },
+  ]));
+  const вЗаписках = (re) => закрытиеКамеры.notes.filter((n) => re.test(n)).length;
+  check('смена формы при закрытой камере сведена в одну строку',
+    вЗаписках(/при закрытой камере/) === 1 && вЗаписках(/при закрытой камере 2 раза/) === 1,
+    закрытиеКамеры.notes.join(' | '));
+  check('смена формы в забеге названа отдельно',
+    вЗаписках(/переучена на ходу: было 1\.78, стало 0\.56/) === 1
+      && вЗаписках(/расходятся/) === 1,
+    закрытиеКамеры.notes.join(' | '));
+
+  /* Ревью нашло два случая, где шумом считался сигнал. Сессия без забега:
+     камера врёт уже на калибровке, и это класс 8 октября. И расхождение при
+     открытии камеры, за которым до старта пришла ещё одна запись. */
+  const безЗабега = report(сессия([
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 0.56, w: 640, h: 360 },
+  ]));
+  check('в сессии без забега расхождение названо',
+    безЗабега.notes.some((n) => /расходятся/.test(n)), безЗабега.notes.join(' | '));
+  const двеЗаписи = report(сессия([
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 0.56, w: 640, h: 360 },
+    { t: 800, type: 'cam.aspect', aspect: 1.78, w: 640, h: 360 },
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
+  ]));
+  check('расхождение при открытии не теряется за следующей записью',
+    двеЗаписи.notes.some((n) => /расходятся/.test(n)), двеЗаписи.notes.join(' | '));
+
   /* Два забега в одной сессии — это и есть замер. Сводка обязана разложить их
      по забегам: общая медиана fps смешала бы обе политики в одно число, то
      есть ответила бы на вопрос замера средним по вопросу. */
@@ -7957,6 +8081,28 @@ group('разбор журнала', () => {
     двеПопытки.pauses.inRunS === 3 && двеПопытки.pauses.pctOfRun === 1,
     'получилось ' + двеПопытки.pauses.inRunS + ' с и ' + двеПопытки.pauses.pctOfRun
     + '%; за сессию пауз 13 с, но к забегу относятся только 3');
+
+  /* Доля считается по ВСЕМ дошедшим до финиша забегам, а не по последнему.
+     Журнал 3 ноября: 18 пауз пришлись на забеги 3–15, последний прошёл без
+     пауз, и сводка напечатала «в забеге 0 с». */
+  const триЗабега = report(сессия([
+    { t: 0, type: 'run.start', durationS: 100, obstacles: 10, stars: 20 },
+    { t: 10000, type: 'pause', why: 'edge', vis: 1, S: 0.3, cx: 0.95, lostMs: 700 },
+    { t: 14000, type: 'resume' },
+    { t: 104000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 100 },
+    { t: 110000, type: 'pause', why: 'none', vis: 0, S: 0, cx: 0, lostMs: 700 },
+    { t: 115000, type: 'resume' },
+    { t: 120000, type: 'run.start', durationS: 100, obstacles: 10, stars: 20 },
+    { t: 130000, type: 'pause', why: 'edge', vis: 1, S: 0.3, cx: 0.95, lostMs: 700 },
+    { t: 136000, type: 'resume' },
+    { t: 226000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 100 },
+    { t: 230000, type: 'run.start', durationS: 100, obstacles: 10, stars: 20 },
+    { t: 330000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 100 },
+  ]));
+  check('паузы в забегах считаются по всем забегам сессии',
+    триЗабега.pauses.inRunS === 10 && триЗабега.pauses.pctOfRun === 3.3,
+    'получилось ' + триЗабега.pauses.inRunS + ' с и ' + триЗабега.pauses.pctOfRun
+    + '%; в первых двух забегах 4 + 6 с из 300, пауза между забегами не в счёт');
 
   /* Склеенное окно здоровья — это несколько окон. Вес обязан быть одинаковым
      у всех чисел: здесь `drop` учитывал `_n`, а медианы и счёт окон — нет. */

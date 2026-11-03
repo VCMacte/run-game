@@ -16,13 +16,14 @@ import { settings, OPTIONS, runDurationLabel } from './settings.js';
 import { players } from './players.js';
 import { clear as clearCalibration } from './calibrate.js';
 import * as log from './log.js';
-import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS } from './text.js';
+import { count, plural, SESSIONS, EVENTS, RINGS, TIMES, RUNS, MEDALS } from './text.js';
 import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 import {
-  TROPHY, CIRCLE, activeWorld, activeStep, circleAt, levelAt, medalFor, nextAt, prizeName,
-  stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
+  TROPHY, CIRCLE, GEMS, GEM_SHAPES, GEM_SLOTS, MASTER_GEM, MASTER_STEP, MASTER_TITLE, activeWorld, activeStep, circleAt,
+  GEM_MEDALS, awardsOf, gemMedals, gemTitle, gemsAt, levelAt, masterAt, masterMedals,
+  medalFor, nextAt, prizeName, stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
 } from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
 import { isOurCache, isOurScope } from './vendor.js';
@@ -895,9 +896,21 @@ function renderRunHud(h = {}) {
          журнал только у НОВОЙ: повтор ничего не меняет, а событие на каждый
          чистый забег сделало бы «медаль взята» неотличимым от «уже была». */
       const ключ = medalFor(result, result.world);
+      const медалиБыли = players.medals();
       if (ключ && players.addMedal(ключ)) {
         медаль = { step: result.step, world: result.world };
         log.event('medal', медаль);
+        // Камень и кубок пяти миров — тем же разом (правило — `awardsOf`).
+        const медали = players.medals();
+        const { gem, master } = awardsOf(медалиБыли, медали, result.world);
+        if (gem) {
+          медаль.gem = true;
+          log.event('gem', { world: result.world, gems: gemsAt(медали).length });
+        }
+        if (master) {
+          медаль.master = true;
+          log.event('master', { step: MASTER_STEP });
+        }
       }
     }
     $('runResult').innerHTML = [
@@ -929,6 +942,12 @@ function renderRunHud(h = {}) {
       взят ? `<div class="stars">Новый уровень! Открылось: ${взят.name}</div>` : null,
       медаль
         ? `<div class="stars">Новая медаль: ${LEVELS[медаль.step]?.name} · ${WORLDS[медаль.world]?.name}!</div>`
+        : null,
+      медаль?.gem
+        ? `<div class="stars">Камень мира «${WORLDS[медаль.world]?.name}» горит! Звание: «${gemTitle(медаль.world)}»</div>`
+        : null,
+      медаль?.master
+        ? `<div class="stars">Кубок пяти миров собран! Открылся уровень «${LEVELS[MASTER_STEP].name}», звание: «${MASTER_TITLE}»</div>`
         : null,
     ].filter(Boolean).join('');
     /* Записать результат можно один раз, и только пока есть что записывать.
@@ -1065,7 +1084,7 @@ async function startRun() {
        Через `activeStep`, как мир через `activeWorld`: ступень, выбранная
        при большей копилке (сменили игрока), заперта, и забег уходит на
        верхнюю открытую — ту, что отмечена на экране выбора. */
-    step: activeStep(bankNow, players.step()),
+    step: activeStep(bankNow, players.step(), players.medals()),
   });
   renderRunHud({ stage: 'setup', score: 0 });
   await training.start({ source: want.source, script: want.script });
@@ -1378,7 +1397,7 @@ function runLengthLabel(seconds) {
 function renderWho() {
   /* Звание второго круга едет рядом с именем: «я Бегун» ребёнок видит в
      меню каждый раз, а не только в кубке. */
-  const звание = titleAt(players.bank());
+  const звание = titleAt(players.bank(), players.medals());
   $('whoV').textContent = звание ? `${players.name()} · ${звание}` : players.name();
   /* Уровень на кнопке: ребёнок видит рост, не заходя внутрь, — та же мысль,
      по которой длина забега показана в двух местах сразу.
@@ -1622,31 +1641,91 @@ function renderTrophy() {
    ребёнок видит, за что бежит, как с мирами. */
 function renderMedals(bank) {
   const есть = players.medals();
+  /* Столбец «Шторма» появляется, только когда «Шторм» открыт. До того он
+     был бы восьмой клеткой в ряду, где камень горит от семи, и ребёнок
+     читал бы ряд как недособранный. */
+  const столбцов = stepOpen(bank, MASTER_STEP, есть) ? LEVELS.length : MASTER_STEP;
   const grid = $('medalGrid');
   grid.innerHTML = '';
-  grid.style.setProperty('--cols', String(LEVELS.length));
+  grid.style.setProperty('--cols', String(столбцов));
   grid.appendChild(document.createElement('span'));
-  LEVELS.forEach((_, i) => {
+  for (let i = 0; i < столбцов; i++) {
     const h = document.createElement('span');
     h.className = 'medal-head';
     h.textContent = String(i + 1);
     grid.appendChild(h);
-  });
+  }
   for (const w of Object.values(WORLDS)) {
     const name = document.createElement('span');
     name.className = 'medal-world';
     name.textContent = w.name;
     grid.appendChild(name);
-    LEVELS.forEach((_, i) => {
+    for (let i = 0; i < столбцов; i++) {
       const c = document.createElement('span');
       c.className = 'medal'
         + (есть[`${i}:${w.id}`] ? ' got' : '')
-        + (stepOpen(bank, i) ? '' : ' locked');
+        + (stepOpen(bank, i, есть) ? '' : ' locked');
       grid.appendChild(c);
-    });
+    }
   }
-  const n = Object.keys(есть).length;
-  $('medalNow').textContent = `Медали за забег без удара: ${n} из ${LEVELS.length * Object.keys(WORLDS).length}`;
+  /* Строка про камни — та же, что про медали, а не своя: высоты на экране
+     нет, и лишняя строка утопила бы «Назад». */
+  /* У собранного кубка строка считает медали «Шторма»: прогресс не вправе
+     пропасть в момент победы, а восьмой столбец в сетке уже виден. */
+  $('medalNow').textContent = masterAt(есть)
+    ? `Кубок пяти миров собран! «${LEVELS[MASTER_STEP].name}»: ${masterMedals(есть)} из ${Object.keys(WORLDS).length}`
+    : `Медали без удара: ${gemMedals(есть)} из ${GEM_MEDALS}`
+      + ` · камни: ${gemsAt(есть).length} из ${Object.keys(WORLDS).length}`;
+  renderGems(есть);
+}
+
+/* Кубок пяти миров: гнездо на мир, камень горит, когда в мире собраны все
+   медали. Гнёзда строит код по реестру WORLDS, как клетки медалей. Горящий
+   камень отличается от гнезда светлотой и размером, а не только тоном:
+   цветность Miracast режет первой. */
+function renderGems(есть) {
+  const горят = gemsAt(есть);
+  const box = $('gemSlots');
+  box.innerHTML = '';
+  Object.values(WORLDS).forEach((w, i) => {
+    const [x, y] = GEM_SLOTS[i];
+    const горит = горят.includes(w.id);
+    box.appendChild(gemShape(GEM_SHAPES[w.id], x, y, горит ? 7 : 5, горит && GEMS[w.id]));
+  });
+  const всё = masterAt(есть);
+  box.appendChild(gemShape(MASTER_GEM.shape, MASTER_GEM.x, MASTER_GEM.y, всё ? 8.5 : 6,
+    всё && MASTER_GEM.color));
+  $('masterCup').classList.toggle('gold', всё);
+}
+
+/* Фигура камня с центром (x, y) и радиусом r. Без цвета — пустое гнездо,
+   его красит стиль. Все фигуры — крупные плоские заливки, без рамок. */
+function gemShape(shape, x, y, r, color) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const точки = (pts) => pts.map(([a, b]) => `${(x + a * r).toFixed(2)},${(y + b * r).toFixed(2)}`).join(' ');
+  const круг = (n, rot, k = () => 1) => Array.from({ length: n }, (_, i) => {
+    const t = rot + (i * 2 * Math.PI) / n;
+    return [Math.cos(t) * k(i), Math.sin(t) * k(i)];
+  });
+  let el;
+  if (shape === 'circle') {
+    el = document.createElementNS(ns, 'circle');
+    el.setAttribute('cx', String(x));
+    el.setAttribute('cy', String(y));
+    el.setAttribute('r', String(r * 0.9));
+  } else {
+    const pts = {
+      triangle: [[0, -1], [0.95, 0.8], [-0.95, 0.8]],
+      diamond: [[0, -1.1], [0.75, 0], [0, 1.1], [-0.75, 0]],
+      square: [[-0.8, -0.8], [0.8, -0.8], [0.8, 0.8], [-0.8, 0.8]],
+      star: круг(10, -Math.PI / 2, (i) => (i % 2 ? 0.45 : 1.05)),
+      hexagon: круг(6, -Math.PI / 2),
+    }[shape];
+    el = document.createElementNS(ns, 'polygon');
+    el.setAttribute('points', точки(pts));
+  }
+  if (color) el.style.fill = color;
+  return el;
 }
 
 /* Список миров. Строится по реестру WORLDS, а порог берётся из таблицы
@@ -1723,12 +1802,13 @@ $('worldsBack').onclick = BACK.worlds = () => show('menu');
    верхний уровень надо заслужить. */
 function renderLevels() {
   const bank = players.bank();
-  const выбран = activeStep(bank, players.step());
+  const медали = players.medals();
+  const выбран = activeStep(bank, players.step(), медали);
   const list = $('levelList');
   list.innerHTML = '';
   LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
-    if (stepOpen(bank, i)) {
+    if (stepOpen(bank, i, медали)) {
       b.innerHTML = `${i + 1} · ${lv.name}<small>${lv.hint}</small>`;
       if (i === выбран) b.className = 'chosen';
       b.onclick = () => {
@@ -1736,6 +1816,11 @@ function renderLevels() {
         renderLevels();
         refreshMenuLevel();
       };
+    } else if (i === MASTER_STEP) {
+      // «Шторм» запирают медали, и сноска считает их, а не кольца.
+      const left = GEM_MEDALS - gemMedals(медали);
+      b.innerHTML = `${i + 1} · ${lv.name}<small>ещё ${left} ${plural(left, MEDALS)}</small>`;
+      b.disabled = true;
     } else {
       const left = stepThreshold(i) - Math.max(0, bank);
       b.innerHTML = `${i + 1} · ${lv.name}<small>ещё ${left} ${plural(left, RINGS)}</small>`;
@@ -1749,7 +1834,7 @@ function renderLevels() {
    где уровень едет числом; слово ребёнку. Прецедент прямой: «Кубок: уровень
    3» — голое число в столбце соседних кнопок читается как что угодно. */
 function refreshMenuLevel() {
-  const i = activeStep(players.bank(), players.step());
+  const i = activeStep(players.bank(), players.step(), players.medals());
   $('levelV').textContent = `${i + 1} · ${LEVELS[i]?.name ?? LEVELS[0].name}`;
 }
 

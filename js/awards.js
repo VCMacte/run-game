@@ -148,13 +148,110 @@ export function unlockedAt(bank) {
   return out;
 }
 
-/** Последнее взятое звание или null. */
-export function titleAt(bank) {
+/** Звание рядом с именем: «Мастер всех миров», если кубок пяти миров
+    собран, иначе последнее взятое за кольца, иначе null. Звания камней здесь
+    не стоят: их пять, а место у имени одно. */
+export function titleAt(bank, medals) {
+  if (masterAt(medals)) return MASTER_TITLE;
   return unlockedAt(bank).titles.at(-1) ?? null;
 }
 
+/* Кубок пяти миров — второй кубок, и копит он медали, а не кольца.
+   Заказ ребёнка 3 ноября: «новый кубок и приз за получение всех медалей».
+
+   В каждом мире 7 медалей — по одной на ступень ниже «Шторма». Все 7 в мире
+   зажигают его камень и дают звание «Мастер <мира>». Все 5 камней открывают
+   «Шторм» и звание «Мастер всех миров». Камни — промежуточные победы: одна
+   награда за 35 чистых забегов для семи лет слишком далеко.
+
+   Медали «Шторма» в камни НЕ идут. Иначе приз требовал бы сам себя: «Шторм»
+   открывается камнями, а его медаль берётся только на нём.
+
+   Как и уровень по копилке, камни не хранятся, а вычисляются из медалей.
+   Цвет камня — палитра ЭКРАНОВ, как цвета полос кубка. Проверяется он
+   светлотой: зажжённый камень светлее тусклого гнезда. */
+export const MASTER_STEP = STEP_MAX;
+
+export const GEMS = {
+  hills: '#8be05f',
+  ice:   '#c4ecff',
+  deep:  '#5fe0d0',
+  stars: '#ffd84d',
+  pixel: '#ff9a6b',
+};
+
+/* Форма камня — своя у каждого мира, и это второй различитель после
+   светлоты: цветность Miracast режет первой, а крупный силуэт переживает.
+   Пустое гнездо той же формы, только темнее и меньше: ребёнок видит, какой
+   камень сюда ляжет. */
+export const GEM_SHAPES = {
+  hills: 'triangle',
+  ice:   'diamond',
+  deep:  'circle',
+  stars: 'star',
+  pixel: 'square',
+};
+
+/* Раскладка — пирамида, заказ ребёнка: 3 камня внизу, 2 в середине, 1
+   вверху. Пять нижних — камни миров в порядке реестра, верхний — главный
+   камень, он горит, когда собран весь кубок. Координаты — в системе чаши
+   (viewBox 0 0 100 150). Гнёзд ровно столько, сколько миров: это
+   проверяется тестом, и шестой мир потребует новой раскладки. */
+export const GEM_SLOTS = [[31, 64], [50, 64], [69, 64], [40.5, 48], [59.5, 48]];
+export const MASTER_GEM = { x: 50, y: 31, shape: 'hexagon', color: '#fff4d2' };
+
+export const MASTER_TITLE = 'Мастер всех миров';
+
+const медалиЕсть = (medals) => (medals && typeof medals === 'object' ? medals : {});
+
+/** Сколько медалей мира идёт в его камень. */
+export function gemCount(medals, world) {
+  const есть = медалиЕсть(medals);
+  let n = 0;
+  for (let s = 0; s < MASTER_STEP; s++) if (есть[`${s}:${world}`]) n++;
+  return n;
+}
+
+/** Медалей в камнях всего (35) и сколько из них собрано. */
+export const GEM_MEDALS = MASTER_STEP * Object.keys(WORLDS).length;
+export function gemMedals(medals) {
+  return Object.keys(WORLDS).reduce((a, w) => a + gemCount(medals, w), 0);
+}
+
+/** Миры, чей камень горит, в порядке реестра. */
+export function gemsAt(medals) {
+  return Object.keys(WORLDS).filter((w) => gemCount(medals, w) === MASTER_STEP);
+}
+
+/** Собран ли кубок пяти миров целиком. */
+export function masterAt(medals) {
+  return gemsAt(medals).length === Object.keys(WORLDS).length;
+}
+
+/** Что принесла новая медаль мира `world`: зажёгся ли его камень и собран
+    ли кубок. Сравниваются медали ДО и ПОСЛЕ — тем же приёмом, каким уровень
+    кубка ловится по копилке до прибавки. Медаль даёт не больше одного камня:
+    она принадлежит одному миру. */
+export function awardsOf(before, after, world) {
+  const gem = !gemsAt(before).includes(world) && gemsAt(after).includes(world);
+  return { gem, master: gem && masterAt(after) };
+}
+
+/** Медали «Шторма»: сколько собрано. В камни они не идут. */
+export function masterMedals(medals) {
+  const есть = медалиЕсть(medals);
+  return Object.keys(WORLDS).filter((w) => есть[`${MASTER_STEP}:${w}`]).length;
+}
+
+/** Звание за камень: «Мастер Холмов». Родительный падеж живёт в реестре миров. */
+export function gemTitle(world) {
+  const w = WORLDS[world];
+  return w ? `Мастер ${w.nameOf}` : '';
+}
+
 /** Ступени сложности, которые стоят на лестнице, то есть заперты до порога.
-    Все прочие открыты с первого запуска: путь ВНИЗ бесплатный всегда. */
+    Все прочие открыты с первого запуска: путь ВНИЗ бесплатный всегда.
+    «Шторм» здесь не стоит: его запирают медали, а не кольца. */
 export const LOCKED_STEPS = TROPHY.filter((r) => r.kind === 'level').map((r) => r.step);
 
 /** Порог, на котором ступень открывается; 0 у открытой всегда. */
@@ -162,8 +259,9 @@ export function stepThreshold(step) {
   return TROPHY.find((r) => r.kind === 'level' && r.step === step)?.at ?? 0;
 }
 
-/** Открыта ли ступень при этой копилке. */
-export function stepOpen(bank, step) {
+/** Открыта ли ступень при этой копилке и этих медалях. */
+export function stepOpen(bank, step, medals) {
+  if (step === MASTER_STEP) return masterAt(medals);
   return !LOCKED_STEPS.includes(step) || unlockedAt(bank).steps.includes(step);
 }
 
@@ -171,9 +269,9 @@ export function stepOpen(bank, step) {
     открытая ниже неё. Правило одно на старт забега и на экран выбора — по той
     же причине, что у `activeWorld`: выбранное когда-то при большей копилке
     (сменили игрока) обязано быть видно на экране тем, что пойдёт. */
-export function activeStep(bank, wanted) {
+export function activeStep(bank, wanted, medals) {
   let s = clampStep(wanted);
-  while (s > 0 && !stepOpen(bank, s)) s--;
+  while (s > 0 && !stepOpen(bank, s, medals)) s--;
   return s;
 }
 

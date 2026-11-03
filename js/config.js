@@ -945,6 +945,19 @@ export const STEPS = [
     speedScale: 1.60, kindRunMax: 3, sameSideMax: 1, ringsInSeries: 'run',
     starGapS: 0.90,
   },
+  /* Восьмой — «Шторм», приз за все 35 медалей, а не за кольца (разбор —
+     docs/trophy-and-worlds.md). Повод — журнал 3 ноября: седьмой ребёнок
+     прошёл чисто, 156 препятствий без удара.
+
+     Растёт ТОЛЬКО скорость. Размах и доля приседов стоят на потолке с
+     шестого, а серию длиннее 7–9 не пускает проверка «колец на всех
+     ступенях столько же». Замер подбора — в docs/difficulty.md. Числа —
+     ОЦЕНКА, их уточняет журнал. */
+  {
+    blockFrac: 0.49, duckShare: 0.38, seriesMin: 7, seriesMax: 9,
+    speedScale: 1.75, kindRunMax: 3, sameSideMax: 1, ringsInSeries: 'run',
+    starGapS: 0.90,
+  },
 ];
 
 export const STORAGE = {

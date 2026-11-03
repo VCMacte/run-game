@@ -467,14 +467,25 @@ export function report(session) {
   /* Доля считается от пауз ВНУТРИ забега, а не за всю сессию: в сессии живут
      ещё калибровка и прошлые забеги, и деление сессионной суммы на длину
      последнего забега давало долю, которая может перевалить за сто процентов —
-     то есть долю неизвестно чего. */
-  if (finish) {
-    const from = start ? start.t : 0;
-    const inRun = spans
-      .filter((p) => p.t >= from && p.t <= finish.t)
-      .reduce((s, p) => s + (Math.min(p.end, finish.t) - p.t), 0);
+     то есть долю неизвестно чего.
+
+     И считается она по ВСЕМ забегам сессии, дошедшим до финиша, а не по
+     последнему. Здесь стояло окно одного последнего забега, и журнал 3 ноября
+     опроверг его: 18 пауз пришлись на забеги 3–15, последний прошёл без пауз,
+     и сводка напечатала «в забеге 0 с». Брошенный забег не в счёт, как и
+     раньше: длины у него нет, делить не на что. */
+  const plays = pick(log, 'run.start').flatMap((st) => {
+    const fin = pick(log, 'run.finish').find((f) => f.t >= st.t);
+    const next = pick(log, 'run.start').find((s) => s.t > st.t);
+    return fin && (!next || fin.t <= next.t) ? [{ from: st.t, to: fin.t, durationS: st.durationS }] : [];
+  });
+  if (plays.length) {
+    const inRun = plays.reduce((sum, w) => sum + spans
+      .filter((p) => p.t >= w.from && p.t <= w.to)
+      .reduce((s, p) => s + (Math.min(p.end, w.to) - p.t), 0), 0);
     pauses.inRunS = round(inRun / 1000, 1);
-    if (run?.durationS) pauses.pctOfRun = round((pauses.inRunS / run.durationS) * 100, 1);
+    const длина = plays.reduce((s, w) => s + (w.durationS || 0), 0);
+    if (длина) pauses.pctOfRun = round((pauses.inRunS / длина) * 100, 1);
   }
 
   // ── ошибки ──
@@ -511,8 +522,35 @@ export function report(session) {
      дефект, из-за которого 8 октября второй забег был непроходим: одно чужое
      число сжимает горизонталь, и ребёнок, стоящий лицом, читается как
      повёрнутый боком НАВСЕГДА. Поэтому сводка говорит о нём первой строкой, а
-     не предлагает догадываться по словам «он не видел меня». */
-  for (const a of pick(log, 'cam.aspect')) {
+     не предлагает догадываться по словам «он не видел меня».
+
+     Шумом считается только форма кадра между концом забега и следующим
+     открытием камеры: камеру в это время закрывают, и ни калибровка, ни
+     забег такой кадр не видят. Журнал 3 ноября: после каждого финиша кадр на
+     1–3 с становится портретным, и 16 таких пар записок ни разу не пришлись
+     на забег. Они сводятся в одну строку с числом. Всё прочее называется,
+     как раньше, — и в сессии без забега тоже: там форма кадра доходит до
+     калибровки.
+
+     Здесь стояло «называется только форма, которую видел забег: смена
+     внутри забега или последняя запись перед его стартом». Ревью опровергло
+     это двумя случаями. Сессия без забега прятала расхождение целиком, а
+     расхождение при открытии камеры терялось, если до старта приходила ещё
+     одна запись. */
+  const aspects = pick(log, 'cam.aspect');
+  const opens = pick(log, 'cam.open');
+  const closed = log
+    .filter((e) => e?.type === 'run.finish' || e?.type === 'run.abort')
+    .map((e) => ({ from: e.t, to: opens.find((o) => o.t > e.t)?.t ?? Infinity }));
+  const noise = (a) => closed.some((w) => a.t >= w.from && a.t < w.to);
+  const unseen = aspects.filter((a) => noise(a)
+    && ((typeof a.was === 'number' && Math.abs(a.was - a.aspect) > 0.05)
+      || (typeof a.said === 'number' && Math.abs(a.said - a.aspect) > 0.05))).length;
+  if (unseen) {
+    notes.push(`форма кадра менялась при закрытой камере ${count(unseen, TIMES)}`
+      + ' — ни забег, ни калибровка её не видели');
+  }
+  for (const a of aspects.filter((x) => !noise(x))) {
     if (typeof a.said === 'number' && typeof a.aspect === 'number'
       && Math.abs(a.said - a.aspect) > 0.05) {
       /* Кто из двоих врёт — по журналу не видно, и утверждать нельзя: 8
@@ -1071,7 +1109,7 @@ export function format(rep) {
   L.push(`  паузы: ${rep.pauses.episodes} эпизодов, ${rep.pauses.totalS} с за сессию`
       + (rep.pauses.pctOfRun === null
         ? ''
-        : `; в забеге ${rep.pauses.inRunS} с (${rep.pauses.pctOfRun}%)`));
+        : `; в забегах ${rep.pauses.inRunS} с (${rep.pauses.pctOfRun}% их длины)`));
     L.push(`          ${why}`);
     /* Отмотка за съеденный телеграф — рядом с паузами, потому что она их
        следствие и их цена. Без этой строки длина забега в журнале не сойдётся
