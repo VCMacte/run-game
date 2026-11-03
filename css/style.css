@@ -705,6 +705,10 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
    золотой чаше жёлтый камень «Звёздной дороги» пропал бы. */
 .cups { display: flex; justify-content: center; align-items: flex-end; gap: 4vw; }
 .cups .cup { margin: 0; }
+/* Стоя, на телефоне, два кубка по 0.34 высоты шире экрана: 422 px при
+   412. Чаша шириной 2/3 высоты, значит высота 60vw даёт два кубка по 40vw
+   и зазор 4vw. */
+#trophy .cups .cup { height: min(calc(var(--vh) * 0.34), 60vw); }
 .master .bowl { fill: var(--dim); }
 #gemSlots circle { fill: #14202c; }
 #masterCrown { fill: var(--accent); }
@@ -725,9 +729,14 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
 
    С пятым миром клетка 0.04 → 0.034 и зазор рядов 0.008 → 0.006: пятый ряд
    забирал высоту у чаши кубка, и на 1280×720 она сжималась с 50 до 16 px.
-   Теперь пять рядов занимают столько же, сколько прежние четыре. */
+   Теперь пять рядов занимают столько же, сколько прежние четыре.
+
+   Потолок по ширине делится на число столбцов: здесь стояло `7.5vw` на
+   семь. С восьмым столбцом «Шторма» на телефоне стоя столбец имён сжимался
+   до 31 px, и «Подводная долина» налезала на медали. 48vw на семь — это
+   6.9vw против прежних 7.5vw: на 52vw длинные слова ещё вылезали на 9 px. */
 .medals {
-  --cell: min(calc(var(--vh) * 0.034), 7.5vw);
+  --cell: min(calc(var(--vh) * 0.034), calc(48vw / var(--cols, 7)));
   display: grid;
   grid-template-columns: minmax(0, auto) repeat(var(--cols, 7), var(--cell));
   gap: calc(var(--vh) * 0.006) min(calc(var(--vh) * 0.012), 1.5vw);

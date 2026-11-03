@@ -208,6 +208,21 @@ export function masterAt(medals) {
   return gemsAt(medals).length === Object.keys(WORLDS).length;
 }
 
+/** Что принесла новая медаль мира `world`: зажёгся ли его камень и собран
+    ли кубок. Сравниваются медали ДО и ПОСЛЕ — тем же приёмом, каким уровень
+    кубка ловится по копилке до прибавки. Медаль даёт не больше одного камня:
+    она принадлежит одному миру. */
+export function awardsOf(before, after, world) {
+  const gem = !gemsAt(before).includes(world) && gemsAt(after).includes(world);
+  return { gem, master: gem && masterAt(after) };
+}
+
+/** Медали «Шторма»: сколько собрано. В камни они не идут. */
+export function masterMedals(medals) {
+  const есть = медалиЕсть(medals);
+  return Object.keys(WORLDS).filter((w) => есть[`${MASTER_STEP}:${w}`]).length;
+}
+
 /** Звание за камень: «Мастер Холмов». Родительный падеж живёт в реестре миров. */
 export function gemTitle(world) {
   const w = WORLDS[world];

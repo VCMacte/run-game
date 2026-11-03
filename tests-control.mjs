@@ -20,7 +20,7 @@ import {
   TROPHY, STEP_RINGS, STEP_RINGS_2, CIRCLE, TOP_LEVEL, thresholdOf, levelAt, circleAt,
   unlockedAt, nextAt, worldsAt, prizeName, activeWorld, titleAt, activeStep, stepOpen,
   stepThreshold, LOCKED_STEPS, medalFor, MASTER_STEP, MASTER_TITLE, GEMS, gemCount, gemsAt,
-  masterAt, gemTitle, GEM_MEDALS, gemMedals,
+  masterAt, gemTitle, GEM_MEDALS, gemMedals, awardsOf, masterMedals,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
@@ -4859,6 +4859,22 @@ group('кубок', () => {
   check('пять камней — кубок собран', masterAt(всеМедали));
   check('мусор вместо медалей — пусто', gemsAt(null).length === 0 && !masterAt('x'));
 
+  /* Праздник камня и кубка — разница медалей ДО и ПОСЛЕ. Ревью: в коде
+     экрана это правило тестами не видно. */
+  const безОдной = { ...всеМедали, '6:pixel': false };
+  check('последняя медаль мира зажигает камень',
+    JSON.stringify(awardsOf(всеВ('ice'), { ...всеВ('ice'), '0:deep': true }, 'deep'))
+      === '{"gem":false,"master":false}'
+    && awardsOf({ ...всеВ('ice'), '6:ice': false }, всеВ('ice'), 'ice').gem === true);
+  check('последняя медаль последнего мира собирает кубок',
+    JSON.stringify(awardsOf(безОдной, всеМедали, 'pixel')) === '{"gem":true,"master":true}');
+  check('повторная медаль горящего мира не празднуется',
+    JSON.stringify(awardsOf(всеМедали, всеМедали, 'pixel')) === '{"gem":false,"master":false}');
+  check('медаль «Шторма» не празднуется камнем',
+    !awardsOf(всеМедали, { ...всеМедали, [`${MASTER_STEP}:ice`]: true }, 'ice').gem);
+  check('медали «Шторма» считаются отдельно',
+    masterMedals({ ...всеМедали, [`${MASTER_STEP}:ice`]: true }) === 1 && masterMedals(null) === 0);
+
   check('«Шторм» заперт без медалей, даже при любой копилке',
     !stepOpen(100000, MASTER_STEP) && !stepOpen(100000, MASTER_STEP, всеВ('ice')));
   check('«Шторм» открывают все медали', stepOpen(0, MASTER_STEP, всеМедали));
@@ -4874,11 +4890,8 @@ group('кубок', () => {
     check(`${w.id}: звание камня в родительном падеже`,
       typeof w.nameOf === 'string' && w.nameOf !== w.name && gemTitle(w.id) === `Мастер ${w.nameOf}`,
       gemTitle(w.id));
-    /* Камень горит на тёмном гнезде (#14202c) и на чаше `--dim` (#41607a).
-       Различать его обязана светлота: цветность Miracast режет первой. */
-    check(`${w.id}: камень светлее чаши минимум на 0.25`,
-      typeof GEMS[w.id] === 'string' && luminance(GEMS[w.id]) - luminance('#41607a') >= 0.25,
-      `${GEMS[w.id]}: ${luminance(GEMS[w.id] || '#000').toFixed(3)}`);
+    // Светлоту камня против чаши и гнезда сверяет tests-shell.mjs: оба цвета
+    // живут в css/style.css, и копия их здесь разошлась бы с ним молча.
   }
   check('камней столько же, сколько миров',
     JSON.stringify(Object.keys(GEMS)) === JSON.stringify(Object.keys(WORLDS)));
@@ -7695,31 +7708,50 @@ group('разбор журнала', () => {
   check('переучивание на ходу тоже видно',
     переучили.notes.some((n) => /переучена на ходу/.test(n)), переучили.notes.join(' | '));
 
-  /* Форма кадра, которой не видел ни один забег, — шум. Журнал 3 ноября:
-     после каждого финиша камера закрывается, и кадр на 1–3 с становится
-     портретным. Это дало 16 пар записок «переучена» и «расходятся», ни одной
-     в забеге, и настоящий сигнал в них тонул. Такие смены сводятся в одну
-     строку с числом. Смена внутри забега и форма, с которой забег начался,
-     называются, как раньше. */
+  /* Форма кадра при закрытой камере — шум. Журнал 3 ноября: после каждого
+     финиша камера закрывается, и кадр на 1–3 с становится портретным. Это
+     дало 16 пар записок «переучена» и «расходятся», ни одной в забеге, и
+     настоящий сигнал в них тонул. Такие смены сводятся в одну строку с
+     числом. Окно шума — от конца забега до следующего `cam.open`. */
   const закрытиеКамеры = report(сессия([
-    { t: 0, type: 'cam.aspect', aspect: 1.78, said: 1.78, w: 640, h: 360 },
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 1.78, w: 640, h: 360 },
     { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
     { t: 61000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 60 },
     { t: 70000, type: 'cam.aspect', aspect: 0.56, was: 1.78, said: 1.78, w: 360, h: 640 },
     { t: 72000, type: 'cam.aspect', aspect: 1.78, was: 0.56, said: 1.78, w: 640, h: 360 },
+    { t: 89000, type: 'cam.open' },
     { t: 90000, type: 'cam.aspect', aspect: 1.78, said: 1.78, w: 640, h: 360 },
     { t: 91000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
     { t: 120000, type: 'cam.aspect', aspect: 0.56, was: 1.78, said: 1.78, w: 360, h: 640 },
     { t: 151000, type: 'run.finish', stars: 20, starsTotal: 20, hits: 0, durationS: 60 },
   ]));
   const вЗаписках = (re) => закрытиеКамеры.notes.filter((n) => re.test(n)).length;
-  check('смена формы вне забега сведена в одну строку',
-    вЗаписках(/вне забега/) === 1 && вЗаписках(/вне забега 2 раза/) === 1,
+  check('смена формы при закрытой камере сведена в одну строку',
+    вЗаписках(/при закрытой камере/) === 1 && вЗаписках(/при закрытой камере 2 раза/) === 1,
     закрытиеКамеры.notes.join(' | '));
   check('смена формы в забеге названа отдельно',
     вЗаписках(/переучена на ходу: было 1\.78, стало 0\.56/) === 1
       && вЗаписках(/расходятся/) === 1,
     закрытиеКамеры.notes.join(' | '));
+
+  /* Ревью нашло два случая, где шумом считался сигнал. Сессия без забега:
+     камера врёт уже на калибровке, и это класс 8 октября. И расхождение при
+     открытии камеры, за которым до старта пришла ещё одна запись. */
+  const безЗабега = report(сессия([
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 0.56, w: 640, h: 360 },
+  ]));
+  check('в сессии без забега расхождение названо',
+    безЗабега.notes.some((n) => /расходятся/.test(n)), безЗабега.notes.join(' | '));
+  const двеЗаписи = report(сессия([
+    { t: 0, type: 'cam.open' },
+    { t: 10, type: 'cam.aspect', aspect: 1.78, said: 0.56, w: 640, h: 360 },
+    { t: 800, type: 'cam.aspect', aspect: 1.78, w: 640, h: 360 },
+    { t: 1000, type: 'run.start', durationS: 60, obstacles: 8, stars: 20 },
+  ]));
+  check('расхождение при открытии не теряется за следующей записью',
+    двеЗаписи.notes.some((n) => /расходятся/.test(n)), двеЗаписи.notes.join(' | '));
 
   /* Два забега в одной сессии — это и есть замер. Сводка обязана разложить их
      по забегам: общая медиана fps смешала бы обе политики в одно число, то

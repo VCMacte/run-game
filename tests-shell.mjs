@@ -16,7 +16,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEME, luminance } from './js/theme.js';
-import { TROPHY, CIRCLE } from './js/awards.js';
+import { TROPHY, CIRCLE, GEMS } from './js/awards.js';
 
 /* Полос у кубка столько, сколько ступеней в КРУГЕ: второй круг перекрашивает
    те же полосы, а не рисует новые. */
@@ -898,6 +898,18 @@ group('кубок в стилях', () => {
     const hi = Math.max(l1, l2); const lo = Math.min(l1, l2);
     return (hi + 0.05) / (lo + 0.05);
   };
+  /* Камень кубка пяти миров горит на тёмном гнезде и на чаше `--dim`.
+     Различать его обязана светлота: цветность Miracast режет первой. Оба
+     цвета читаются из style.css, а не копией: ревью поймало ровно копию. */
+  const гнездо = (css.match(/#gemSlots circle \{ fill: (#[0-9a-f]{3,8});/i) || [])[1];
+  check('цвет гнезда камня найден в style.css', !!гнездо && !!токен('dim'));
+  for (const [мир, цвет] of Object.entries(GEMS)) {
+    check(`камень «${мир}» светлее чаши минимум на 0.25`,
+      luminance(цвет) - luminance(токен('dim')) >= 0.25,
+      `${цвет}: ${luminance(цвет).toFixed(3)} против ${luminance(токен('dim')).toFixed(3)}`);
+    check(`камень «${мир}» светлее гнезда минимум на 0.25`,
+      гнездо && luminance(цвет) - luminance(гнездо) >= 0.25);
+  }
   /* Сноска «ещё N колец» обязана стоять ОТДЕЛЬНОЙ строкой. Она лежала в
      кнопке `<small>`-ом без своего правила, и на экране читалось
      «Подводная долинаещё 60 колец»: образец `button > small` действительно

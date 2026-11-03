@@ -22,8 +22,8 @@ import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 import {
   TROPHY, CIRCLE, GEMS, MASTER_STEP, MASTER_TITLE, activeWorld, activeStep, circleAt,
-  GEM_MEDALS, gemMedals, gemTitle, gemsAt, levelAt, masterAt, medalFor, nextAt, prizeName,
-  stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
+  GEM_MEDALS, awardsOf, gemMedals, gemTitle, gemsAt, levelAt, masterAt, masterMedals,
+  medalFor, nextAt, prizeName, stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
 } from './awards.js';
 import { WORLDS, worldReady } from './theme.js';
 import { isOurCache, isOurScope } from './vendor.js';
@@ -896,18 +896,18 @@ function renderRunHud(h = {}) {
          журнал только у НОВОЙ: повтор ничего не меняет, а событие на каждый
          чистый забег сделало бы «медаль взята» неотличимым от «уже была». */
       const ключ = medalFor(result, result.world);
-      const камниБыли = gemsAt(players.medals());
+      const медалиБыли = players.medals();
       if (ключ && players.addMedal(ключ)) {
         медаль = { step: result.step, world: result.world };
         log.event('medal', медаль);
-        /* Камень и кубок пяти миров — тем же разом. Медаль даёт не больше
-           одного камня: она принадлежит одному миру. */
+        // Камень и кубок пяти миров — тем же разом (правило — `awardsOf`).
         const медали = players.medals();
-        if (!камниБыли.includes(result.world) && gemsAt(медали).includes(result.world)) {
+        const { gem, master } = awardsOf(медалиБыли, медали, result.world);
+        if (gem) {
           медаль.gem = true;
           log.event('gem', { world: result.world, gems: gemsAt(медали).length });
         }
-        if (медаль.gem && masterAt(медали)) {
+        if (master) {
           медаль.master = true;
           log.event('master', { step: MASTER_STEP });
         }
@@ -1670,8 +1670,10 @@ function renderMedals(bank) {
   }
   /* Строка про камни — та же, что про медали, а не своя: высоты на экране
      нет, и лишняя строка утопила бы «Назад». */
+  /* У собранного кубка строка считает медали «Шторма»: прогресс не вправе
+     пропасть в момент победы, а восьмой столбец в сетке уже виден. */
   $('medalNow').textContent = masterAt(есть)
-    ? 'Кубок пяти миров собран!'
+    ? `Кубок пяти миров собран! «${LEVELS[MASTER_STEP].name}»: ${masterMedals(есть)} из ${Object.keys(WORLDS).length}`
     : `Медали без удара: ${gemMedals(есть)} из ${GEM_MEDALS}`
       + ` · камни: ${gemsAt(есть).length} из ${Object.keys(WORLDS).length}`;
   renderGems(есть);
@@ -1685,15 +1687,19 @@ function renderGems(есть) {
   const горят = gemsAt(есть);
   const box = $('gemSlots');
   box.innerHTML = '';
-  for (const w of Object.values(WORLDS)) {
+  /* Гнёзда делят ширину чаши поровну: на уровне y=40 она лежит в 14…86.
+     Шаг считается от числа миров, а не литералом под пять. */
+  const миры = Object.values(WORLDS);
+  const шаг = 72 / миры.length;
+  миры.forEach((w, i) => {
+    const горит = горят.includes(w.id);
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    const i = box.childElementCount;
-    g.setAttribute('cx', String(20 + i * 15));
+    g.setAttribute('cx', String(14 + шаг * (i + 0.5)));
     g.setAttribute('cy', '40');
-    g.setAttribute('r', горят.includes(w.id) ? '6' : '4');
-    if (горят.includes(w.id)) g.style.fill = GEMS[w.id];
+    g.setAttribute('r', String(Math.min(горит ? 6 : 4, шаг * 0.42)));
+    if (горит) g.style.fill = GEMS[w.id];
     box.appendChild(g);
-  }
+  });
   $('masterCup').classList.toggle('gold', masterAt(есть));
 }
 

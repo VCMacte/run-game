@@ -524,30 +524,33 @@ export function report(session) {
      повёрнутый боком НАВСЕГДА. Поэтому сводка говорит о нём первой строкой, а
      не предлагает догадываться по словам «он не видел меня».
 
-     Но называется только та форма, которую видел забег: смена внутри забега
-     или последняя запись перед его стартом. Остальное — шум, и оно сводится
-     в одну строку с числом. Журнал 3 ноября: после каждого финиша камера
-     закрывается, кадр на 1–3 с становится портретным, и 16 таких пар записок
-     ни разу не пришлись на забег. Окно забега здесь — до финиша, обрыва или
-     следующего старта, а у брошенного — до конца журнала. */
+     Шумом считается только форма кадра между концом забега и следующим
+     открытием камеры: камеру в это время закрывают, и ни калибровка, ни
+     забег такой кадр не видят. Журнал 3 ноября: после каждого финиша кадр на
+     1–3 с становится портретным, и 16 таких пар записок ни разу не пришлись
+     на забег. Они сводятся в одну строку с числом. Всё прочее называется,
+     как раньше, — и в сессии без забега тоже: там форма кадра доходит до
+     калибровки.
+
+     Здесь стояло «называется только форма, которую видел забег: смена
+     внутри забега или последняя запись перед его стартом». Ревью опровергло
+     это двумя случаями. Сессия без забега прятала расхождение целиком, а
+     расхождение при открытии камеры терялось, если до старта приходила ещё
+     одна запись. */
   const aspects = pick(log, 'cam.aspect');
-  const starts = pick(log, 'run.start');
-  const ends = log.filter((e) => e?.type === 'run.finish' || e?.type === 'run.abort');
-  const seen = new Set(starts.map((st) => aspects.filter((a) => a.t <= st.t).at(-1)));
-  for (const st of starts) {
-    const next = starts.find((s) => s.t > st.t);
-    const stop = ends.find((e) => e.t >= st.t && (!next || e.t <= next.t));
-    const to = stop ? stop.t : (next ? next.t : end);
-    for (const a of aspects) if (a.t >= st.t && a.t <= to) seen.add(a);
-  }
-  const unseen = aspects.filter((a) => !seen.has(a)
+  const opens = pick(log, 'cam.open');
+  const closed = log
+    .filter((e) => e?.type === 'run.finish' || e?.type === 'run.abort')
+    .map((e) => ({ from: e.t, to: opens.find((o) => o.t > e.t)?.t ?? Infinity }));
+  const noise = (a) => closed.some((w) => a.t >= w.from && a.t < w.to);
+  const unseen = aspects.filter((a) => noise(a)
     && ((typeof a.was === 'number' && Math.abs(a.was - a.aspect) > 0.05)
       || (typeof a.said === 'number' && Math.abs(a.said - a.aspect) > 0.05))).length;
   if (unseen) {
-    notes.push(`форма кадра менялась вне забега ${count(unseen, TIMES)}`
-      + ' — забег её не видел, на игру это не влияет');
+    notes.push(`форма кадра менялась при закрытой камере ${count(unseen, TIMES)}`
+      + ' — ни забег, ни калибровка её не видели');
   }
-  for (const a of aspects.filter((x) => seen.has(x))) {
+  for (const a of aspects.filter((x) => !noise(x))) {
     if (typeof a.said === 'number' && typeof a.aspect === 'number'
       && Math.abs(a.said - a.aspect) > 0.05) {
       /* Кто из двоих врёт — по журналу не видно, и утверждать нельзя: 8
