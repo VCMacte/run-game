@@ -21,7 +21,7 @@ import { withTimeout, reportWaits, isDev, flag } from './util.js';
 import { FINISH } from './config.js';
 import { VERSION, BUILT_AT } from './version.js';
 import {
-  TROPHY, CIRCLE, GEMS, MASTER_STEP, MASTER_TITLE, activeWorld, activeStep, circleAt,
+  TROPHY, CIRCLE, GEMS, GEM_SHAPES, GEM_SLOTS, MASTER_GEM, MASTER_STEP, MASTER_TITLE, activeWorld, activeStep, circleAt,
   GEM_MEDALS, awardsOf, gemMedals, gemTitle, gemsAt, levelAt, masterAt, masterMedals,
   medalFor, nextAt, prizeName, stepOpen, stepThreshold, titleAt, unlockedAt, worldsAt,
 } from './awards.js';
@@ -1687,20 +1687,45 @@ function renderGems(есть) {
   const горят = gemsAt(есть);
   const box = $('gemSlots');
   box.innerHTML = '';
-  /* Гнёзда делят ширину чаши поровну: на уровне y=40 она лежит в 14…86.
-     Шаг считается от числа миров, а не литералом под пять. */
-  const миры = Object.values(WORLDS);
-  const шаг = 72 / миры.length;
-  миры.forEach((w, i) => {
+  Object.values(WORLDS).forEach((w, i) => {
+    const [x, y] = GEM_SLOTS[i];
     const горит = горят.includes(w.id);
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    g.setAttribute('cx', String(14 + шаг * (i + 0.5)));
-    g.setAttribute('cy', '40');
-    g.setAttribute('r', String(Math.min(горит ? 6 : 4, шаг * 0.42)));
-    if (горит) g.style.fill = GEMS[w.id];
-    box.appendChild(g);
+    box.appendChild(gemShape(GEM_SHAPES[w.id], x, y, горит ? 7 : 5, горит && GEMS[w.id]));
   });
-  $('masterCup').classList.toggle('gold', masterAt(есть));
+  const всё = masterAt(есть);
+  box.appendChild(gemShape(MASTER_GEM.shape, MASTER_GEM.x, MASTER_GEM.y, всё ? 8.5 : 6,
+    всё && MASTER_GEM.color));
+  $('masterCup').classList.toggle('gold', всё);
+}
+
+/* Фигура камня с центром (x, y) и радиусом r. Без цвета — пустое гнездо,
+   его красит стиль. Все фигуры — крупные плоские заливки, без рамок. */
+function gemShape(shape, x, y, r, color) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const точки = (pts) => pts.map(([a, b]) => `${(x + a * r).toFixed(2)},${(y + b * r).toFixed(2)}`).join(' ');
+  const круг = (n, rot, k = () => 1) => Array.from({ length: n }, (_, i) => {
+    const t = rot + (i * 2 * Math.PI) / n;
+    return [Math.cos(t) * k(i), Math.sin(t) * k(i)];
+  });
+  let el;
+  if (shape === 'circle') {
+    el = document.createElementNS(ns, 'circle');
+    el.setAttribute('cx', String(x));
+    el.setAttribute('cy', String(y));
+    el.setAttribute('r', String(r * 0.9));
+  } else {
+    const pts = {
+      triangle: [[0, -1], [0.95, 0.8], [-0.95, 0.8]],
+      diamond: [[0, -1.1], [0.75, 0], [0, 1.1], [-0.75, 0]],
+      square: [[-0.8, -0.8], [0.8, -0.8], [0.8, 0.8], [-0.8, 0.8]],
+      star: круг(10, -Math.PI / 2, (i) => (i % 2 ? 0.45 : 1.05)),
+      hexagon: круг(6, -Math.PI / 2),
+    }[shape];
+    el = document.createElementNS(ns, 'polygon');
+    el.setAttribute('points', точки(pts));
+  }
+  if (color) el.style.fill = color;
+  return el;
 }
 
 /* Список миров. Строится по реестру WORLDS, а порог берётся из таблицы

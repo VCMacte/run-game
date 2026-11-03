@@ -710,7 +710,7 @@ body:has(#run:not([hidden])) #stage { background: var(--stage-run); }
    и зазор 4vw. */
 #trophy .cups .cup { height: min(calc(var(--vh) * 0.34), 60vw); }
 .master .bowl { fill: var(--dim); }
-#gemSlots circle { fill: #14202c; }
+#gemSlots > * { fill: #14202c; }
 #masterCrown { fill: var(--accent); }
 .master:not(.gold) #masterCrown { display: none; }
 .master.gold .bowl { stroke: var(--accent); stroke-width: 2.5; }

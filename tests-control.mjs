@@ -20,7 +20,8 @@ import {
   TROPHY, STEP_RINGS, STEP_RINGS_2, CIRCLE, TOP_LEVEL, thresholdOf, levelAt, circleAt,
   unlockedAt, nextAt, worldsAt, prizeName, activeWorld, titleAt, activeStep, stepOpen,
   stepThreshold, LOCKED_STEPS, medalFor, MASTER_STEP, MASTER_TITLE, GEMS, gemCount, gemsAt,
-  masterAt, gemTitle, GEM_MEDALS, gemMedals, awardsOf, masterMedals,
+  masterAt, gemTitle, GEM_MEDALS, gemMedals, awardsOf, masterMedals, GEM_SHAPES, GEM_SLOTS,
+  MASTER_GEM,
 } from './js/awards.js';
 import { makeTally } from './js/train.js';
 import { obstacleEdge, obstacleDepth, nearestObstacleDepth, createView, drawNear, pixelSprite } from './js/view.js';
@@ -4895,6 +4896,22 @@ group('кубок', () => {
   }
   check('камней столько же, сколько миров',
     JSON.stringify(Object.keys(GEMS)) === JSON.stringify(Object.keys(WORLDS)));
+  /* Форма — второй различитель после светлоты, поэтому у каждого мира своя,
+     и главный камень ни с одной не совпадает. */
+  check('у каждого мира своя форма камня',
+    JSON.stringify(Object.keys(GEM_SHAPES)) === JSON.stringify(Object.keys(WORLDS))
+    && new Set([...Object.values(GEM_SHAPES), MASTER_GEM.shape]).size === Object.keys(WORLDS).length + 1,
+    JSON.stringify(GEM_SHAPES));
+  /* Пирамида 3–2–1: гнёзд ровно по миру, нижний ряд из трёх, средний из
+     двух, главный камень один и выше всех. Шестой мир сломает эту проверку,
+     и это правильно: раскладку под него придётся рисовать заново. */
+  const ряды = new Map();
+  for (const [, y] of GEM_SLOTS) ряды.set(y, (ряды.get(y) || 0) + 1);
+  check('пирамида: гнездо на каждый мир, ряды 3 и 2, главный выше',
+    GEM_SLOTS.length === Object.keys(WORLDS).length
+    && JSON.stringify([...ряды.entries()].sort((a, b) => b[0] - a[0]).map((r) => r[1])) === '[3,2]'
+    && GEM_SLOTS.every(([, y]) => y > MASTER_GEM.y),
+    JSON.stringify(GEM_SLOTS));
 
   /* Миры и зоны. Мир со СОБРАННЫМ артом обязан иметь ровно три существующие
      зоны; мир без арта честно говорит это полем zones: null, а не пустым

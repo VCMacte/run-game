@@ -16,7 +16,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEME, luminance } from './js/theme.js';
-import { TROPHY, CIRCLE, GEMS } from './js/awards.js';
+import { TROPHY, CIRCLE, GEMS, MASTER_GEM } from './js/awards.js';
 
 /* Полос у кубка столько, сколько ступеней в КРУГЕ: второй круг перекрашивает
    те же полосы, а не рисует новые. */
@@ -901,9 +901,9 @@ group('кубок в стилях', () => {
   /* Камень кубка пяти миров горит на тёмном гнезде и на чаше `--dim`.
      Различать его обязана светлота: цветность Miracast режет первой. Оба
      цвета читаются из style.css, а не копией: ревью поймало ровно копию. */
-  const гнездо = (css.match(/#gemSlots circle \{ fill: (#[0-9a-f]{3,8});/i) || [])[1];
+  const гнездо = (css.match(/#gemSlots > \* \{ fill: (#[0-9a-f]{3,8});/i) || [])[1];
   check('цвет гнезда камня найден в style.css', !!гнездо && !!токен('dim'));
-  for (const [мир, цвет] of Object.entries(GEMS)) {
+  for (const [мир, цвет] of [...Object.entries(GEMS), ['главный', MASTER_GEM.color]]) {
     check(`камень «${мир}» светлее чаши минимум на 0.25`,
       luminance(цвет) - luminance(токен('dim')) >= 0.25,
       `${цвет}: ${luminance(цвет).toFixed(3)} против ${luminance(токен('dim')).toFixed(3)}`);
